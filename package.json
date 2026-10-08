@@ -1,0 +1,10 @@
+{
+  "name": "mindx-360",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Read-only CRM and LMS support tool for MindX Tech Support",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
