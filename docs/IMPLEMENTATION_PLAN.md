@@ -4,13 +4,13 @@
 
 ## 1. Trạng thái tiếp tục công việc
 
-- Cập nhật lần cuối: 2026-10-08 (Asia/Bangkok)
-- Giai đoạn hiện tại: Giai đoạn 1 — Khởi tạo project (đã hoàn thành)
-- Đầu việc đang thực hiện: Không có — đang chờ người dùng xác nhận
-- Đã hoàn thành gần nhất: `INIT-08` — Root developer scripts và baseline toàn workspace
-- Phần còn thiếu/chặn: Chưa có contract tìm kiếm, dữ liệu mock hoặc module nghiệp vụ; đây là phạm vi Giai đoạn 2 trở đi
-- Bước tiếp theo sau khi được người dùng xác nhận: `MOCK-01` — Shared contract cho source state, API error và search response
-- Trạng thái phiên: `INIT-08` đã kiểm tra thành công; dừng chờ xác nhận, không được tự chuyển sang Giai đoạn 2
+- Cập nhật lần cuối: 2026-10-12 (Asia/Bangkok)
+- Giai đoạn hiện tại: Giai đoạn 2 — Contract tìm kiếm và dữ liệu mock
+- Đầu việc đang thực hiện: Không có — đang chờ người dùng nghiệm thu `MOCK-03`
+- Đã hoàn thành gần nhất: `MOCK-03` — Fixture ẩn danh `1 phụ huynh – 1 Student`
+- Phần còn thiếu/chặn: Chưa có fixture nhiều Lead/Student, fixture thiếu liên kết, search client/service, API route hoặc giao diện tìm kiếm; không có blocker cho phạm vi `MOCK-03`
+- Bước tiếp theo sau khi được người dùng xác nhận: `MOCK-04` — Fixture `1 phụ huynh – nhiều Student, nhiều Lead`
+- Trạng thái phiên: `MOCK-03` đã typecheck, build và test thành công; dừng chờ nghiệm thu, không được tự chuyển sang `MOCK-04`
 
 ## 2. Phạm vi và nguyên tắc bất biến
 
@@ -189,9 +189,9 @@ Mỗi đầu việc chỉ được `[x]` khi:
 
 ### Giai đoạn 2 — Contract tìm kiếm và dữ liệu mock
 
-- [ ] `MOCK-01` Định nghĩa shared contract cho source state, API error và search response; contract test/typecheck.
-- [ ] `MOCK-02` Định nghĩa backend models cho CRM Lead summary và LMS Student summary; unit test factory/validation cần thiết.
-- [ ] `MOCK-03` Tạo fixture ẩn danh `1 phụ huynh – 1 Student`; kiểm tra fixture theo contract.
+- [x] `MOCK-01` Định nghĩa shared contract cho source state, API error và search response; contract test/typecheck.
+- [x] `MOCK-02` Định nghĩa backend models cho CRM Lead summary và LMS Student summary; unit test factory/validation cần thiết.
+- [x] `MOCK-03` Tạo fixture ẩn danh `1 phụ huynh – 1 Student`; kiểm tra fixture theo contract.
 - [ ] `MOCK-04` Tạo fixture `1 phụ huynh – nhiều Student, nhiều Lead`; kiểm tra không dùng giả định phần tử `[0]`.
 - [ ] `MOCK-05` Tạo fixture Student thiếu liên kết CRM cùng biến thể ID không khớp; kiểm tra mức liên kết không bị nâng sai.
 - [ ] `MOCK-06` Tạo interface CRM/LMS search client và mock implementation; unit test success/empty/error riêng từng nguồn.
@@ -391,3 +391,44 @@ Chỉ xử lý từng điểm khi đầu việc chức năng tương ứng bắt
 - Đã kiểm tra concurrently gửi SIGINT cho cả hai child processes và giải phóng cổng `3000`/`5173`; người dùng có thể dừng root dev bằng `Ctrl+C`.
 - Đã bổ sung Definition of Done: mọi thay đổi web có giao diện/luồng tương tác phải kèm runtime/browser check và hướng dẫn kiểm tra trực tiếp trước nghiệm thu.
 - Không thay đổi nghiệp vụ, không tạo module CRM/LMS, không đọc token và không tích hợp API thật; chưa bắt đầu Giai đoạn 2.
+
+### 2026-10-08 — `MOCK-01`
+
+- Đã thêm shared contracts thuần TypeScript trong `@mindx-360/contracts`: `ApiError`, `SourceState<TData>` và `SearchResponse<TCrmItem, TLmsItem>` cùng các type hỗ trợ tối thiểu.
+- `SourceState<TData>` là discriminated union, bao phủ đủ `idle`, `loading`, `success`, `empty`, `partial`, `forbidden`, `unavailable`, `error`; chỉ trạng thái phù hợp mới mang `data` và/hoặc `error`.
+- `SearchResponse` phân tách rõ `sources.crm` và `sources.lms`, dùng source state đã settled và hỗ trợ kết quả tổng hợp `success`, `empty`, `partial`, `error`; lỗi một nguồn không che dữ liệu nguồn còn lại.
+- `ApiError` thống nhất `code`, thông báo an toàn, khả năng retry và nguồn lỗi tùy chọn; contract không chứa upstream body, credential hoặc dữ liệu nhạy cảm.
+- Đã thêm type tests cho toàn bộ trạng thái hợp lệ, tính đầy đủ của status union và các trường hợp không hợp lệ như `success` thiếu `data` hoặc response còn source `loading`.
+- Root `npm run typecheck`: đạt cho contracts, API và Web; type tests của contracts đạt.
+- Root `npm run build`: đạt cho contracts, API và Web; package declarations/exports được sinh thành công.
+- Root `npm test`: đạt tổng cộng `5/5` runtime tests (`1` contracts, `2` API, `2` Web); contract type tests được chạy trong script typecheck của workspace.
+- Không định nghĩa Lead/Student DTO hoặc model chi tiết, không tạo mock data, route, UI, module nghiệp vụ và không gọi API bên ngoài.
+- Handoff: dừng tại `MOCK-01`; chỉ bắt đầu `MOCK-02` sau khi người dùng nghiệm thu và xác nhận rõ ràng.
+
+### 2026-10-12 — `MOCK-02`
+
+- Đã đọc lại toàn bộ `MINDX_360_CURSOR_SPEC_V1.md`, các contracts của `MOCK-01` và ba tài liệu API hiện có trong `reference/` trước khi chốt field.
+- Đã thêm model thuần TypeScript `CrmLeadSummary` trong module CRM với các field tối thiểu đã có căn cứ từ `Lead_getList`: `crmLeadId`, `crmCustomerId`, `customerName`, raw `status`, `businessUnitId`, `ownerName`.
+- CRM chưa có mã Lead hiển thị riêng được tài liệu xác nhận, vì vậy model không tự tạo `leadCode`; `crmLeadId` là định danh Lead duy nhất ở summary.
+- Đã thêm model thuần TypeScript `LmsStudentSummary` trong module LMS với `lmsStudentId`, `studentCode`, `fullName`, raw `status`, `lmsCustomerId`. `studentCode` là mã hiển thị từ field API `studentId` và nullable vì field này chỉ được xác nhận ở `findStudentById`, chưa có trong selection đã ghi của `getStudents`.
+- `crmCustomerId` và `lmsCustomerId` được giữ riêng; model không giả định hai ID bằng nhau và không tạo liên kết CRM ↔ LMS chưa xác minh.
+- Hai factory yêu cầu primary ID là chuỗi không rỗng, giữ raw status không diễn giải enum, chuyển field tùy chọn bị thiếu/null thành `null` rõ ràng và từ chối giá trị sai kiểu/rỗng.
+- Unit tests bao phủ dữ liệu đầy đủ, dữ liệu tùy chọn bị thiếu, primary ID thiếu/rỗng, field tùy chọn sai kiểu, phân biệt LMS internal ID với mã hiển thị và nhiều Lead/Student trong một kết quả.
+- Root `npm run typecheck`: đạt cho contracts, API và Web.
+- Root `npm run build`: đạt cho contracts, API và Web; declaration của hai model được sinh thành công.
+- Root `npm test`: đạt tổng cộng `17/17` runtime tests (`1` contracts, `14` API, `2` Web), ngoài contract type tests.
+- Không tạo fixture/mock data dùng lại, API client, API route, giao diện hoặc kết nối hệ thống ngoài.
+- Handoff: dừng tại `MOCK-02`; chỉ bắt đầu `MOCK-03` sau khi người dùng nghiệm thu và xác nhận rõ ràng.
+
+### 2026-10-12 — `MOCK-03`
+
+- Đã thêm fixture `oneParentOneStudentFixture` trong module `mindx360`, mô phỏng một lần tìm bằng cùng SĐT giả `0000000000` trả về đúng một CRM Lead và một LMS Student.
+- Fixture tạo dữ liệu qua `createCrmLeadSummary` và `createLmsStudentSummary`, sau đó được kiểm tra tĩnh bằng `SearchResponse<CrmLeadSummary, LmsStudentSummary>` từ shared contracts.
+- Mọi tên, mã và ID đều có nhãn `mock`/`giả lập`; không sử dụng dữ liệu khách hàng thật hoặc gọi API bên ngoài.
+- CRM Customer ID và LMS Customer ID được đặt khác nhau, fixture không có trường `links`; việc cùng xuất hiện trong một kết quả tìm theo SĐT không được coi là bằng chứng liên kết CRM ↔ LMS.
+- Unit tests kiểm tra cùng một search input có kết quả ở cả hai nguồn, overall/source status, đúng `1` Lead và `1` Student, factory validation, phân biệt LMS internal ID với mã hiển thị, contract compatibility và không có liên kết suy diễn.
+- Root `npm run typecheck`: đạt cho contracts, API và Web.
+- Root `npm run build`: đạt cho contracts, API và Web.
+- Root `npm test`: đạt tổng cộng `22/22` runtime tests (`1` contracts, `19` API, `2` Web), ngoài contract type tests.
+- Không triển khai fixture nhiều kết quả của `MOCK-04`, API client, service, route hoặc giao diện.
+- Handoff: dừng tại `MOCK-03`; chỉ bắt đầu `MOCK-04` sau khi người dùng nghiệm thu và xác nhận rõ ràng.

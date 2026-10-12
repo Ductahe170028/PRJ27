@@ -1,6 +1,11 @@
-/**
- * Public entry point for types shared by the MindX 360 frontend and backend.
- * Business DTOs are added here only when their first feature requires them.
- */
-export {};
-
+export type { ApiError, ApiErrorCode, DataSource } from "./api-error.js";
+export type {
+  SettledSourceState,
+  SourceState,
+  SourceStateStatus,
+} from "./source-state.js";
+export type {
+  SearchResponse,
+  SearchResponseStatus,
+  SearchSourceState,
+} from "./search-response.js";
