@@ -22,6 +22,30 @@ describe("GET /api/v1/search", () => {
     });
   });
 
+  it("returns a sanitized internal error when the search use case rejects", async () => {
+    const failingApp = createApp({
+      searchByPhoneService: {
+        searchByPhone: async () => {
+          throw new Error("sensitive internal detail");
+        },
+      },
+    });
+
+    const response = await request(failingApp)
+      .get("/api/v1/search")
+      .query({ phone: mockSearchPhones.oneParentOneStudent });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      code: "UNKNOWN",
+      message: "Search request failed unexpectedly",
+      retryable: false,
+    });
+    expect(JSON.stringify(response.body)).not.toContain(
+      "sensitive internal detail",
+    );
+  });
+
   it("returns the one Lead and one Student fixture", async () => {
     const response = await request(app)
       .get("/api/v1/search")

@@ -6,17 +6,17 @@
 
 - Cập nhật lần cuối: 2026-10-12 (Asia/Bangkok)
 
-- Giai đoạn hiện tại: Giai đoạn 2 — Contract tìm kiếm và dữ liệu mock (đã hoàn thành)
+- Giai đoạn hiện tại: Giai đoạn 2 — Contract tìm kiếm và dữ liệu mock (đã hoàn thành và review/refactor)
 
-- Đầu việc đang thực hiện: Không có — đang chờ người dùng nghiệm thu Giai đoạn 2
+- Đầu việc đang thực hiện: Không có — đang chờ người dùng nghiệm thu kết quả review/refactor Giai đoạn 2
 
-- Đã hoàn thành gần nhất: `MOCK-08` — `GET /api/v1/search` dùng mock clients
+- Đã hoàn thành gần nhất: Review/refactor ranh giới HTTP → search use case sau `MOCK-08`; giữ nguyên hành vi API
 
 - Phần còn thiếu/chặn: Chưa có Frontend search flow hoặc tích hợp API production; quy tắc chuẩn hóa SĐT và cách truyền `getStudents.search` vẫn cần xác minh ở đầu việc tương ứng
 
 - Bước tiếp theo sau khi được người dùng xác nhận: `UI-01` — Frontend API service gọi `/api/v1/search`
 
-- Trạng thái phiên: toàn bộ `MOCK-01` → `MOCK-08` đã typecheck, build, test và runtime check thành công; bắt buộc dừng chờ nghiệm thu, không tự chuyển sang Giai đoạn 3
+- Trạng thái phiên: review/refactor Giai đoạn 2 đã hoàn thành; toàn bộ typecheck, build, test, diff check và runtime scenario MOCK-08 đều đạt; bắt buộc dừng chờ nghiệm thu, không tự chuyển sang Giai đoạn 3
 
 ## 2. Phạm vi và nguyên tắc bất biến
 
@@ -795,3 +795,15 @@ Chỉ xử lý từng điểm khi đầu việc chức năng tương ứng bắt
 - Root `npm run typecheck`, `npm run build` và `npm test`: đạt; tổng cộng `50/50` runtime tests, ngoài contract type tests.
 - Runtime check đạt cho `/health`, nhiều kết quả (`2` Lead/`2` Student), empty, lỗi một nguồn và cả hai nguồn lỗi; tiến trình kiểm tra đã dừng và cổng `3000` đã được giải phóng.
 - Handoff: Giai đoạn 2 (`MOCK-01` → `MOCK-08`) hoàn thành; dừng chờ người dùng nghiệm thu, không tự chuyển sang Giai đoạn 3.
+
+### 2026-10-12 — Review/refactor sau Giai đoạn 2
+
+- Đã đọc lại toàn bộ plan hiện hành và rà soát `packages/contracts`, Backend models/clients/fixtures/service/controller/route, composition root cùng các test liên quan. Kiến trúc module, trách nhiệm models/clients/service/controller và contract/trạng thái nguồn hiện đúng phạm vi Giai đoạn 2; không phát hiện dependency thừa hoặc code trùng lặp đủ lớn để cần thêm abstraction.
+- Vấn đề cần chỉnh: controller, route và `createApp` đang phụ thuộc vào class `SearchByPhoneService` cụ thể. Do class có private dependencies, ranh giới HTTP khó thay bằng một use case test double và nhánh lỗi nội bộ của controller chưa được integration test trực tiếp.
+- Đã thêm interface `SearchByPhoneUseCase` và type kết quả nội bộ ngay trong service hiện có; `SearchByPhoneService` implements interface, còn controller/route/composition root chỉ phụ thuộc interface. Không tạo folder/abstraction mới và không đổi endpoint, HTTP status hay JSON contract.
+- Đã thêm integration test cho use case rejection: endpoint trả `500` với `ApiError` đã làm sạch và không rò message nội bộ. Các test success, nhiều kết quả, empty, partial từng nguồn và cả hai nguồn lỗi vẫn giữ nguyên.
+- Giữ nguyên shared contracts dạng generic và Backend Lead/Student models riêng. Chưa đưa business model Backend vào `packages/contracts`; việc định nghĩa/mapping kiểu dữ liệu Frontend sẽ được xử lý đúng phạm vi `UI-01`.
+- Root `npm run typecheck`, `npm run build` và `npm test`: đạt; tổng cộng `51/51` runtime tests (`1` contracts, `48` Backend, `2` Frontend), ngoài contract type tests.
+- Runtime check từ Backend build đạt cho toàn bộ registry: `1 Lead/1 Student`, `2 Lead/2 Student`, thiếu/không khớp liên kết, empty, CRM error, LMS error và cả hai nguồn error. Không gọi API production hoặc đọc token.
+- `git diff --check`: đạt.
+- Handoff: review/refactor Giai đoạn 2 hoàn thành. Đầu việc kế tiếp vẫn là `UI-01` — Frontend API service gọi `/api/v1/search`; dừng chờ người dùng nghiệm thu, không tự triển khai Giai đoạn 3.

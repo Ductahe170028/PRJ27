@@ -1,12 +1,12 @@
 import { Router } from "express";
 
 import { createSearchController } from "../controllers/search.controller.js";
-import type { SearchByPhoneService } from "../services/search-by-phone.service.js";
+import type { SearchByPhoneUseCase } from "../services/search-by-phone.service.js";
 
-export function createSearchRouter(searchService: SearchByPhoneService): Router {
+export function createSearchRouter(searchUseCase: SearchByPhoneUseCase): Router {
   const router = Router();
 
-  router.get("/", createSearchController(searchService));
+  router.get("/", createSearchController(searchUseCase));
 
   return router;
 }

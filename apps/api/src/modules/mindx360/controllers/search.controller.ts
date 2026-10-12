@@ -1,7 +1,7 @@
 import type { ApiError } from "@mindx-360/contracts";
 import type { RequestHandler } from "express";
 
-import type { SearchByPhoneService } from "../services/search-by-phone.service.js";
+import type { SearchByPhoneUseCase } from "../services/search-by-phone.service.js";
 
 const invalidPhoneError: ApiError = {
   code: "INVALID_REQUEST",
@@ -16,7 +16,7 @@ const internalError: ApiError = {
 };
 
 export function createSearchController(
-  searchService: SearchByPhoneService,
+  searchUseCase: SearchByPhoneUseCase,
 ): RequestHandler {
   return async (request, response) => {
     const rawPhone = request.query.phone;
@@ -26,7 +26,7 @@ export function createSearchController(
     }
 
     try {
-      const result = await searchService.searchByPhone(rawPhone.trim());
+      const result = await searchUseCase.searchByPhone(rawPhone.trim());
       response.status(200).json(result);
     } catch {
       response.status(500).json(internalError);

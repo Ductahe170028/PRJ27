@@ -7,13 +7,16 @@ import {
   createMockLmsSearchScenarios,
 } from "./modules/mindx360/fixtures/mock-search-scenarios.js";
 import { createSearchRouter } from "./modules/mindx360/routes/search.routes.js";
-import { SearchByPhoneService } from "./modules/mindx360/services/search-by-phone.service.js";
+import {
+  SearchByPhoneService,
+  type SearchByPhoneUseCase,
+} from "./modules/mindx360/services/search-by-phone.service.js";
 
 export interface AppDependencies {
-  readonly searchByPhoneService?: SearchByPhoneService;
+  readonly searchByPhoneService?: SearchByPhoneUseCase;
 }
 
-function createDefaultSearchService(): SearchByPhoneService {
+function createDefaultSearchService(): SearchByPhoneUseCase {
   return new SearchByPhoneService(
     new MockCrmSearchClient(createMockCrmSearchScenarios()),
     new MockLmsSearchClient(createMockLmsSearchScenarios()),

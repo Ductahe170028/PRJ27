@@ -11,6 +11,15 @@ import type { CrmLeadSummary } from "../../crm/models/crm-lead-summary.js";
 import type { LmsSearchClient } from "../../lms/clients/lms-search-client.js";
 import type { LmsStudentSummary } from "../../lms/models/lms-student-summary.js";
 
+export type SearchByPhoneResult = SearchResponse<
+  CrmLeadSummary,
+  LmsStudentSummary
+>;
+
+export interface SearchByPhoneUseCase {
+  searchByPhone(phone: string): Promise<SearchByPhoneResult>;
+}
+
 const failureStatuses = new Set(["forbidden", "unavailable", "error"]);
 
 function isFailure<TItem>(state: SearchSourceState<TItem>): boolean {
@@ -49,15 +58,13 @@ function unexpectedClientError(source: DataSource): ApiError {
   };
 }
 
-export class SearchByPhoneService {
+export class SearchByPhoneService implements SearchByPhoneUseCase {
   public constructor(
     private readonly crmClient: CrmSearchClient,
     private readonly lmsClient: LmsSearchClient,
   ) {}
 
-  public async searchByPhone(
-    phone: string,
-  ): Promise<SearchResponse<CrmLeadSummary, LmsStudentSummary>> {
+  public async searchByPhone(phone: string): Promise<SearchByPhoneResult> {
     const [crm, lms] = await Promise.all([
       this.searchCrmSafely(phone),
       this.searchLmsSafely(phone),
