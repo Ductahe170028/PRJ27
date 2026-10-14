@@ -1,24 +1,44 @@
 {
-  "name": "mindx-360",
-  "version": "0.0.0",
+  "name": "denise-homework-reopen",
+  "version": "1.0.0",
   "private": true,
-  "description": "Read-only CRM and LMS support tool for MindX Tech Support",
+  "type": "module",
+  "engines": { "node": ">=22.11" },
   "scripts": {
-    "dev": "npm run build --workspace @mindx-360/contracts && concurrently --kill-others --kill-signal SIGINT --kill-timeout 3000 --names API,WEB --prefix-colors cyan,magenta \"npm run dev --workspace @mindx-360/api\" \"npm run dev --workspace @mindx-360/web\"",
-    "build": "npm run build --workspace @mindx-360/contracts && npm run build --workspace @mindx-360/api && npm run build --workspace @mindx-360/web",
-    "typecheck": "npm run typecheck --workspace @mindx-360/contracts && npm run build --workspace @mindx-360/contracts && npm run typecheck --workspace @mindx-360/api && npm run typecheck --workspace @mindx-360/web",
-    "test": "npm test --workspace @mindx-360/contracts && npm test --workspace @mindx-360/api && npm test --workspace @mindx-360/web"
+    "dev": "concurrently -k -n API,WEB -c green,blue \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch api/src/server.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "typecheck": "tsc -p api/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "build": "npm run typecheck && tsc -p api/tsconfig.json && vite build --config web/vite.config.ts",
+    "start": "node api/dist/api/src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "overrides": {
-    "jsdom": "26.1.0",
-    "shell-quote": "1.11.0"
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "concurrently": "9.2.1",
-    "jsdom": "26.1.0"
+    "@playwright/test": "^1.56.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/supertest": "^6.0.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.0",
+    "jsdom": "^26.1.0",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.6",
+    "vitest": "^3.2.4"
   }
 }
