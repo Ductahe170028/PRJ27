@@ -1,44 +1,30 @@
 {
-  "name": "denise-homework-reopen",
-  "version": "1.0.0",
+  "name": "ai-game-creator",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.11" },
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22.0.0", "npm": ">=10.0.0" },
   "scripts": {
-    "dev": "concurrently -k -n API,WEB -c green,blue \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "tsx watch api/src/server.ts",
-    "dev:web": "vite --config web/vite.config.ts",
-    "typecheck": "tsc -p api/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "build": "npm run typecheck && tsc -p api/tsconfig.json && vite build --config web/vite.config.ts",
-    "start": "node api/dist/api/src/server.js",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:e2e": "playwright test"
-  },
-  "dependencies": {
-    "dotenv": "^16.6.1",
-    "express": "^5.1.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "zod": "^3.25.76"
+    "dev": "npm run build:contracts && concurrently -k -n api,web,contracts -c cyan,green,gray \"npm run dev:api\" \"npm run dev:web\" \"npm run dev -w @game-creator/contracts\"",
+    "dev:api": "npm run dev -w @game-creator/api",
+    "dev:web": "npm run dev -w @game-creator/web",
+    "build:contracts": "npm run build -w @game-creator/contracts",
+    "build": "npm run build:contracts && npm run build -w @game-creator/api && npm run build -w @game-creator/web",
+    "typecheck": "npm run build:contracts && npm run typecheck --workspaces --if-present && tsc -p tsconfig.tools.json",
+    "test": "npm run build:contracts && vitest run",
+    "test:e2e": "npm run build && playwright test",
+    "start:api": "npm run start -w @game-creator/api",
+    "preview:web": "npm run preview -w @game-creator/web"
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.0",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.0",
-    "@types/express": "^5.0.3",
-    "@types/node": "^22.18.0",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
+    "@playwright/test": "1.60.0",
+    "@types/node": "^22.15.0",
     "@types/supertest": "^6.0.3",
-    "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.2.0",
-    "jsdom": "^26.1.0",
+    "concurrently": "^9.2.1",
     "supertest": "^7.1.4",
-    "tsx": "^4.20.5",
-    "typescript": "^5.9.2",
-    "vite": "^6.3.6",
-    "vitest": "^3.2.4"
-  }
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "overrides": { "vite": "^6.4.5" }
 }

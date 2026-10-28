@@ -1,0 +1,26 @@
+{
+  "name": "@game-creator/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "start": "node dist/server.js",
+    "test:server": "tsx test/e2e-server.ts"
+  },
+  "dependencies": {
+    "@game-creator/contracts": "0.1.0",
+    "@google/genai": "^2.31.0",
+    "groq-sdk": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "tsx": "^4.20.6"
+  }
+}

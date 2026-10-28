@@ -1,152 +1,190 @@
-# Denise Homework Reopen V1
+# AI Game Creator — Phase 2
 
-Ứng dụng Tech Support mở lại **một submission thực hành đang `SUBMITTED`**. React + TypeScript + Vite ở `web/`; Express + TypeScript ở `api/`; hợp đồng dữ liệu và quy tắc dùng chung ở `shared/`. Đặc tả gốc: [Denise_Homework_Reopen_V1_Plan.md](Denise_Homework_Reopen_V1_Plan.md).
+Nhập mô tả tiếng Việt/tiếng Anh, chọn **Gemini/Groq**, chơi game 2D từ **GameSpec v1**. AI chỉ sinh JSON; renderer Phaser của dự án dựng game trong iframe sandbox. Hỗ trợ **platformer** và **top-down collector/dodge**: di chuyển, vật cản, kẻ địch, máu, điểm, nhặt xu, thắng/thua, chơi lại và bàn phím/cảm ứng.
 
-## Chạy cục bộ
+Demo **Moonlight Run** của Phase 1 được giữ nguyên và chạy không cần key. Demo là lựa chọn mặc định ban đầu; lỗi AI không tự chuyển sang demo hay provider khác. Chỉ lựa chọn provider/model được lưu trong localStorage; game không được lưu khi reload.
 
-Cần Node.js **22.11 trở lên** và npm. Chạy từ thư mục gốc:
+## Chạy trên Windows
+
+Cần **Node.js 22+**, **npm 10+**. Vite 6 tương thích Node 22.11. Mở PowerShell tại thư mục dự án:
 
 ```powershell
-npm ci
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+npm install
 npm run dev
 ```
 
-Mở **http://127.0.0.1:5173**. API chạy tại `127.0.0.1:4000`; Vite chuyển tiếp `/api` tới backend. Mặc định `API_MODE=mock`, không cần credential. Dùng đúng URL `127.0.0.1` để khớp `WEB_ORIGIN`; nếu đổi URL/port, cập nhật biến này.
+Mở **http://127.0.0.1:5173**; backend **http://127.0.0.1:3001**. `Ctrl+C` để dừng. Nếu PowerShell chặn `npm.ps1`, dùng `npm.cmd` thay `npm`.
 
-Nhập `26009543` → **Tìm học viên** → chọn khóa Scratch và lớp `HN-SCR-2408` → chọn đúng phần **Mở lại** → kiểm tra thông tin/lý do → xác nhận. Buổi 8 chứng minh vẫn mở được Task 1 khi Task 2 chưa nộp; buổi 9 có hai phần đã nộp và chỉ phần được chọn thay đổi. Bài nộp file có cảnh báo đính kèm lại file.
+1. Chưa có key: giữ **Demo**, nhập prompt, nhấn **Generate Game** để chơi Moonlight Run.
+2. Để dùng AI, cấu hình backend bên dưới rồi khởi động lại.
+3. Mở **Settings**, chọn **Gemini** và model. **Test connection** chủ động kiểm tra key/quyền truy cập bằng metadata API, không sinh nội dung và không xác nhận quota còn lại.
+4. Nhập `Tạo game ninja nhặt xu và tránh quái`, nhấn **Generate Game**.
+5. Bấm vào preview để điều khiển bằng bàn phím. Điều khiển hiển thị dưới preview; **R** chơi lại. Platformer có nhảy, top-down di chuyển bốn hướng.
+6. Chọn **Groq** trong Settings, nhập prompt khác và tạo game mới.
 
-Mock lưu trong RAM, khởi động lại backend sẽ phục hồi dữ liệu. Quiz có trạng thái để Tech xem nhưng không có nút mở; Checkpoint và bài thuộc lớp khác bị lọc ở backend. Khóa đã kết thúc vẫn có thể chọn.
+## API key và model
 
-| Mã demo | Tình huống |
-| --- | --- |
-| `26009543` | Luồng đầy đủ; kết quả tìm gần đúng đứng trước kết quả chính xác; ba ghi danh gồm khóa đã kết thúc |
-| `26000001` | Chưa có tài khoản Denise |
-| `26000002` | Không có khóa học |
-| `26000003` | Hai học viên trùng mã, không tự chọn |
-| `26000004` | Có khóa nhưng chưa có BTVN |
-| `26000005` | Kết quả LMS phân trang chưa đầy đủ, chặn tra cứu |
-| `99999999` | Không tìm thấy học viên |
+**`apps/api/.env` đã được tạo trong workspace**, để trống key/allowlist để bạn bổ sung; file bị `.gitignore` loại trừ. Khi clone mới, nếu chưa có file:
+
+```powershell
+if (-not (Test-Path apps/api/.env)) {
+  Copy-Item apps/api/.env.example apps/api/.env
+}
+```
+
+Điền trong **backend**, không đưa key vào `apps/web`, biến `VITE_*`, localStorage hoặc URL:
+
+```dotenv
+GEMINI_API_KEY=
+GEMINI_ALLOWED_MODELS=
+GEMINI_FREE_TIER_CONFIRMED=false
+GROQ_API_KEY=
+GROQ_ALLOWED_MODELS=
+GROQ_FREE_TIER_CONFIRMED=false
+```
+
+Catalog hỗ trợ các model sau; **catalog không tự bật model cho tài khoản**:
+
+| Provider | Model ID | Output |
+| --- | --- | --- |
+| Gemini | `gemini-2.5-flash-lite` | Structured JSON schema |
+| Gemini | `gemini-2.5-flash` | Structured JSON schema |
+| Groq | `openai/gpt-oss-20b` | Strict JSON schema |
+| Groq | `llama-3.3-70b-versatile` | JSON mode + Zod |
+
+Đã đối chiếu ID/capability với [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing), [Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output), [Groq structured outputs](https://console.groq.com/docs/structured-outputs), [Groq rate limits](https://console.groq.com/docs/rate-limits). Quota, quyền truy cập và giá có thể thay đổi theo model/tài khoản.
+
+Trước khi bật provider, kiểm tra Google AI Studio hoặc Groq Console rằng tài khoản/project đang dùng free tier và model được dùng miễn phí. Sau đó điền allowlist, ví dụ `GEMINI_ALLOWED_MODELS=gemini-2.5-flash-lite` hoặc `GROQ_ALLOWED_MODELS=openai/gpt-oss-20b`, và đặt `*_FREE_TIER_CONFIRMED=true` tương ứng. Nhiều model phân cách bằng dấu phẩy, không wildcard. Provider chưa dùng có thể để trống.
+
+Cờ xác nhận là **xác nhận của người vận hành**, không phải phép kiểm tra billing tự động. Ứng dụng không thể bảo đảm tài khoản đã bật billing sẽ không bị tính phí; nó không thay đổi billing, không chọn model ngoài allowlist, không nâng model và không tự fallback. Metadata API không chứng minh free tier hay khả năng generate khi quota đã hết. Chưa có credentials thật nên vẫn cần kiểm thử live sau khi bạn điền `.env`.
+
+Sau khi sửa `.env`, **khởi động lại backend** và nhấn **Tải lại cấu hình** trong Settings. Thiếu key/cấu hình model sai khiến provider unavailable, không crash server. Không ghi đè `.env` chứa key bằng file example.
+
+## Chạy hai terminal
+
+Chạy `npm install` và `npm run build:contracts` từ thư mục gốc trước, sau đó:
+
+```powershell
+# Terminal 1
+npm run dev:api
+```
+
+```powershell
+# Terminal 2
+npm run dev:web
+```
+
+`npm run dev` chạy watcher cho API, frontend, contracts và bundle game. Nếu chạy riêng và sửa contracts, build lại contracts. Sửa renderer thì nhấn Generate Game để nạp runtime mới.
+
+## Cấu trúc và phần thay đổi
+
+```text
+apps/api/
+  .env, .env.example               Key/model local và mẫu không secret
+  src/
+    app.ts, server.ts              Routes, env, lỗi, shutdown
+    providers/
+      ai-provider.ts              AIProvider / AIRequest
+      gemini-provider.ts          SDK chính thức @google/genai
+      groq-provider.ts            SDK chính thức groq-sdk
+      provider-registry.ts        Resolve allowlist, metadata mỗi request
+      create-registry.ts          Lắp provider từ env
+      model-catalog.ts            Model hỗ trợ và output capabilities
+      errors.ts                   Lỗi chuẩn hóa, không lộ payload SDK
+      game-provider.ts            Giữ interface demo Phase 1
+      demo-game-provider.ts       Giữ Moonlight Run Phase 1
+    services/
+      game-generation-service.ts  Gọi AI, timeout, parse/validate, metadata
+      system-prompt.ts            Quy tắc game và schema provider
+      request-budget.ts           Rate/concurrency/daily limit trong RAM
+      game-service.ts             Giữ service demo Phase 1
+  test/                           Unit/API/SDK mocks và E2E mock server
+apps/web/src/
+  App.tsx                         Prompt, loading/error, selection, preview
+  components/ProviderSettings.tsx Provider/model, config, test connection
+  components/GamePreview.tsx      Iframe và handshake
+  lib/api.ts                      HTTP client và validation
+  lib/preview-document.ts         HTML cố định, CSP, điều khiển
+  game/
+    runtime.ts                    Bundle độc lập, chọn renderer
+    GameSpecScene.ts              Hai thể loại GameSpec v1
+    PlatformerScene.ts            Giữ renderer Phase 1
+packages/contracts/src/
+  index.ts                        Request/response và protocol iframe
+  ai.ts                           Metadata và selection schemas
+  game-spec.ts                    Zod strict, bounds và JSON schema v1
+e2e/creator.spec.ts                Regression Phase 1
+e2e/ai.spec.ts                     Settings, provider switching, gameplay
+```
+
+Npm workspaces, TypeScript strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`. Frontend không import SDK hoặc key. Thêm provider bằng cách implement `AIProvider`, khai báo catalog và đăng ký ở `create-registry.ts`; không cần sửa pipeline generation/renderer nếu vẫn trả GameSpec v1. Chưa có storage layer/database.
+
+## API
+
+| Endpoint | Input | Output |
+| --- | --- | --- |
+| `GET /api/health` | — | `{status:"ok",service:"ai-game-creator-api",mode:"multi-provider"}` |
+| `GET /api/ai/providers` | — | `{providers:[{id,name,available,reason,models:[{id,name,capabilities}]}]}` |
+| `POST /api/ai/test-connection` | `{providerId,modelId}` | `{status:"connected",providerId,modelId,message}` |
+| `POST /api/games/generate` | `{prompt,providerId,modelId}` | `201 {data:{id,title,prompt,provider,modelId,capabilities,createdAt,game}}` |
+
+Ví dụ AI generation:
+
+```json
+{"prompt":"Tạo game ninja nhặt xu và tránh quái","providerId":"gemini","modelId":"gemini-2.5-flash-lite"}
+```
+
+Demo nhận `{prompt,providerId:"demo",modelId:"platformer-v1"}`. Request chỉ có `{prompt}` vẫn chạy demo, response giữ schema Phase 1 không có `modelId`/`capabilities`. Chọn AI nhưng thiếu model sẽ lỗi, không chuyển sang demo.
+
+Lỗi dạng `{error:{code,message,retryAfterSeconds?,issues?}}`. Mã AI: `missing_key` (503), `invalid_provider`/`invalid_model` (400), `configuration_required` (503), `rate_limit` (429, có `Retry-After`), `timeout` (504), `provider_error` (502), `invalid_game_spec` (422). Lỗi prompt/JSON/body giữ mã Phase 1. `issues` chỉ chứa field path, không trả raw output provider. Không log prompt, key hoặc SDK response. Client disconnect sẽ hủy request đang chạy.
+
+## Giới hạn và môi trường
+
+| Backend variable | Mặc định | Giới hạn |
+| --- | --- | --- |
+| `HOST`, `PORT` | `127.0.0.1`, `3001` | Bind local |
+| `CLIENT_ORIGINS` | localhost và 127.0.0.1:5173 | CORS, phân cách dấu phẩy |
+| `AI_REQUESTS_PER_MINUTE` | `5` | 1–60, theo IP, cửa sổ 60 giây |
+| `AI_REQUESTS_PER_DAY` | `100` | 1–1000, tổng backend, reset ngày UTC |
+| `AI_MAX_CONCURRENT` | `2` | 1–5, tổng backend |
+| `AI_TIMEOUT_MS` | `45000` | 1–50000 ms; SDK cũng có timeout 45 giây |
+
+Test connection và generation dùng chung ngân sách. Request bị từ chối vì cấu hình không tốn ngân sách gọi provider; request đã gọi vẫn tính dù lỗi. Bộ đếm reset khi restart, không phải quota phân tán nhiều server. Không tự retry, không gọi AI lần hai để sửa dữ liệu; Gemini một attempt, Groq `maxRetries:0`. Mở Settings chỉ đọc cấu hình backend, không gọi upstream.
+
+Prompt 1–2000 ký tự sau trim; HTTP body 16 KB; output 4096 token và GameSpec 32 KB UTF-8. Game 960×540, tối đa 14 platforms, 12 obstacles, 8 enemies, 24 collectibles. Tọa độ, tốc độ, kích thước, máu, màu, enum đều có giới hạn. Zod strict loại field lạ; kiểm tra spawn, patrol, mục tiêu điểm và tầm nhảy platformer. Không có field code/URL/script/style. Schema provider ràng buộc cấu trúc; Zod kiểm tra đầy đủ bounds và quan hệ sau parse. Chỉ có thể bỏ fence của một khối markdown JSON duy nhất; dữ liệu sai trả 422, không chạy code.
+
+Frontend timeout HTTP 60 giây và khởi tạo iframe 15 giây. Đổi `API_PROXY_TARGET` trong `apps/web/.env` khi đổi cổng backend (mặc định `http://127.0.0.1:3001`); `VITE_API_BASE_URL` mặc định rỗng để dùng proxy `/api`. Biến `VITE_*` công khai trong browser bundle, không chứa secret.
 
 ## Build và kiểm thử
 
 ```powershell
 npm run typecheck
 npm test
-npm run test:e2e
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
-`npm test` gồm nghiệp vụ, HTTP endpoints, GraphQL transport và trạng thái giao diện. Mọi API nguồn trong tests được mock/stub; **không gửi request tới LMS/Denise thật**.
+Unit/API tests kiểm tra registry, allowlist, thiếu key, JSON/schema, generation mock, SDK adapter mock, lỗi/quota/timeout/cancel và ngân sách. E2E build và chạy Chromium với frontend thật cùng **Express test server inject mock providers** ở `apps/api/test/e2e-server.ts`. Entrypoint production không có chế độ mock. Test không đọc `.env` và không gửi API request đến Gemini/Groq, không tốn quota. Mock chỉ thay đầu ra provider, vẫn qua service, Zod, HTTP, frontend và Phaser thật.
 
-E2E dùng Microsoft Edge đã cài (`channel: msedge`), backend mock riêng tại `4100` và Vite tại `5174`. Backend E2E không đọc `.env`, không khởi tạo real client; tests không dùng lại server đang chạy. Nếu máy chưa có Edge, cài Edge hoặc đổi `channel` trong `playwright.config.ts` theo trình duyệt Playwright được cài trên máy. E2E kiểm tra mở lại, cảnh báo file, hủy xác nhận, lỗi/empty state, mobile và kết quả ghi chưa xác định.
+E2E kiểm tra regression demo, Settings/persistence, không gọi ẩn, đổi provider, hai renderer, nhảy/đáp nền tảng, va chạm, máu/điểm, thắng/thua/chơi lại, quota, unavailable, sandbox và mobile demo. Kiểm tra chuyển động bằng pixel canvas sau bàn phím, không có test backdoor trong runtime. Screenshot/trace trong `test-results/`. Dừng server đang chiếm cổng 3001/5173 trước E2E.
 
-Sau build, có thể chạy frontend và API từ một cổng:
+Chạy bản build bằng hai terminal:
 
 ```powershell
-$env:WEB_ORIGIN = 'http://127.0.0.1:4000'
-npm start
+npm run start:api
 ```
 
-Mở **http://127.0.0.1:4000**. `npm start` phục vụ `web/dist` và backend đã biên dịch. Khi quay về dev, bỏ override này bằng `Remove-Item Env:WEB_ORIGIN` hoặc sửa `.env` tương ứng. Không đưa `.env` vào Git.
-
-## API của ứng dụng
-
-| Method | Endpoint | Vai trò |
-| --- | --- | --- |
-| GET | `/api/health` | Kiểm tra server; không trả dữ liệu học viên |
-| GET | `/api/context` | Chế độ, người thao tác và quyền mở lại |
-| GET | `/api/students/:studentCode` | So khớp chính xác LMS `studentId`; danh sách khóa Denise |
-| GET | `/api/students/:studentCode/courses/:enrollmentId/lessons` | BTVN đúng lớp, bỏ Checkpoint, sắp theo buổi |
-| GET | `/api/students/:studentCode/courses/:enrollmentId/lessons/:studentLessonId/submissions/:submissionId` | Đọc lại và kiểm tra trước khi xác nhận |
-| POST | `/api/reopen` | Một mutation yêu cầu làm lại; đọc kiểm chứng `REDO` |
-
-POST nhận `studentCode`, `enrollmentId`, `studentLessonId`, `submissionId`, `expectedCategory`, `expectedType`, `expectedSubmittedCount`, `note`. Backend tự truy vấn lại student → courses → lessons → submission và đối chiếu; không tin các ID hay status do frontend cung cấp. Ghi danh đã xóa, lớp sai, bài Checkpoint, Quiz, trạng thái khác `SUBMITTED`, dữ liệu thay đổi hoặc thiếu quyền đều bị chặn. Không có GraphQL proxy tùy ý.
-
-Lý do bắt buộc, 1–1.000 ký tự sau khi trim, có thể được học viên/giáo viên nhìn thấy. Backend không tải Scratch state hoặc tệp. Mutation duy nhất là `StudentSubmission_requestRedoSubmission`; không reset, không sửa status thật bằng API khác.
-
-## Kết nối API đọc thật
-
-Các document và variables được sao chép từ plan trong `api/src/clients/documents.ts`. **Chưa xác minh schema/endpoint thật**; ứng dụng không ngầm coi các mô tả trong plan là đã được thử.
-
-1. Cung cấp endpoint HTTPS của LMS/Denise và credential được cấp phép cho môi trường/dữ liệu cho phép.
-2. Điền `LMS_GRAPHQL_URL`, `DENISE_GRAPHQL_URL` cùng `*_AUTH_HEADER` và `*_AUTH_VALUE` trong `.env`. Giá trị auth là **toàn bộ giá trị header** theo định dạng công ty xác minh; không tự thêm `Bearer`.
-3. Chọn chế độ cá nhân localhost hoặc gateway nội bộ như bên dưới.
-4. Đặt `API_MODE=real`, giữ `REAL_MUTATIONS_ENABLED=false`; kiểm tra các API đọc và ID với dữ liệu được phép.
-
-### Chế độ cá nhân localhost: đọc thật trên UI
-
-Khi đã có endpoint/token trong `.env`, cấu hình:
-
-```dotenv
-API_MODE=real
-LOCAL_PERSONAL_MODE=true
-HOST=127.0.0.1
-PORT=4000
-WEB_ORIGIN=http://127.0.0.1:5173
-APP_ENV=development
-TRUSTED_PROXY_AUTH=false
-REAL_MUTATIONS_ENABLED=false
-REAL_WRITE_APPROVAL=
-APPROVED_TEST_LMS_IDS=
-APPROVED_TEST_COURSE_IDS=
+```powershell
+npm run preview:web
 ```
 
-Giữ nguyên `LMS_GRAPHQL_URL`, `DENISE_GRAPHQL_URL`, `LMS_AUTH_VALUE`, `DENISE_AUTH_VALUE` đã điền. Ví dụ, nếu upstream yêu cầu Bearer thì các giá trị auth phải có đầy đủ tiền tố `Bearer `; backend không tự thêm tiền tố và không gửi token ra frontend. Không đặt token vào biến `VITE_*`.
+Mở http://127.0.0.1:5173. Build xuất `packages/contracts/dist`, `apps/api/dist`, `apps/web/dist`; Phaser bundle từ npm vào `runtime/game.js`, không tải CDN. `vite preview` dùng kiểm tra local, chưa cấu hình hosting production.
 
-Chạy `npm run dev`, mở **http://127.0.0.1:5173** → nhập mã học viên thật được phép tra cứu → chọn khóa/lớp → xem danh sách BTVN. Không cần Postman, gateway hoặc header role. `/api/context` trả người thao tác `local-personal`; nút **Mở lại** bị khóa. Mỗi request tới API dữ liệu phải có kết nối loopback, Host là `127.0.0.1` và nguồn yêu cầu phù hợp; không tin `X-Forwarded-For` để bỏ qua giới hạn này.
+## Cách ly và giới hạn hiện tại
 
-`LOCAL_PERSONAL_MODE` mặc định `false`. Khi bật, backend **từ chối khởi động** nếu `HOST` khác chính xác `127.0.0.1` hoặc `APP_ENV` khác `development`. Đổi `.env` xong cần dừng và chạy lại `npm run dev` vì watcher không theo dõi thay đổi cấu hình `.env`.
-
-Chế độ cá nhân chỉ cho phép đọc API thật: các điều kiện bảo vệ mutation cũ được giữ nguyên, gồm môi trường `test`/`staging` và xác thực gateway. Do local mode bắt buộc `development`, bật riêng cờ ghi cũng không mở khóa mutation. Các allowlist là bộ lọc tùy chọn cho **ghi**, không giới hạn dữ liệu API đọc.
-
-### Chế độ gateway nội bộ
-
-Đặt `LOCAL_PERSONAL_MODE=false` và `TRUSTED_PROXY_AUTH=true` sau khi gateway đã được cấu hình. Backend kiểm tra role `homework-support` qua `x-tech-id`/`x-tech-roles` (đổi tên/role bằng `.env` khi cần). **Gateway phải loại bỏ header danh tính từ client rồi chèn danh tính đã xác thực; backend chỉ được truy cập từ gateway**. Đây là giao diện kết nối xác thực, chưa phải tích hợp SSO công ty đã xác minh. Khi cả local mode và gateway đều tắt, real mode từ chối mọi API dữ liệu.
-
-Token nguồn chỉ nằm ở backend; frontend không nhận token, không dùng localStorage. HTTP lỗi, auth, GraphQL `errors` kể cả HTTP 200, JSON/schema lỗi và timeout đều được xử lý; không phản chiếu nguyên văn nội dung lỗi upstream. Endpoint không theo redirect để tránh chuyển credential sang nơi khác. `WEB_ORIGIN` cần khớp URL giao diện/gateway để kiểm tra nguồn POST.
-
-### Những điểm cần xác minh với API thật
-
-- URL, auth headers, thời hạn token và quyền của tài khoản API; gateway/SSO khi dùng chế độ gateway.
-- Schema của năm operations và enum thực tế cho submission `type`. **`SCRATCH`/`FILE_UPLOAD` chỉ là enum fixture mock**; real mode chưa suy luận định dạng bài, nên hiển thị cảnh báo tệp một cách thận trọng trong xác nhận.
-- LMS `id` → `studentServiceId` → `studentUid`; `StudentLesson_find.studentId` có thực sự nhận Base user ID không.
-- `StudentSubmission.lessonId` có trỏ tới `StudentLesson.lessonId` (ID bài học gốc) như adapter đang kiểm tra không. Nếu khác, cần sửa adapter sau khi xác minh; không bỏ qua kiểm tra ownership.
-- Field phân trang của `StudentQuery`: hiện chỉ gửi variables trong plan (`itemsPerPage: 5`). Khi `total > data.length`, chặn để tránh bỏ sót học viên trùng mã; không bịa tham số trang.
-- Hành vi web học viên sau `REDO`, khả năng giữ nội dung Scratch/file và ảnh hưởng tới `StudentLesson.status`. Tool chỉ khẳng định submission chuyển `REDO`, không khẳng định toàn bộ lesson chuyển `IN_PROGRESS`.
-
-## Mutation thật: mặc định khóa
-
-**Chưa chạy mutation thật.** Chỉ cấu hình cho dữ liệu thử nghiệm sau khi chủ dự án cung cấp đối tượng test, xác nhận quyền và chủ động cho phép. Các điều kiện bắt buộc đồng thời:
-
-```dotenv
-API_MODE=real
-LOCAL_PERSONAL_MODE=false
-TRUSTED_PROXY_AUTH=true
-APP_ENV=test
-REAL_MUTATIONS_ENABLED=true
-REAL_WRITE_APPROVAL=APPROVED_TEST_DATA_ONLY
-APPROVED_TEST_LMS_IDS=
-APPROVED_TEST_COURSE_IDS=
-```
-
-Chỉ `APP_ENV=test` hoặc `staging` cho phép ghi; `development` và `production` luôn bị khóa. Chế độ cá nhân không dùng được với `test`/`staging`, nên không thể dùng nó để bỏ qua các bảo vệ này.
-
-Hai allowlist được xét **độc lập**:
-
-| Biến | Để trống | Có ID, phân cách bằng dấu phẩy |
-| --- | --- | --- |
-| `APPROVED_TEST_LMS_IDS` | Không giới hạn học viên theo danh sách này | Chỉ ghi cho LMS `Student.id` được khai báo, không phải mã `studentId` |
-| `APPROVED_TEST_COURSE_IDS` | Không giới hạn khóa học theo danh sách này | Chỉ ghi cho Denise `courseId` được khai báo, không phải ID ghi danh |
-
-Ví dụ, chỉ điền danh sách LMS sẽ giới hạn học viên nhưng không giới hạn khóa theo allowlist; chỉ điền danh sách course sẽ giới hạn khóa nhưng không giới hạn học viên theo allowlist. Danh sách trống **không bỏ qua** cờ ghi, giá trị approval, môi trường, quyền, kiểm tra ownership, trạng thái `SUBMITTED`, lý do bắt buộc, audit hoặc xác minh `REDO`. Các allowlist không chặn API đọc.
-
-Chỉ bật ghi sau khi chủ dự án xác nhận đối tượng test và quyền thao tác. Cấu hình phải đi kèm endpoint môi trường test được xác minh; chương trình không thể tự suy ra một URL có phải production hay không. Không trỏ tới production để thử ghi.
-
-## Xác minh, audit và kết quả chưa xác định
-
-Mỗi thao tác gọi mutation **một lần**, sau đó luôn đọc lại submission, kể cả khi mutation timeout/trả lỗi GraphQL. Chỉ báo thành công khi ID, lớp, bài, category/type khớp và status là `REDO`. Nếu đọc lại xác minh được sau lỗi phản hồi, trả thành công kèm thông báo giải thích; nếu không, trả `uncertain: true`, khóa thao tác gửi lại và đề nghị kiểm tra trên Denise. Frontend tải lại danh sách sau mỗi lần ghi.
-
-Khóa đồng thời và khóa thao tác chưa xác định lưu trong RAM; **chạy một backend instance** cho V1. Khóa kết quả chưa xác định có thể được giải quyết bằng đọc xác nhận `REDO`; nếu vẫn `SUBMITTED`, không tự mở khóa để retry. Khi server khởi động lại, các khóa RAM mất: Tech cần xác minh kết quả trên Denise trước khi thử ghi tiếp. Không có cơ chế transaction/CAS từ schema được cung cấp; thay đổi upstream xảy ra sau lần đọc cuối vẫn phải do Denise kiểm soát quyền/trạng thái trong mutation.
-
-Audit JSON lines ra stdout: `at`, `actorId`, `requestId`, `submissionId`, `action`, `result`, `code` nếu có. Có bản ghi bắt đầu và kết quả verified/blocked/uncertain; không log token, full name, mã LMS, lý do hay nội dung bài. Triển khai nội bộ cần đưa stdout vào hệ thống log có quyền truy cập và lưu giữ phù hợp. Không có database riêng.
+- Iframe chỉ có `sandbox="allow-scripts"`, không `allow-same-origin`; CSP chỉ cho trusted runtime có nonce, chặn kết nối mạng và form. Prompt/GameSpec không nội suy vào HTML. Không dùng `eval`, `new Function`, `dangerouslySetInnerHTML` cho nội dung AI.
+- Handshake kiểm tra source window, origin, session ID và schema. Parent dùng `postMessage` target `*` vì iframe có opaque origin; runtime gửi đúng origin parent. GameSpec kiểm tra ở server, frontend và runtime.
+- Hai thể loại dùng bộ quy tắc/renderer giới hạn, không arbitrary game code. Chất lượng màn chơi phụ thuộc AI. Bounds/reachability cơ bản không chứng minh mọi màn chơi đều hoàn thành được; dữ liệu không đạt kiểm tra trả lỗi để người dùng sửa prompt/thử lại chủ động.
+- Chưa kiểm thử live Gemini/Groq do bạn sẽ bổ sung credentials/model sau. Quota/model availability do tài khoản quyết định; Test connection không thay thế một lần generate thật.
+- Chưa làm Phase 3 tự sửa code, lưu/quản lý project, database, tài khoản/auth, Docker, billing/thanh toán hoặc publishing/hosting.
