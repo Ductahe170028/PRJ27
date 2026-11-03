@@ -59,29 +59,54 @@ test('a different prompt produces paddle/ball mechanics through the same agent',
   await expect(page.locator('.preview-footer')).toContainText('gemini');
 });
 
+test('Groq waits after a temporary 429, reports usage, then completes without a manual retry', async ({ page }) => {
+  await openAdvanced(page);
+  await page.getByLabel('Bạn muốn tạo game gì?').fill('Máy bay bắn đạn và boss [agent-wait]');
+  let jobs = 0;
+  page.on('request', (request) => { if (request.method() === 'POST' && request.url().includes('/api/agent/generate')) jobs++; });
+  await page.getByRole('button', { name: 'Generate Game', exact: true }).click();
+  await expect(page.locator('.agent-progress')).toContainText('Groq: chờ');
+  await expect(page.locator('.agent-progress')).toContainText('(retry)');
+  await expect(page.locator('.agent-progress h2')).toContainText('Completed', { timeout: 35000 });
+  await page.locator('.agent-logs summary').click();
+  await expect(page.locator('.agent-logs pre')).toContainText('input 300, output 600');
+  await expect(page.locator('.agent-error')).toHaveCount(0);
+  expect(jobs).toBe(1);
+  await expect(page.locator('.preview-footer')).toContainText('0 lần sửa');
+  await expect(page.locator('iframe')).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect(page.frameLocator('iframe').locator('canvas')).toBeVisible();
+});
+
 test('preview gets heartbeat grace after tab resume but still stops an unresponsive game', async ({ page }) => {
+  // Install before the app's Window message listener: adding a listener after
+  // startup does not reliably stop already-registered handlers on this target.
+  await page.addInitScript(() => {
+    Object.assign(window, { blockTestHeartbeat: false });
+    window.addEventListener('message', (event: MessageEvent<{ channel?: string }>) => {
+      if ((window as unknown as { blockTestHeartbeat: boolean }).blockTestHeartbeat && event.data?.channel === 'code-runtime') event.stopImmediatePropagation();
+    }, true);
+  });
   await openAdvanced(page);
   await page.getByLabel('Bạn muốn tạo game gì?').fill('Tạo game bắn máy bay');
   await page.getByRole('button', { name: 'Generate Game', exact: true }).click();
   const canvas = page.frameLocator('iframe').locator('canvas');
   await expect(canvas).toBeVisible({ timeout: 30000 });
   await expect(page.locator('.preview-state')).toHaveText('Đang chạy');
+  await page.bringToFront();
+  await expect.poll(() => page.evaluate(() => document.visibilityState)).toBe('visible');
   // Simulate a suspended parent tab waking before the iframe's next heartbeat.
   // Change the parent's clock only; the Phaser iframe keeps its real clock.
   const clock = await page.evaluateHandle(() => {
     const now = Date.now;
     let offset = 60_000;
-    const pauseHeartbeat = (event: MessageEvent<{ channel?: string }>) => {
-      if (event.data?.channel === 'code-runtime') event.stopImmediatePropagation();
-    };
-    window.addEventListener('message', pauseHeartbeat, true);
+    Object.assign(window, { blockTestHeartbeat: true });
     Date.now = () => now() + offset;
     document.dispatchEvent(new Event('visibilitychange'));
     return {
       stall: () => { offset += 10_000; },
       restore: () => {
         Date.now = now;
-        window.removeEventListener('message', pauseHeartbeat, true);
+        Object.assign(window, { blockTestHeartbeat: false });
         document.dispatchEvent(new Event('visibilitychange'));
       },
     };

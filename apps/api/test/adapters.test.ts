@@ -12,7 +12,7 @@ vi.mock('@google/genai', async (importOriginal) => ({ ...await importOriginal<ty
 } }));
 vi.mock('groq-sdk', () => ({ default: class {
   constructor(options: unknown) { sdk.groqOptions(options); }
-  chat = { completions: { create: sdk.groqGenerate } };
+  chat = { completions: { create: (...args: unknown[]) => ({ withResponse: async () => ({ data: await sdk.groqGenerate(...args), response: new Response() }) }) } };
   models = { retrieve: sdk.groqGet, list: sdk.groqList };
 } }));
 const model = (id: string): ModelInfo => {

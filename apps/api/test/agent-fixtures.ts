@@ -59,7 +59,7 @@ export async function agentFixture(request: AIRequest): Promise<string> {
   if (properties?.mechanics) return JSON.stringify(request.prompt.includes('paddle') ? paddlePlan : shooterPlan);
   if (request.prompt.includes('[agent-quota]')) throw Object.assign(new Error('quota'), { status: 429 });
   if (request.prompt.includes('[agent-fail]')) return JSON.stringify({ source: runtimeErrorSource });
-  if (request.prompt.includes('[agent-budget]') && !request.prompt.includes('diagnostics')) return JSON.stringify({ source: 'function create(api: GameAPI): void { while (true) {} } function update(api: GameAPI, dt: number): void {}' });
-  if (request.prompt.includes('[agent-repair]') && !request.prompt.includes('diagnostics')) return JSON.stringify({ source: runtimeErrorSource });
+  if (request.prompt.includes('[agent-budget]') && !request.prompt.toLowerCase().includes('diagnostics')) return JSON.stringify({ source: 'function create(api: GameAPI): void { while (true) {} } function update(api: GameAPI, dt: number): void {}' });
+  if (request.prompt.includes('[agent-repair]') && !request.prompt.toLowerCase().includes('diagnostics')) return JSON.stringify({ source: runtimeErrorSource });
   return JSON.stringify({ source: request.prompt.includes('paddle') ? paddleSource : shooterSource });
 }

@@ -6,6 +6,7 @@ import { CodeGenerator, CodeRepairAgent, GamePlanner, readSource } from './agent
 import type { ValidationResult } from './code-validator.js';
 import { IsolatedCodeValidator } from './isolated-validator.js';
 import { PlaywrightGameTester, type GameTester } from './game-tester.js';
+import type { ProviderTelemetry } from '../providers/ai-provider.js';
 
 export class AgentOrchestrator {
   private active = false;
@@ -35,14 +36,35 @@ export class AgentOrchestrator {
     const signal = AbortSignal.any([disconnect, deadline.signal]);
     let attempt = 0;
     const status = (stage: Extract<AgentEvent, { type: 'status' }>['stage'], message: string) => emit({ type: 'status', stage, message, attempt });
+    const codeAttempt = async (generate: () => Promise<string>): Promise<string> => {
+      try { return await generate(); }
+      catch (error) {
+        // Malformed/truncated provider output consumes the existing repair
+        // allowance; transport/auth/quota errors never become code repairs.
+        if (error instanceof AIError && (error.code === 'invalid_code' || error.code === 'invalid_game_spec')) {
+          emit({ type: 'log', lines: [error.message] });
+          return JSON.stringify({ generationError: error.message });
+        }
+        throw error;
+      }
+    };
+    const observe = (stage: 'Planning' | 'Coding' | 'Repairing') => (event: ProviderTelemetry) => {
+      signal.throwIfAborted();
+      if (event.type === 'wait') {
+        status(stage, `Groq: chờ ${Math.ceil(event.milliseconds / 1000)} giây để giữ trong rate limit (${event.reason}).`);
+      } else emit({ type: 'log', lines: [
+        `${event.provider} · ${stage}: input ${event.inputTokens}, output ${event.outputTokens} token (reasoning ${event.reasoningTokens} nằm trong output); cap ${event.maxOutputTokens}.`,
+        `Ước lượng input ${event.estimatedInputTokens}; quota còn ${event.remainingTokens ?? '?'} / ${event.limitTokens ?? '?'} TPM.`,
+      ] });
+    };
     try {
       signal.throwIfAborted();
       status('Planning', `${request.providerId} · ${request.modelId} — Đang lập kế hoạch cơ chế chơi.`);
-      const plan = await new GamePlanner(this.generation).plan(request, client, signal);
+      const plan = await new GamePlanner(this.generation).plan(request, client, signal, observe('Planning'));
       signal.throwIfAborted();
       emit({ type: 'plan', plan });
       status('Coding', 'Đang viết TypeScript cho cơ chế chơi trong kế hoạch.');
-      let output = await new CodeGenerator(this.generation).generate(request, plan, client, signal);
+      let output = await codeAttempt(() => new CodeGenerator(this.generation).generate(request, plan, client, signal, observe('Coding')));
       for (attempt = 0; attempt <= CODE_MAX_REPAIRS; attempt += 1) {
         if (signal.aborted) throw new AIError('timeout', 'Lượt tạo game đã hết thời gian hoặc bị hủy.', 504);
         status('Validating', 'Kiểm tra TypeScript, API cho phép và giới hạn code.');
@@ -63,7 +85,7 @@ export class AgentOrchestrator {
         emit({ type: 'log', lines: errors.slice(0, 10).map((line) => line.slice(0, 500)) });
         if (attempt === CODE_MAX_REPAIRS) throw new AIError('agent_failed', 'Game chưa vượt qua kiểm tra sau 2 lần sửa. Xem log hoặc nhấn Retry để bắt đầu lượt mới.', 422);
         status('Repairing', `Đang sửa lỗi lần ${attempt + 1}/2, giữ nguyên cơ chế được yêu cầu.`);
-        output = await new CodeRepairAgent(this.generation).repair(request, plan, source ?? output, errors, client, signal);
+        output = await codeAttempt(() => new CodeRepairAgent(this.generation).repair(request, plan, source ?? output, errors, client, signal, observe('Repairing')));
       }
     } catch (cause) {
       if (disconnect.aborted) return;

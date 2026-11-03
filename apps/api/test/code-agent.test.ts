@@ -86,6 +86,13 @@ describe('AgentOrchestrator', () => {
     expect(h.events.at(-1)).toMatchObject({ type: 'failed', error: { code: 'agent_failed' } });
     expect(h.events.some((event) => event.type === 'completed')).toBe(false);
   });
+  it('counts malformed provider JSON against the same two-repair limit', async () => {
+    const invalid = new AIError('invalid_code', 'Invalid provider JSON', 422);
+    const h = harness([JSON.stringify(shooterPlan), invalid, invalid, invalid]); await h.run();
+    expect(h.generate).toHaveBeenCalledTimes(4);
+    expect(h.test).not.toHaveBeenCalled();
+    expect(h.events.at(-1)).toMatchObject({ type: 'failed', error: { code: 'agent_failed' } });
+  });
   it.each([429, 401, 403])('stops on upstream %i without repair/retry/fallback', async (status) => {
     const h = harness([JSON.stringify(shooterPlan), Object.assign(new Error('secret upstream'), { status })]); await h.run();
     expect(h.generate).toHaveBeenCalledTimes(2); expect(h.test).not.toHaveBeenCalled();

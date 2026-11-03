@@ -12,6 +12,19 @@ export class AIError extends Error {
   ) { super(message); }
 }
 
+/** Internal scheduling metadata; the public error JSON stays unchanged. */
+export class TransientRateLimitError extends AIError {
+  constructor(readonly waitMs: number) {
+    super('rate_limit', 'Groq đang giới hạn tốc độ. Cần chờ quota được khôi phục.', 429, Math.ceil(waitMs / 1000));
+  }
+}
+
+export class RequestCapacityError extends AIError {
+  constructor(readonly tokenLimit: number, readonly inputTokens: number, readonly outputTokens: number) {
+    super('rate_limit', `Một request cần khoảng ${inputTokens + outputTokens} token, vượt giới hạn ${tokenLimit} token/phút. Cần chia nhỏ công việc; chờ không làm request này nhỏ hơn.`, 429);
+  }
+}
+
 const DEFAULT_RETRY_SECONDS = 60;
 
 function positiveSeconds(value: unknown): number | undefined {

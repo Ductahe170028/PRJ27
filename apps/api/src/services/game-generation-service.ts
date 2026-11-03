@@ -4,12 +4,13 @@ import {
   type GenerateGameRequest, type ProviderRequestSelection,
 } from '@game-creator/contracts';
 import { ProviderRegistry } from '../providers/provider-registry.js';
-import { AIError, normalizeProviderError } from '../providers/errors.js';
+import { AIError, TransientRateLimitError, normalizeProviderError } from '../providers/errors.js';
 import { RequestBudget } from './request-budget.js';
 import { GAME_SYSTEM_PROMPT, providerJsonSchema } from './system-prompt.js';
 import { normalizeGeneratedSpec } from './normalize-game-spec.js';
 import { repairGamePlacement } from './repair-game-placement.js';
 import type { AIRequest } from '../providers/ai-provider.js';
+import { waitForRateLimit } from '../providers/groq-rate-limit.js';
 
 export function parseGameSpec(text: string) {
   if (Buffer.byteLength(text, 'utf8') > GAME_SPEC_MAX_BYTES) throw new AIError('invalid_game_spec', 'GameSpec vượt quá giới hạn 32 KB.', 422);
@@ -71,8 +72,23 @@ export class GameGenerationService {
     };
   }
 
-  async generateArtifact(selection: ProviderRequestSelection, input: Pick<AIRequest, 'prompt' | 'systemPrompt' | 'jsonSchema' | 'maxOutputTokens'>, client: string, signal: AbortSignal) {
+  async generateArtifact(selection: ProviderRequestSelection, input: Pick<AIRequest, 'prompt' | 'systemPrompt' | 'jsonSchema' | 'maxOutputTokens' | 'onTelemetry'>, client: string, signal: AbortSignal): Promise<string> {
     const { provider, model } = this.registry.resolve(selection.providerId, selection.modelId);
-    return this.execute(client, signal, (abortSignal) => provider.generate({ ...input, model, signal: abortSignal }));
+    for (let attempt = 0; ; attempt += 1) {
+      signal.throwIfAborted();
+      const wait = provider.id === 'groq' && provider.prepare ? this.budget.minuteDelay(client) : 0;
+      if (wait > 0) {
+        input.onTelemetry?.({ type: 'wait', milliseconds: wait, reason: 'budget' });
+        await waitForRateLimit(wait, signal);
+      }
+      const release = await provider.prepare?.({ ...input, model, signal });
+      try {
+        return await this.execute(client, signal, (abortSignal) => provider.generate({ ...input, model, signal: abortSignal }));
+      } catch (error) {
+        // One transport retry at most. Pacing is outside the 45s HTTP timeout;
+        // every actual attempt still consumes the shared request budget.
+        if (!(error instanceof TransientRateLimitError) || attempt >= 1) throw error;
+      } finally { release?.(); }
+    }
   }
 }

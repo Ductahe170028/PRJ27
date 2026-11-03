@@ -209,4 +209,5 @@ Mở http://127.0.0.1:5173. Build xuất `packages/contracts/dist`, `apps/api/di
 - Model AI có thể đặt sai hình học (xu trong vật cản, xu lơ lửng). Backend ưu tiên sửa vị trí trong giới hạn an toàn, giữ đủ vật thể và mục tiêu; không sửa được thì trả 422. Generate lại là thao tác chủ động và tính một request quota mới.
 - Catalog model là danh sách tĩnh đã kiểm chứng; khi Google/Groq đổi model hoặc free tier, cần cập nhật `apps/api/src/providers/model-catalog.ts`.
 - Các mô tả GameSpec, chuẩn hóa hình học và giới hạn thể loại ở trên áp dụng cho Standard Mode. Advanced dùng pipeline và giới hạn riêng trong [Phase 3](docs/phase3.md).
+- Advanced trên Groq có log token thực tế, chờ rate limit và chia request quá lớn. Xem [báo cáo tối ưu Groq Free và cách đo lại](docs/groq-free-phase3.md).
 - Chưa làm Phase 4 chỉnh sửa game bằng prompt, Phase 5 lưu/chia sẻ, database, tài khoản/auth, Docker, billing/thanh toán hoặc publishing/hosting.

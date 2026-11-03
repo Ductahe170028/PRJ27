@@ -1,6 +1,6 @@
 import parser from '@typescript-eslint/parser';
 export default [
-  { ignores: ['**/node_modules/**', '**/dist/**', '**/public/runtime/**', 'test-results/**', 'playwright-report/**'] },
+  { ignores: ['**/node_modules/**', '**/dist/**', '**/public/runtime/**', 'test-results/**', 'playwright-report/**', '.local-diagnostics/**'] },
   {
     files: ['**/*.{ts,tsx,mjs}'],
     languageOptions: { parser, ecmaVersion: 2022, sourceType: 'module', parserOptions: { ecmaFeatures: { jsx: true } } },

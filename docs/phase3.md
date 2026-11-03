@@ -1,6 +1,6 @@
 # Phase 3 — AI Code Agent (local MVP)
 
-Standard giữ nguyên endpoints, renderer, provider và validation của Phase 1–2. Advanced là pipeline riêng, nhận cùng lựa chọn Gemini/Groq/model. Không có provider mặc định ngầm, fallback template hoặc retry khi upstream hết quota/lỗi xác thực. Không cần dịch vụ hoặc asset trả phí; các model vẫn bị giới hạn bởi catalog/allowlist hiện có. Việc tài khoản provider đã bật billing hay chưa vẫn do chủ tài khoản kiểm soát.
+Standard giữ nguyên endpoints, renderer, provider và validation của Phase 1–2. Advanced là pipeline riêng, nhận cùng lựa chọn Gemini/Groq/model. Không có provider mặc định ngầm hoặc fallback template. Advanced chờ quota Groq ngắn hạn theo header; không tự retry quota ngày/lỗi xác thực hoặc đổi provider/model. Không cần dịch vụ hoặc asset trả phí; các model vẫn bị giới hạn bởi catalog/allowlist hiện có. Việc tài khoản provider đã bật billing hay chưa vẫn do chủ tài khoản kiểm soát.
 
 ## Chạy thử trên Windows
 
@@ -34,7 +34,7 @@ Mỗi yêu cầu phải được model viết thành code mới. Hai chương tr
 | `apps/web/src/game/code-runtime.ts` | Phaser host, API giới hạn, input, render, score, restart, ngân sách runtime |
 | `AdvancedWorkspace.tsx`, `CodePreview.tsx`, `lib/agent-api.ts`, `lib/agent-stream.ts` | Mode, stream trạng thái có validation, kế hoạch/log lỗi, preview và Retry |
 
-Plan là một JSON gồm title, summary, mechanics, movement, action, objective. CodeGenerator trả JSON `{ "source": "..." }` với duy nhất `game.ts`; không trả file tùy ý, package.json hoặc lệnh shell. CodeRepairAgent nhận yêu cầu gốc, kế hoạch, source và tối đa 10 chẩn đoán. Mỗi bản sửa phải kiểm tra và chạy thử lại. Không lưu source/project vào database hoặc file theo tên do AI cung cấp.
+Plan là một JSON gồm title, summary, mechanics, movement, action, objective. Model trả phần thân `setup`, `update`, cùng `helpers`; backend thêm chữ ký hai hàm có kiểu, rồi CodeGenerator trả lại đúng contract `{ "source": "..." }` cho duy nhất `game.ts`. Toàn bộ logic chơi vẫn do AI viết; không thêm template game hoặc tự sửa logic. Source ghép phải qua nguyên vẹn AST policy, strict TypeScript, instrumentation và Chromium. Không trả file tùy ý, package.json hoặc lệnh shell. CodeRepairAgent nhận yêu cầu gốc, mechanics/input/objective, source một lần ở dạng text và tối đa 5 chẩn đoán khác nhau, mỗi dòng tối đa 240 ký tự. Mỗi bản sửa phải kiểm tra và chạy thử lại. Không lưu source/project vào database hoặc file theo tên do AI cung cấp.
 
 ## Giao diện code
 
@@ -55,7 +55,7 @@ function update(api: GameAPI, dt: number): void {
 }
 ```
 
-Ví dụ chỉ minh họa interface; game hoàn chỉnh cần tương tác, điểm, thắng/thua. `GAME_CODE_API` trong contracts là hợp đồng đầy đủ, được gửi nguyên văn cho model và dùng cho typecheck. API cung cấp entity hình chữ nhật, input bàn phím/chuột, AABB overlap, score, status, win/lose. Entity có x/y, kích thước, màu, vx/vy/hp; engine không tự áp dụng vx/vy, model phải viết logic di chuyển, trọng lực, bắn đạn, wave, boss, phản xạ bóng, v.v. Phaser chỉ dựng khung hình và chuyển input.
+Ví dụ chỉ minh họa interface; game hoàn chỉnh cần tương tác, điểm, thắng/thua. `GAME_CODE_API` trong contracts là hợp đồng đầy đủ, được giữ nguyên các khai báo kiểu khi gửi model (bỏ comment/whitespace thừa) và dùng cho typecheck. API cung cấp entity hình chữ nhật, input bàn phím/chuột, AABB overlap, score, status, win/lose. Entity có x/y, kích thước, màu, vx/vy/hp; engine không tự áp dụng vx/vy, model phải viết logic di chuyển, trọng lực, bắn đạn, wave, boss, phản xạ bóng, v.v. Phaser chỉ dựng khung hình và chuyển input.
 
 Không cho code cầm trực tiếp Phaser.Scene/Game hoặc DOM: đó là các đối tượng có thể dẫn tới loader/network/browser host. Vì vậy đây là một **tập con TypeScript với facade Phaser**, không phải môi trường chạy mọi thư viện/code Phaser. Hỗ trợ helper functions, vòng lặp có braces, mảng đánh chỉ số số học và một số hàm Math. State bền giữa frame chỉ là số; String nối động, `any`, cast, import/export, `new`, class, async, try/catch, reflection/prototype và truy cập thuộc tính động đều bị từ chối. API/AST policy chưa phù hợp game cần asset ngoài, audio, nhiều scene hoặc thư viện bổ sung.
 
@@ -65,9 +65,10 @@ Không cho code cầm trực tiếp Phaser.Scene/Game hoặc DOM: đó là các 
 | --- | --- |
 | Prompt | 1–2000 ký tự |
 | Source | 1 file, tối đa 24 KB UTF-8 |
-| Plan | 900 output tokens |
-| Generate/repair | 4096 output tokens mỗi lần |
-| AI calls | 1 planning + 1 coding + tối đa 2 repair = tối đa 4 |
+| Plan | 450 output tokens |
+| Generate/repair | 2400 output tokens mỗi lần, gồm reasoning |
+| Chia nhỏ request quá lớn | Setup tối đa 900, update/helpers tối đa 2200 output tokens; hạ tiếp theo dung lượng còn lại |
+| AI calls | 1 planning + 1 coding + tối đa 2 repair; coding/repair có thể chia 2 phần, mỗi request chỉ retry throttle ngắn hạn tối đa 1 lần |
 | Jobs Advanced | 1, từ chối job đồng thời bằng 429; không xếp hàng |
 | Ngân sách provider | Dùng chung AI_REQUESTS_PER_MINUTE/PER_DAY/MAX_CONCURRENT với Standard; mỗi AI step tính một request |
 | Toàn pipeline | 4 phút; đóng tab/hủy request sẽ hủy công việc |
@@ -77,7 +78,7 @@ Không cho code cầm trực tiếp Phaser.Scene/Game hoặc DOM: đó là các 
 | Runtime | 160 entity, 256 trường state số, entity size 1–200px; 5000 lần kiểm tra hàm/vòng lặp và 20ms cho mỗi callback |
 | Preview | Heartbeat/watchdog, phiên tối đa 10 phút |
 
-Giới hạn CPU runtime là hợp tác bằng code đã instrument, không phải OS quota. Một phép native vẫn có thể kéo dài hơn deadline trước khi tới điểm kiểm tra tiếp theo; AST/API hạn chế các phép cấp phát lớn để giảm nguy cơ. Browser iframe không có hard memory quota riêng. Nếu hết quota ở bước coding/repair, dừng ngay và hiển thị `rate_limit`, không chờ tự gọi lại, không đổi model/provider. Groq free tier có thể hết token/phút ngay khi cần sửa; người dùng quyết định Retry sau. Không cam kết mọi prompt/model sẽ tạo game hợp lệ trong ngân sách này.
+Giới hạn CPU runtime là hợp tác bằng code đã instrument, không phải OS quota. Một phép native vẫn có thể kéo dài hơn deadline trước khi tới điểm kiểm tra tiếp theo; AST/API hạn chế các phép cấp phát lớn để giảm nguy cơ. Browser iframe không có hard memory quota riêng. Groq Advanced đọc header TPM/reset/retry-after để giãn request, chờ ngoài timeout HTTP 45 giây nhưng trong deadline pipeline 4 phút. Mỗi HTTP attempt vẫn tính vào budget; nếu chia nhỏ chạm budget phút nội bộ thì chờ cửa sổ kế tiếp, không tăng budget. Quota ngày, lỗi xác thực, quota không rõ loại hoặc thời gian retry quá dài vẫn dừng rõ ràng. Request riêng lẻ lớn hơn TPM được chia setup và gameplay theo dung lượng, không cắt source hoặc bỏ cơ chế; nếu phần nhỏ vẫn không đủ chỗ thì báo lỗi. Không đổi model/provider. Chi tiết và số token thực đo: [Groq Free](groq-free-phase3.md). Không cam kết mọi prompt/model sẽ tạo game hợp lệ trong ngân sách này.
 
 ## API và trạng thái
 
@@ -110,7 +111,7 @@ npm run test:e2e
 
 Unit/API dùng mock AI: source hợp lệ, cú pháp/type sai, capability bị cấm, runtime lỗi giả lập, sửa thành công, thất bại sau hai sửa, 429/401/403, budget chung, concurrency, local gate và hồi quy Standard. Có test compiler worker thật. E2E dùng provider mock nhưng compiler, Chromium GameTester, HTTP stream, React và Phaser thật; kiểm tra shooter, paddle, phát hiện/sửa runtime error, quota, Retry và tất cả test Phase 1–2. Không đọc key hoặc gọi Gemini/Groq thật. Có thể chẩn đoán riêng browser sau build bằng `node --import tsx apps/api/test/browser-agent.smoke.ts`.
 
-GameTester xác nhận canvas/objects/update, di chuyển player theo plan, gửi Space/click và so sánh hình ảnh/HUD trước-sau, không phát sinh console/page/runtime errors và restart reset điểm. Đây là **smoke test**: chuyển động tự động cũng có thể làm hình ảnh thay đổi, nên chưa chứng minh quan hệ nhân quả của input, boss/điểm/độ khó/cân bằng hoặc mọi điều kiện thắng đúng với mô tả tự nhiên. Test không tự tạo chiến lược chơi hết mọi game; cần người dùng chơi thử kết quả. Chưa kiểm thử live AI Phase 3 để tránh tiêu quota; khả năng hiểu yêu cầu còn phụ thuộc model.
+GameTester xác nhận canvas/objects/update, di chuyển player theo plan, gửi Space/click và so sánh hình ảnh/HUD trước-sau, không phát sinh console/page/runtime errors và restart reset điểm. Đây là **smoke test**: chuyển động tự động cũng có thể làm hình ảnh thay đổi, nên chưa chứng minh quan hệ nhân quả của input, boss/điểm/độ khó/cân bằng hoặc mọi điều kiện thắng đúng với mô tả tự nhiên. Test không tự tạo chiến lược chơi hết mọi game; cần người dùng chơi thử kết quả. Đã kiểm thử live Groq Free với game máy bay đơn giản; kết quả và giới hạn được ghi trong báo cáo Groq Free. Khả năng hiểu yêu cầu còn phụ thuộc model.
 
 Không triển khai Phase 4, Phase 5, database, Docker, authentication, dịch vụ asset trả phí hoặc publishing.
 

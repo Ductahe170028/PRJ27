@@ -16,7 +16,7 @@ export function advancedAllowed(request: Request, enabled: boolean): boolean {
 export function mountAgentRoutes(app: Express, agent: AgentOrchestrator, enabled: boolean) {
   app.get('/api/agent/config', (request, response) => {
     const allowed = advancedAllowed(request, enabled);
-    response.json({ enabled: allowed, localOnly: true, maxRepairs: 2, message: allowed ? 'Advanced thử nghiệm local · tối đa 2 lần sửa · tối đa 4 lượt gọi AI.' : 'Advanced chỉ mở trên localhost khi ADVANCED_AI_ENABLED=true và NODE_ENV khác production.' });
+    response.json({ enabled: allowed, localOnly: true, maxRepairs: 2, message: allowed ? 'Advanced thử nghiệm local · tối đa 2 lần sửa · tự chờ quota Groq ngắn hạn.' : 'Advanced chỉ mở trên localhost khi ADVANCED_AI_ENABLED=true và NODE_ENV khác production.' });
   });
   app.post('/api/agent/generate', async (request, response) => {
     if (!advancedAllowed(request, enabled)) throw new AIError('advanced_unavailable', 'Advanced chỉ được phép chạy thử local, không mở qua domain hoặc máy khác.', 403);

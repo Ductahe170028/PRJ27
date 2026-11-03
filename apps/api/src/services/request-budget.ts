@@ -14,6 +14,15 @@ export class RequestBudget {
   private day = -1;
   constructor(private readonly options: BudgetOptions = {}) {}
 
+  /** Admission hint only; acquire() still enforces/counts every actual call. */
+  minuteDelay(client: string): number {
+    const now = (this.options.now ?? Date.now)();
+    if ((this.day === Math.floor(now / 86_400_000) && this.dailyCount >= (this.options.requestsPerDay ?? 100))
+      || this.active >= (this.options.maxConcurrent ?? 2)) return 0;
+    const window = this.clients.get(client);
+    return window && window.count >= (this.options.requestsPerMinute ?? 5) ? Math.max(0, window.start + 60_000 - now) : 0;
+  }
+
   acquire(client: string): () => void {
     const now = (this.options.now ?? Date.now)();
     const day = Math.floor(now / 86_400_000);
