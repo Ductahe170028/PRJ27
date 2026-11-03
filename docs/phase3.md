@@ -29,10 +29,10 @@ Mỗi yêu cầu phải được model viết thành code mới. Hai chương tr
 | `apps/api/src/agent/agents.ts` | GamePlanner, CodeGenerator, CodeRepairAgent; dùng lại GameGenerationService và ProviderRegistry |
 | `code-validator.ts` | AST policy, strict TypeScript trên thư viện kiểu tối thiểu, compile và chèn bộ đếm |
 | `isolated-validator.ts`, `validator-worker.mjs` | Worker kiểm tra/biên dịch, giới hạn tài nguyên, hủy và timeout |
-| `game-tester.ts` | Playwright + Chromium process mới, không profile người dùng, smoke test và thu lỗi |
+| `game-tester.ts`, `browser-smoke-checks.ts` | Quản lý Chromium process riêng và kiểm tra gameplay/input/restart; không profile người dùng |
 | `orchestrator.ts`, `routes.ts` | Planning → Coding → Validating → Testing → Repairing → Completed/Failed, khóa 1 job |
 | `apps/web/src/game/code-runtime.ts` | Phaser host, API giới hạn, input, render, score, restart, ngân sách runtime |
-| `AdvancedWorkspace.tsx`, `CodePreview.tsx`, `lib/agent-api.ts` | Mode, stream trạng thái, kế hoạch/log lỗi, preview và Retry |
+| `AdvancedWorkspace.tsx`, `CodePreview.tsx`, `lib/agent-api.ts`, `lib/agent-stream.ts` | Mode, stream trạng thái có validation, kế hoạch/log lỗi, preview và Retry |
 
 Plan là một JSON gồm title, summary, mechanics, movement, action, objective. CodeGenerator trả JSON `{ "source": "..." }` với duy nhất `game.ts`; không trả file tùy ý, package.json hoặc lệnh shell. CodeRepairAgent nhận yêu cầu gốc, kế hoạch, source và tối đa 10 chẩn đoán. Mỗi bản sửa phải kiểm tra và chạy thử lại. Không lưu source/project vào database hoặc file theo tên do AI cung cấp.
 
@@ -97,7 +97,7 @@ Preview và Playwright dùng cùng HTML sandbox: iframe chỉ `allow-scripts`, k
 
 Tester dùng Chromium sandbox bật, context/profile tạm mới, service worker bị chặn, route abort mọi network request, không truyền API keys vào browser environment. Không tắt sandbox khi lỗi. Preview chỉ gửi/nhận thông báo có session UUID và kiểm tra cửa sổ gửi; host không nhận lệnh đặc quyền từ code game. HTML đóng script được escape, status/log render dưới dạng text.
 
-**Chưa đủ để triển khai công khai cho người dùng không tin cậy.** Static policy và browser sandbox là các lớp giảm rủi ro, không phải bằng chứng không thể thoát sandbox; chưa có OS container/VM, hard CPU/RAM/network isolation, tenant isolation hoặc security audit. Tính năng luôn tắt với `NODE_ENV=production`, và chỉ nhận request từ loopback kèm Host/Origin localhost/127.0.0.1/::1. Không đưa Advanced qua tunnel/reverse proxy hoặc mở cổng ra Internet; proxy có thể làm mất ý nghĩa kiểm tra địa chỉ local. Nếu cần public sau này, phải bổ sung cách ly OS và kiểm định riêng.
+**Chưa đủ để triển khai công khai cho người dùng không tin cậy.** Static policy và browser sandbox là các lớp giảm rủi ro, không phải bằng chứng không thể thoát sandbox; chưa có OS container/VM, hard CPU/RAM/network isolation, tenant isolation hoặc kiểm định bảo mật độc lập cho triển khai công khai. Tính năng luôn tắt với `NODE_ENV=production`, và chỉ nhận request từ loopback kèm Host/Origin localhost/127.0.0.1/::1. Không đưa Advanced qua tunnel/reverse proxy hoặc mở cổng ra Internet; proxy có thể làm mất ý nghĩa kiểm tra địa chỉ local. Nếu cần public sau này, phải bổ sung cách ly OS và kiểm định riêng.
 
 ## Kiểm thử
 

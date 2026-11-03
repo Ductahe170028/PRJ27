@@ -13,7 +13,16 @@ export class IsolatedCodeValidator {
       let done = false;
       const finish = (result: ValidationResult) => {
         if (done) return; done = true; clearTimeout(timer); signal.removeEventListener('abort', abort);
-        void worker.terminate(); resolve(result);
+        // Do not start testing/repair or release the job while compilation still
+        // owns a worker. Keep its error listener until termination completes.
+        void worker.terminate().then(
+          () => complete(result),
+          () => complete({ errors: ['Không thể dọn dẹp bộ kiểm tra TypeScript.'] }),
+        );
+      };
+      const complete = (result: ValidationResult) => {
+        worker.removeAllListeners();
+        resolve(result);
       };
       const abort = () => finish({ errors: ['Validation đã bị hủy.'] });
       const timer = setTimeout(() => finish({ errors: ['TypeScript vượt giới hạn 5 giây biên dịch. Hãy giảm độ phức tạp.'] }), 5000);

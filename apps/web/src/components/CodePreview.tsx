@@ -17,11 +17,19 @@ export function CodePreview({ project, onStarted, onError }: { project: CodeProj
       if (data.type === 'started' && !started && !failed) { started = true; onStarted(); }
     };
     window.addEventListener('message', listener);
+    // Hidden tabs may suspend both interval callbacks and iframe heartbeats.
+    // Give the runtime its normal response window when the tab becomes visible.
+    const resume = () => { if (!document.hidden) lastHeartbeat = Date.now(); };
+    document.addEventListener('visibilitychange', resume);
     const timer = window.setInterval(() => {
       if (document.hidden) { lastHeartbeat = Date.now(); return; }
       if (Date.now() - lastHeartbeat > (started ? 6000 : 15000)) fail('Preview không phản hồi trong thời hạn. Game đã dừng; nhấn Retry để thử lại.');
     }, 1000);
-    return () => { window.removeEventListener('message', listener); window.clearInterval(timer); };
+    return () => {
+      window.removeEventListener('message', listener);
+      document.removeEventListener('visibilitychange', resume);
+      window.clearInterval(timer);
+    };
   }, [id, onStarted, onError]);
   return <iframe ref={frame} title={`Advanced game — ${project.plan.title}`} sandbox="allow-scripts" referrerPolicy="no-referrer"
     allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; usb 'none'; payment 'none'" srcDoc={doc} className="game-frame"/>;

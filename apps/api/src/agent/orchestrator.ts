@@ -18,17 +18,28 @@ export class AgentOrchestrator {
     const { provider, model } = this.generation.registry.resolve(request.providerId, request.modelId);
     if (!model.capabilities.structuredOutput) throw new AIError('invalid_model', 'Model này không hỗ trợ đầu ra có cấu trúc cho Advanced. Hãy chọn model khác trong Settings.', 400);
     this.active = true;
-    return { request: { ...request, providerId: provider.id, modelId: model.id }, release: () => { this.active = false; } };
+    let released = false;
+    return {
+      request: { ...request, providerId: provider.id, modelId: model.id },
+      release: () => {
+        if (released) return;
+        released = true;
+        this.active = false;
+      },
+    };
   }
 
   async run(request: AgentRequest, client: string, disconnect: AbortSignal, emit: (event: AgentEvent) => void): Promise<void> {
-    const timeout = AbortSignal.timeout(240_000);
-    const signal = AbortSignal.any([disconnect, timeout]);
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), 240_000);
+    const signal = AbortSignal.any([disconnect, deadline.signal]);
     let attempt = 0;
     const status = (stage: Extract<AgentEvent, { type: 'status' }>['stage'], message: string) => emit({ type: 'status', stage, message, attempt });
     try {
+      signal.throwIfAborted();
       status('Planning', `${request.providerId} · ${request.modelId} — Đang lập kế hoạch cơ chế chơi.`);
       const plan = await new GamePlanner(this.generation).plan(request, client, signal);
+      signal.throwIfAborted();
       emit({ type: 'plan', plan });
       status('Coding', 'Đang viết TypeScript cho cơ chế chơi trong kế hoạch.');
       let output = await new CodeGenerator(this.generation).generate(request, plan, client, signal);
@@ -37,10 +48,12 @@ export class AgentOrchestrator {
         status('Validating', 'Kiểm tra TypeScript, API cho phép và giới hạn code.');
         const source = readSource(output);
         const validation = source === undefined ? { errors: ['Provider phải trả JSON {source: string}, một file TypeScript tối đa 24 KB.'] } : await this.validator.validate(source, signal);
+        signal.throwIfAborted();
         let errors = validation.errors;
         if (!errors.length && validation.javascript) {
           status('Testing', 'Chạy Chromium cách ly: khởi động, thao tác và chơi lại.');
           errors = (await this.tester.test(validation.javascript, plan, signal)).errors;
+          signal.throwIfAborted();
           if (!errors.length) {
             status('Completed', 'Game đã qua kiểm tra và sẵn sàng mở preview.');
             emit({ type: 'completed', project: { id: randomUUID(), mode: 'advanced', provider: request.providerId, modelId: request.modelId!, plan, javascript: validation.javascript, repairs: attempt } });
@@ -54,9 +67,11 @@ export class AgentOrchestrator {
       }
     } catch (cause) {
       if (disconnect.aborted) return;
-      const error = timeout.aborted ? new AIError('timeout', 'Advanced đã hết thời hạn 4 phút.', 504) : normalizeProviderError(cause);
+      const error = deadline.signal.aborted ? new AIError('timeout', 'Advanced đã hết thời hạn 4 phút.', 504) : normalizeProviderError(cause);
       status('Failed', error.message);
       emit({ type: 'failed', error: { code: error.code, message: error.message, ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}) } });
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

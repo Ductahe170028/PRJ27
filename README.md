@@ -6,6 +6,8 @@
 
 Demo **Moonlight Run** của Phase 1 được giữ nguyên và chạy không cần key. Demo là lựa chọn mặc định ban đầu; lỗi AI không tự chuyển sang demo hay provider khác. Chỉ lựa chọn provider/model được lưu trong localStorage; game không được lưu khi reload.
 
+Xem [báo cáo Code Audit + Refactor Phase 1–3](docs/audit-phase1-3.md) để biết các lỗi đã sửa, thay đổi module, kết quả hồi quy và rủi ro còn lại trước Phase 4.
+
 ## Chạy trên Windows
 
 Cần **Node.js 22+**, **npm 10+**. Vite 6 tương thích Node 22.11. Mở PowerShell tại thư mục dự án:

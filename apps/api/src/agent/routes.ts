@@ -2,6 +2,7 @@ import type { Express, Request } from 'express';
 import { AgentRequestSchema } from '@game-creator/contracts';
 import { AIError } from '../providers/errors.js';
 import { AgentOrchestrator } from './orchestrator.js';
+import { withResponseAbort } from '../http/response-abort.js';
 
 function localUrl(value: string): boolean {
   try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname); }
@@ -23,17 +24,17 @@ export function mountAgentRoutes(app: Express, agent: AgentOrchestrator, enabled
     const parsed = AgentRequestSchema.safeParse(request.body);
     if (!parsed.success) throw new AIError('invalid_code', 'Cần prompt 1–2000 ký tự và lựa chọn provider hợp lệ.', 400);
     const reservation = agent.reserve(parsed.data);
-    const controller = new AbortController();
-    const disconnect = () => { if (!response.writableEnded) controller.abort(); };
-    response.on('close', disconnect);
-    response.status(200).setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-    response.setHeader('X-Accel-Buffering', 'no');
-    response.flushHeaders();
     try {
-      await agent.run(reservation.request, request.ip ?? 'local', controller.signal, (event) => {
-        if (!response.destroyed && !controller.signal.aborted) response.write(`${JSON.stringify(event)}\n`);
+      await withResponseAbort(response, async (signal) => {
+        signal.throwIfAborted();
+        response.status(200).setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+        response.setHeader('X-Accel-Buffering', 'no');
+        response.flushHeaders();
+        await agent.run(reservation.request, request.ip ?? 'local', signal, (event) => {
+          if (!response.destroyed && !signal.aborted) response.write(`${JSON.stringify(event)}\n`);
+        });
+        response.end();
       });
-      response.end();
-    } finally { response.off('close', disconnect); reservation.release(); }
+    } finally { reservation.release(); }
   });
 }

@@ -59,6 +59,46 @@ test('a different prompt produces paddle/ball mechanics through the same agent',
   await expect(page.locator('.preview-footer')).toContainText('gemini');
 });
 
+test('preview gets heartbeat grace after tab resume but still stops an unresponsive game', async ({ page }) => {
+  await openAdvanced(page);
+  await page.getByLabel('Bạn muốn tạo game gì?').fill('Tạo game bắn máy bay');
+  await page.getByRole('button', { name: 'Generate Game', exact: true }).click();
+  const canvas = page.frameLocator('iframe').locator('canvas');
+  await expect(canvas).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('.preview-state')).toHaveText('Đang chạy');
+  // Simulate a suspended parent tab waking before the iframe's next heartbeat.
+  // Change the parent's clock only; the Phaser iframe keeps its real clock.
+  const clock = await page.evaluateHandle(() => {
+    const now = Date.now;
+    let offset = 60_000;
+    const pauseHeartbeat = (event: MessageEvent<{ channel?: string }>) => {
+      if (event.data?.channel === 'code-runtime') event.stopImmediatePropagation();
+    };
+    window.addEventListener('message', pauseHeartbeat, true);
+    Date.now = () => now() + offset;
+    document.dispatchEvent(new Event('visibilitychange'));
+    return {
+      stall: () => { offset += 10_000; },
+      restore: () => {
+        Date.now = now;
+        window.removeEventListener('message', pauseHeartbeat, true);
+        document.dispatchEvent(new Event('visibilitychange'));
+      },
+    };
+  });
+  try {
+    await page.waitForTimeout(1500); // Cross at least one watchdog tick.
+    await expect(canvas).toBeVisible();
+    await expect(page.locator('.agent-error')).toHaveCount(0);
+    await clock.evaluate((clock) => clock.stall());
+    await expect(page.locator('.agent-error')).toContainText('Preview không phản hồi');
+    await expect(page.locator('iframe')).toHaveCount(0);
+  } finally {
+    await clock.evaluate((clock) => clock.restore());
+    await clock.dispose();
+  }
+});
+
 test('runtime failures are detected by real Playwright and repaired once', async ({ page }) => {
   await openAdvanced(page);
   await page.getByLabel('Bạn muốn tạo game gì?').fill('aircraft [agent-repair]');

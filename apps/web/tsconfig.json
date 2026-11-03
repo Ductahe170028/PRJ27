@@ -10,5 +10,5 @@
     "noEmit": true,
     "useDefineForClassFields": true
   },
-  "include": ["src", "vite.config.ts", "vite.game.config.ts"]
+  "include": ["src", "test", "vite.config.ts", "vite.game.config.ts", "vite.advanced.config.ts"]
 }

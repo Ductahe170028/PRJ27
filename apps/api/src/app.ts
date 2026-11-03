@@ -9,6 +9,7 @@ import { GameGenerationService } from './services/game-generation-service.js';
 import { RequestBudget } from './services/request-budget.js';
 import { AgentOrchestrator } from './agent/orchestrator.js';
 import { mountAgentRoutes } from './agent/routes.js';
+import { withResponseAbort } from './http/response-abort.js';
 
 interface AppOptions {
   service?: GameService;
@@ -48,12 +49,9 @@ export function createApp(options: AppOptions = {}) {
   app.post('/api/ai/test-connection', async (request, response) => {
     const parsed = ProviderRequestSchema.safeParse(request.body);
     if (!parsed.success) throw new AIError('invalid_model', 'Hãy chọn provider và model hợp lệ.', 400);
-    const controller = new AbortController();
-    const disconnect = () => { if (!response.writableEnded) controller.abort(); };
-    response.on('close', disconnect);
-    try {
-      response.json(await generation.testConnection(parsed.data, request.ip ?? 'local', controller.signal));
-    } finally { response.off('close', disconnect); }
+    await withResponseAbort(response, async (signal) => {
+      response.json(await generation.testConnection(parsed.data, request.ip ?? 'local', signal));
+    });
   });
 
   app.post('/api/games/generate', async (request, response) => {
@@ -75,13 +73,10 @@ export function createApp(options: AppOptions = {}) {
     if (!providerId || providerId === 'demo') {
       throw new AIError('invalid_model', 'Cần chọn cả provider và model hợp lệ.', 400);
     }
-    const controller = new AbortController();
-    const disconnect = () => { if (!response.writableEnded) controller.abort(); };
-    response.on('close', disconnect);
-    try {
-      const project = await generation.generate({ ...result.data, providerId }, request.ip ?? 'local', controller.signal);
+    await withResponseAbort(response, async (signal) => {
+      const project = await generation.generate({ ...result.data, providerId }, request.ip ?? 'local', signal);
       response.status(201).json({ data: project });
-    } finally { response.off('close', disconnect); }
+    });
   });
 
   mountAgentRoutes(app, options.agent ?? new AgentOrchestrator(generation), options.advancedEnabled ?? (process.env.ADVANCED_AI_ENABLED !== 'false' && process.env.NODE_ENV !== 'production'));
@@ -90,9 +85,12 @@ export function createApp(options: AppOptions = {}) {
     response.status(404).json({ error: { code: 'NOT_FOUND', message: 'API không tồn tại.' } });
   });
 
-  const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
+  const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, next) => {
     const kind = typeof error === 'object' && error !== null && 'type' in error ? error.type : undefined;
     if (response.destroyed) return;
+    // Once NDJSON has started, Express must close the stream; writing JSON here
+    // would corrupt the protocol and raise ERR_HTTP_HEADERS_SENT.
+    if (response.headersSent) { next(error); return; }
     if (error instanceof AIError) {
       if (error.retryAfterSeconds) response.setHeader('Retry-After', error.retryAfterSeconds);
       response.status(error.status).json({ error: {

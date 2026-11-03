@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { once } from 'node:events';
 import request from 'supertest';
 import { AgentEventSchema, type AgentEvent, type AgentRequest } from '@game-creator/contracts';
 import { CodeValidator } from '../src/agent/code-validator.js';
@@ -99,6 +100,56 @@ describe('AgentOrchestrator', () => {
     expect(() => h.agent.reserve(input)).toThrow(expect.objectContaining({ code: 'rate_limit' }));
     reserved.release(); expect(() => h.agent.reserve(input)).not.toThrow();
   });
+  it('cannot release a newer job through an old reservation', () => {
+    const h = harness([]);
+    const first = h.agent.reserve(input);
+    first.release();
+    const second = h.agent.reserve(input);
+    first.release();
+    expect(() => h.agent.reserve(input)).toThrow(expect.objectContaining({ code: 'rate_limit' }));
+    second.release();
+    h.agent.reserve(input).release();
+  });
+  it('does not emit progress or call AI for an already disconnected client', async () => {
+    const h = harness([]);
+    const controller = new AbortController(); controller.abort();
+    const reservation = h.agent.reserve(input);
+    try { await h.agent.run(reservation.request, 'test', controller.signal, (event) => h.events.push(event)); }
+    finally { reservation.release(); }
+    expect(h.events).toEqual([]);
+    expect(h.generate).not.toHaveBeenCalled();
+  });
+  it('does not publish an artifact if the client disconnects during browser testing', async () => {
+    const h = harness([JSON.stringify(shooterPlan), code()]);
+    const controller = new AbortController();
+    h.test.mockImplementationOnce(async () => { controller.abort(); return { errors: [] }; });
+    const reservation = h.agent.reserve(input);
+    try { await h.agent.run(reservation.request, 'test', controller.signal, (event) => h.events.push(event)); }
+    finally { reservation.release(); }
+    expect(h.events.at(-1)).toMatchObject({ type: 'status', stage: 'Testing' });
+    expect(h.generate).toHaveBeenCalledTimes(2);
+  });
+  it('does not start a browser or repair after cancellation during validation', async () => {
+    const h = harness([JSON.stringify(shooterPlan), code()]);
+    const controller = new AbortController();
+    const agent = new AgentOrchestrator(h.service, { test: h.test }, { validate: async () => {
+      controller.abort(); return { errors: [], javascript: 'compiled' };
+    } });
+    const reservation = agent.reserve(input);
+    try { await agent.run(reservation.request, 'test', controller.signal, (event) => h.events.push(event)); }
+    finally { reservation.release(); }
+    expect(h.events.at(-1)).toMatchObject({ type: 'status', stage: 'Validating' });
+    expect(h.test).not.toHaveBeenCalled();
+    expect(h.generate).toHaveBeenCalledTimes(2);
+  });
+  it('clears its deadline timer when work finishes', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness([JSON.stringify(shooterPlan), code()]); await h.run();
+      expect(h.events.at(-1)?.type).toBe('completed');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it('does not attempt AI repair for a missing browser installation', async () => {
     const h = harness([JSON.stringify(shooterPlan), code()]);
     h.test.mockRejectedValueOnce(new AIError('tester_unavailable', 'Install Chromium', 503)); await h.run();
@@ -107,6 +158,45 @@ describe('AgentOrchestrator', () => {
 });
 
 describe('Advanced API local-only boundary', () => {
+  it('aborts the provider and releases the job when an HTTP stream disconnects', async () => {
+    let observedAbort!: () => void;
+    const aborted = new Promise<void>((resolve) => { observedAbort = resolve; });
+    const provider = mockProvider('groq', (input) => new Promise((_resolve, reject) => {
+      input.signal.addEventListener('abort', () => { observedAbort(); reject(input.signal.reason); }, { once: true });
+    }));
+    const service = new GameGenerationService(mockRegistry([provider]));
+    const agent = new AgentOrchestrator(service);
+    const server = createApp({ generationService: service, agent, advancedEnabled: true }).listen(0, '127.0.0.1');
+    const controller = new AbortController();
+    try {
+      await once(server, 'listening');
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('No test server address');
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/agent/generate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: controller.signal,
+      });
+      const reader = response.body!.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toContain('Planning');
+      controller.abort();
+      await reader.cancel().catch(() => {}); reader.releaseLock();
+      await aborted;
+      await vi.waitFor(() => { agent.reserve(input).release(); });
+    } finally {
+      controller.abort(); server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+  it('releases the reserved job even if sending the stream headers fails', async () => {
+    const h = harness([]);
+    const app = createApp({ generationService: h.service, agent: h.agent, advancedEnabled: true });
+    app.response.flushHeaders = () => { throw new Error('header failure'); };
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await request(app).post('/api/agent/generate').send(input).expect(500);
+      expect(h.generate).not.toHaveBeenCalled();
+      h.agent.reserve(input).release();
+    } finally { log.mockRestore(); }
+  });
   it('streams validated events while keeping Standard available', async () => {
     const h = harness([JSON.stringify(shooterPlan), code()]);
     const app = createApp({ generationService: h.service, agent: h.agent, advancedEnabled: true });
