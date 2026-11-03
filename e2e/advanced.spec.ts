@@ -12,9 +12,9 @@ async function pixels(canvas: Locator, color: number) {
   return canvas.evaluate((element, rgb) => {
     const canvas = element as HTMLCanvasElement;
     const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
-    let count = 0, totalX = 0;
-    for (let i = 0; i < data.length; i += 4) if (data[i] === (rgb >> 16 & 255) && data[i + 1] === (rgb >> 8 & 255) && data[i + 2] === (rgb & 255)) { count++; totalX += (i / 4) % canvas.width; }
-    return { count, x: count ? totalX / count : 0 };
+    let count = 0, totalX = 0, totalY = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] === (rgb >> 16 & 255) && data[i + 1] === (rgb >> 8 & 255) && data[i + 2] === (rgb & 255)) { count++; totalX += (i / 4) % canvas.width; totalY += Math.floor(i / 4 / canvas.width); }
+    return { count, x: count ? totalX / count : 0, y: count ? totalY / count : 0 };
   }, color);
 }
 
@@ -40,6 +40,8 @@ test('Advanced generates real shooter code, tests it, and previews movement, bul
   await page.keyboard.down('Space');
   await expect.poll(async () => (await pixels(canvas, 16774000)).count).toBeGreaterThan(50);
   await page.keyboard.up('Space');
+  const shot = await pixels(canvas, 16774000);
+  await expect.poll(async () => (await pixels(canvas, 16774000)).y).toBeLessThan(shot.y - 40);
   await page.keyboard.press('r');
   await expect.poll(async () => (await pixels(canvas, 12972663)).x).toBeLessThan(490);
   await expect(frame.locator('#code-hud')).toContainText('Điểm 0');
@@ -133,6 +135,24 @@ test('runtime failures are detected by real Playwright and repaired once', async
   await page.locator('.agent-logs summary').click();
   await expect(page.locator('.agent-logs pre')).not.toHaveText('Chưa có lỗi kiểm tra.');
   await expect(page.frameLocator('iframe').locator('canvas')).toBeVisible();
+});
+
+test('stationary shots are caught as gameplay errors and repaired before preview', async ({ page }) => {
+  await openAdvanced(page);
+  await page.getByLabel('Bạn muốn tạo game gì?').fill('Space bắn đạn lên trên [agent-stationary]');
+  await page.getByRole('button', { name: 'Generate Game', exact: true }).click();
+  await expect(page.locator('.agent-progress h2')).toContainText('Completed', { timeout: 35000 });
+  await expect(page.locator('.preview-footer')).toContainText('1 lần sửa');
+  await page.locator('.agent-logs summary').click();
+  await expect(page.locator('.agent-logs pre')).toContainText('continuous forward flight');
+  const canvas = page.frameLocator('iframe').locator('canvas');
+  await expect(canvas).toBeVisible();
+  await canvas.click({ position: { x: 400, y: 400 } });
+  await page.keyboard.down('Space');
+  await expect.poll(async () => (await pixels(canvas, 16774000)).count).toBeGreaterThan(50);
+  await page.keyboard.up('Space');
+  const shot = await pixels(canvas, 16774000);
+  await expect.poll(async () => (await pixels(canvas, 16774000)).y).toBeLessThan(shot.y - 40);
 });
 
 test('failed repairs stop at two; quota is visible and Retry is manual', async ({ page }) => {

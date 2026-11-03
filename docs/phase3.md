@@ -73,7 +73,7 @@ Không cho code cầm trực tiếp Phaser.Scene/Game hoặc DOM: đó là các 
 | Ngân sách provider | Dùng chung AI_REQUESTS_PER_MINUTE/PER_DAY/MAX_CONCURRENT với Standard; mỗi AI step tính một request |
 | Toàn pipeline | 4 phút; đóng tab/hủy request sẽ hủy công việc |
 | Compile worker | 5 giây, V8 old generation 128 MiB + young generation 32 MiB, stack 4 MiB |
-| Chromium test | Launch tối đa 15 giây, kiểm tra tối đa 15 giây, kill process khi timeout/hủy |
+| Chromium test | Launch tối đa 15 giây, kiểm tra tối đa 25 giây gồm gameplay, kill process khi timeout/hủy |
 | Chromium heap | V8 old space 128 MiB; không phải giới hạn tổng RAM của process |
 | Runtime | 160 entity, 256 trường state số, entity size 1–200px; 5000 lần kiểm tra hàm/vòng lặp và 20ms cho mỗi callback |
 | Preview | Heartbeat/watchdog, phiên tối đa 10 phút |
@@ -111,7 +111,13 @@ npm run test:e2e
 
 Unit/API dùng mock AI: source hợp lệ, cú pháp/type sai, capability bị cấm, runtime lỗi giả lập, sửa thành công, thất bại sau hai sửa, 429/401/403, budget chung, concurrency, local gate và hồi quy Standard. Có test compiler worker thật. E2E dùng provider mock nhưng compiler, Chromium GameTester, HTTP stream, React và Phaser thật; kiểm tra shooter, paddle, phát hiện/sửa runtime error, quota, Retry và tất cả test Phase 1–2. Không đọc key hoặc gọi Gemini/Groq thật. Có thể chẩn đoán riêng browser sau build bằng `node --import tsx apps/api/test/browser-agent.smoke.ts`.
 
-GameTester xác nhận canvas/objects/update, di chuyển player theo plan, gửi Space/click và so sánh hình ảnh/HUD trước-sau, không phát sinh console/page/runtime errors và restart reset điểm. Đây là **smoke test**: chuyển động tự động cũng có thể làm hình ảnh thay đổi, nên chưa chứng minh quan hệ nhân quả của input, boss/điểm/độ khó/cân bằng hoặc mọi điều kiện thắng đúng với mô tả tự nhiên. Test không tự tạo chiến lược chơi hết mọi game; cần người dùng chơi thử kết quả. Đã kiểm thử live Groq Free với game máy bay đơn giản; kết quả và giới hạn được ghi trong báo cáo Groq Free. Khả năng hiểu yêu cầu còn phụ thuộc model.
+GameTester giữ các kiểm tra canvas/objects/update, di chuyển player, Space/click, console/page/runtime errors và restart reset điểm. Với yêu cầu bắn đạn, bước Testing còn xác nhận đạn xuất hiện ở mép trước nhân vật, bay theo hướng yêu cầu sau khi nhả nút qua hai khoảng quan sát, gây sát thương khi va chạm và được thu hồi ngoài màn hình. Đạn đứng yên dù đã có `vx/vy`, hoặc chỉ di chuyển khi giữ phím, sẽ thất bại và được chuyển về Repairing trong giới hạn 2 lần hiện có.
+
+`gameplay-requirements.ts` suy ra kiểm tra bắn/hướng từ yêu cầu gốc và mechanics của plan bằng các mẫu ngôn ngữ Việt/Anh giới hạn. Không dựa vào tên game, tên kind, màu hay tọa độ máy bay. `browser-gameplay-checks.ts` điều khiển bàn phím/chuột thật; `gameplay-probe.ts` chỉ được gắn vào tài liệu của Chromium tester để quan sát API và sắp xếp kịch bản. Facade quan sát giữ getter và chuyển tiếp các hàm đến GameAPI thật, nên vẫn áp dụng ngân sách/runtime validation. Preview không có probe, không thay sandbox/CSP hay public contract.
+
+Phần bay được quan sát tự nhiên, không di chuyển hộ viên đạn. Phần cleanup đặt viên đạn đã quan sát ra ngoài mép màn hình; phần sát thương đưa một vật thể thật của game vào đường bắn, giữ nguyên hp rồi chạy update/collision thật. Đây là kịch bản có kiểm soát, không phải bằng chứng AI tự chơi thắng mọi game. Việc chọn mục tiêu còn bảo thủ: game có nhiều vật thể trang trí, vật cản, đạn sống cực ngắn hoặc mục tiêu xuất hiện quá muộn có thể bị từ chối trong thời hạn kiểm tra. Cần mở rộng bộ phân tích yêu cầu/kịch bản khi hỗ trợ cơ chế khác; chưa kiểm chứng toàn bộ boss, điểm số, cân bằng hay điều kiện thắng bằng ngôn ngữ tự nhiên.
+
+E2E bổ sung các chương trình bị sửa lỗi có chủ đích: đạn đứng yên, chỉ bay khi giữ nút, sai hướng, sinh giữa người chơi, thiếu sát thương, thiếu cleanup. Các chương trình này vẫn compile/khởi động được. Bộ kiểm tra cũng phải chấp nhận game bắn ngang và game bắn theo chuột dùng tên vật thể khác, và test HTTP/UI chứng minh lỗi gameplay được sửa trước khi preview. Không thêm AI judge, dịch vụ trả phí hay lần gọi provider để chấm gameplay; giữ cap Planning 450 và Coding/Repairing 2400 token.
 
 Không triển khai Phase 4, Phase 5, database, Docker, authentication, dịch vụ asset trả phí hoặc publishing.
 

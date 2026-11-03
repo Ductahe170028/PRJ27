@@ -74,7 +74,7 @@ export class AgentOrchestrator {
         let errors = validation.errors;
         if (!errors.length && validation.javascript) {
           status('Testing', 'Chạy Chromium cách ly: khởi động, thao tác và chơi lại.');
-          errors = (await this.tester.test(validation.javascript, plan, signal)).errors;
+          errors = (await this.tester.test(validation.javascript, plan, signal, request.prompt)).errors;
           signal.throwIfAborted();
           if (!errors.length) {
             status('Completed', 'Game đã qua kiểm tra và sẵn sàng mở preview.');

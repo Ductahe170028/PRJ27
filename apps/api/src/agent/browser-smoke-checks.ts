@@ -1,12 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from 'playwright';
 import { createCodeDocument, type GamePlan } from '@game-creator/contracts';
+import { GAMEPLAY_PROBE } from './gameplay-probe.js';
+import { runGameplayChecks } from './browser-gameplay-checks.js';
 
 interface Telemetry { frames: number; restarts: number; score: number; objects: number; ended: boolean; playerX: number | null; playerY: number | null }
 
 /** Exercise the existing input/restart checks inside the isolated browser. */
-export async function runSmokeChecks(page: Page, javascript: string, runtime: string, plan: GamePlan, add: (message: string) => void): Promise<void> {
+export async function runSmokeChecks(page: Page, javascript: string, runtime: string, plan: GamePlan, add: (message: string) => void, request = ''): Promise<void> {
   const sessionId = randomUUID();
+  const sandboxDocument = createCodeDocument(javascript, `data:text/javascript;base64,${Buffer.from(runtime).toString('base64')}`, sessionId);
+  // Replace the trusted factory return at the end, never text inside model source.
+  const boundary = sandboxDocument.lastIndexOf('return {create,update};');
+  if (boundary < 0) throw new Error('Missing sandbox factory boundary');
+  const observedDocument = sandboxDocument.slice(0, boundary) + GAMEPLAY_PROBE + sandboxDocument.slice(boundary + 'return {create,update};'.length);
   // The outside page is a blank harness, not the app and has no secrets.
   await page.setContent('<html><body style="margin:0"><iframe title="test" sandbox="allow-scripts" style="border:0;width:960px;height:540px"></iframe></body></html>');
   await page.evaluate(({ doc, id }) => {
@@ -17,7 +24,7 @@ export async function runSmokeChecks(page: Page, javascript: string, runtime: st
       if (event.source === frame.contentWindow && event.origin === 'null' && event.data?.channel === 'code-runtime' && event.data.sessionId === id && inbox.length < 100) inbox.push(event.data);
     });
     frame.srcdoc = doc;
-  }, { doc: createCodeDocument(javascript, `data:text/javascript;base64,${Buffer.from(runtime).toString('base64')}`, sessionId), id: sessionId });
+  }, { doc: observedDocument, id: sessionId });
   const messages = () => page.evaluate(() => (window as unknown as { agentTestInbox: Array<{ type: string; message?: string; stats?: Telemetry }> }).agentTestInbox);
   const latest = async () => (await messages()).filter((m) => m.stats).at(-1)?.stats;
   await page.waitForFunction(() => (window as unknown as { agentTestInbox: Array<{ type: string }> }).agentTestInbox.some((m) => m.type === 'started' || m.type === 'error'));
@@ -50,5 +57,6 @@ export async function runSmokeChecks(page: Page, javascript: string, runtime: st
     const restarted = await latest();
     if (!restarted || restarted.restarts < 1 || restarted.score !== 0) add('Restart không đưa game về trạng thái ban đầu.');
   }
+  if (!(await messages()).some((message) => message.type === 'error')) await runGameplayChecks(page, plan, request, add);
   for (const message of await messages()) if (message.type === 'error') add(message.message ?? 'Runtime error');
 }

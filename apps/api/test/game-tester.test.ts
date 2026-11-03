@@ -47,8 +47,8 @@ describe('browser tester resource lifecycle', () => {
       h.kill.mockImplementation(() => reject(new Error('browser closed')));
     }));
     const pending = h.run();
-    await vi.advanceTimersByTimeAsync(15_000);
-    expect((await pending).errors.join()).toContain('15 giây');
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect((await pending).errors.join()).toContain('25 giây');
     expect(h.kill).toHaveBeenCalledOnce();
     expect(h.server.close).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);

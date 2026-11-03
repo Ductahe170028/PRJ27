@@ -61,5 +61,6 @@ export async function agentFixture(request: AIRequest): Promise<string> {
   if (request.prompt.includes('[agent-fail]')) return JSON.stringify({ source: runtimeErrorSource });
   if (request.prompt.includes('[agent-budget]') && !request.prompt.toLowerCase().includes('diagnostics')) return JSON.stringify({ source: 'function create(api: GameAPI): void { while (true) {} } function update(api: GameAPI, dt: number): void {}' });
   if (request.prompt.includes('[agent-repair]') && !request.prompt.toLowerCase().includes('diagnostics')) return JSON.stringify({ source: runtimeErrorSource });
+  if (request.prompt.includes('[agent-stationary]') && !request.prompt.toLowerCase().includes('diagnostics')) return JSON.stringify({ source: shooterSource.replace('e.y -= 480 * dt;', 'e.vy = -480;') });
   return JSON.stringify({ source: request.prompt.includes('paddle') ? paddleSource : shooterSource });
 }

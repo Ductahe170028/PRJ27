@@ -5,13 +5,13 @@ import { AIError } from '../providers/errors.js';
 import { runSmokeChecks } from './browser-smoke-checks.js';
 
 export interface TestResult { errors: string[] }
-export interface GameTester { test(javascript: string, plan: GamePlan, signal: AbortSignal): Promise<TestResult> }
+export interface GameTester { test(javascript: string, plan: GamePlan, signal: AbortSignal, request?: string): Promise<TestResult> }
 
 /** A fresh Chromium process/profile, no credentials, no external network.
  * Only the browser executes generated code. Never Node vm/eval/import/require.
  */
 export class PlaywrightGameTester implements GameTester {
-  async test(javascript: string, plan: GamePlan, signal: AbortSignal): Promise<TestResult> {
+  async test(javascript: string, plan: GamePlan, signal: AbortSignal, request = ''): Promise<TestResult> {
     if (signal.aborted) throw signal.reason;
     let runtime: string;
     try { runtime = await readFile(new URL('../../../web/public/runtime/advanced.js', import.meta.url), 'utf8'); }
@@ -33,7 +33,7 @@ export class PlaywrightGameTester implements GameTester {
     const errors: string[] = [];
     const add = (message: string) => { if (errors.length < 10) errors.push(message.slice(0, 500)); };
     const kill = () => { server.process().kill(); };
-    const timeout = setTimeout(() => { add('Browser test vượt thời hạn 15 giây.'); kill(); }, 15_000);
+    const timeout = setTimeout(() => { add('Browser test vượt thời hạn 25 giây.'); kill(); }, 25_000);
     signal.addEventListener('abort', kill, { once: true });
     try {
       if (signal.aborted) throw signal.reason;
@@ -44,7 +44,7 @@ export class PlaywrightGameTester implements GameTester {
       page.setDefaultTimeout(5000);
       page.on('console', (message) => { if (message.type() === 'error') add(message.text()); });
       page.on('pageerror', (error) => add(error.message));
-      await runSmokeChecks(page, javascript, runtime, plan, add);
+      await runSmokeChecks(page, javascript, runtime, plan, add, request);
       await context.close();
       await browser.close();
     } catch {

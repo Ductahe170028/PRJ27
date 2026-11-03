@@ -7,6 +7,7 @@ import { AgentOrchestrator } from '../src/agent/orchestrator.js';
 import { GameGenerationService } from '../src/services/game-generation-service.js';
 import { RequestBudget } from '../src/services/request-budget.js';
 import { AIError } from '../src/providers/errors.js';
+import type { AIRequest } from '../src/providers/ai-provider.js';
 import { createApp } from '../src/app.js';
 import { IsolatedCodeValidator } from '../src/agent/isolated-validator.js';
 import { mockProvider, mockRegistry } from './fixtures.js';
@@ -15,7 +16,7 @@ import { paddleSource, shooterSource, shooterPlan, runtimeErrorSource } from './
 const validator = new CodeValidator();
 const input: AgentRequest = { providerId: 'groq', prompt: 'Tạo máy bay có đạn và boss' };
 function harness(outputs: Array<string | Error>, testErrors: string[][] = [[]], budget = new RequestBudget({ requestsPerMinute: 100 })) {
-  const generate = vi.fn(async () => { const next = outputs.shift(); if (next instanceof Error) throw next; return next ?? ''; });
+  const generate = vi.fn(async (_input: AIRequest) => { const next = outputs.shift(); if (next instanceof Error) throw next; return next ?? ''; });
   const service = new GameGenerationService(mockRegistry([mockProvider('groq', generate)]), budget);
   const test = vi.fn(async () => ({ errors: testErrors.shift() ?? [] }));
   const agent = new AgentOrchestrator(service, { test }, validator);
@@ -78,6 +79,13 @@ describe('AgentOrchestrator', () => {
   it('feeds runtime diagnostics back to repair and tests the corrected source', async () => {
     const h = harness([JSON.stringify(shooterPlan), code(runtimeErrorSource), code()], [['Runtime error at create'], []]); await h.run();
     expect(h.test).toHaveBeenCalledTimes(2); expect(h.generate).toHaveBeenCalledTimes(3);
+    expect(h.events.at(-1)).toMatchObject({ type: 'completed', project: { repairs: 1 } });
+  });
+  it('uses the original gameplay request and returns behavioral diagnostics to the bounded repair loop', async () => {
+    const diagnostic = 'Projectile: no continuous forward flight after action release.';
+    const h = harness([JSON.stringify(shooterPlan), code(), code()], [[diagnostic], []]); await h.run();
+    expect(h.test.mock.calls[0]).toEqual([expect.any(String), shooterPlan, expect.any(AbortSignal), input.prompt]);
+    expect(h.generate.mock.calls[2]?.[0].prompt).toContain(diagnostic);
     expect(h.events.at(-1)).toMatchObject({ type: 'completed', project: { repairs: 1 } });
   });
   it('stops after exactly two repairs and never returns a failed artifact', async () => {
