@@ -12,6 +12,8 @@ export class GameSpecScene extends Phaser.Scene {
   private keys: KeyMap | undefined;
   private enemies: Enemy[] = [];
   private hud!: Phaser.GameObjects.Text;
+  private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private hits!: Phaser.GameObjects.Particles.ParticleEmitter;
   private score = 0;
   private collected = 0;
   private health = 0;
@@ -84,10 +86,15 @@ export class GameSpecScene extends Phaser.Scene {
       coin.setData('value', item.value);
       coins.add(coin);
     }
+    // Particles reuse the generated coin/enemy textures; no player-colored pixels.
+    const burst = { speed: { min: 60, max: 180 }, lifespan: 380, alpha: { start: 1, end: 0 }, emitting: false };
+    this.sparks = this.add.particles(0, 0, 'spec-coin', { ...burst, scale: { start: 0.6, end: 0 } }).setDepth(5);
+    this.hits = this.add.particles(0, 0, 'spec-enemy', { ...burst, scale: { start: 0.25, end: 0 } }).setDepth(5);
     this.physics.add.overlap(this.player, coins, (_player, object) => {
       if (this.finished || !(object instanceof Phaser.Physics.Arcade.Image) || !object.active) return;
       this.score += Number(object.getData('value'));
       this.collected += 1;
+      this.sparks.explode(10, object.x, object.y);
       object.disableBody(true, true);
       this.checkWin(0);
     });
@@ -145,6 +152,8 @@ export class GameSpecScene extends Phaser.Scene {
     if (this.finished || this.time.now < this.protectedUntil) return;
     this.health = Math.max(0, this.health - amount);
     this.protectedUntil = this.time.now + this.spec.difficulty.invulnerabilityMs;
+    this.hits.explode(8, this.player.x, this.player.y);
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.cameras.main.shake(120, 0.004);
     if (this.health === 0) this.finish(false, 'Bạn đã hết máu.');
     this.updateHud(Math.floor((this.time.now - this.startedAt) / 1000));
   }

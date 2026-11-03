@@ -39,19 +39,46 @@ test('settings makes no hidden provider calls and persists only provider/model s
   await page.goto('/');
   await choose(page, 'gemini');
   expect(calls).toEqual([]);
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('auto');
+  await expect(page.getByLabel('Model', { exact: true }).locator('option')).toHaveText([
+    'Tự động — Gemini 3.5 Flash-Lite (khuyến nghị)', 'Gemini 3.5 Flash-Lite (gemini-3.5-flash-lite)',
+    'Gemini 3.6 Flash (gemini-3.6-flash)', 'Gemini 3.8 Flash (gemini-3.8-flash)',
+  ]);
+  await expect(page.getByRole('list', { name: 'Tình trạng cấu hình provider' })).toContainText('Google Gemini');
+  let connection = page.waitForRequest((request) => request.url().includes('/api/ai/test-connection'));
   await page.getByRole('button', { name: 'Test connection', exact: true }).click();
-  await expect(page.getByText(/API key và model truy cập được/)).toBeVisible();
+  expect((await connection).postDataJSON()).toEqual({ providerId: 'gemini' });
+  await expect(page.getByText(/Đã kết nối provider và tìm thấy model/)).toBeVisible();
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toContain('/api/ai/test-connection');
   await choose(page, 'groq');
-  await page.getByLabel('Model', { exact: true }).selectOption('llama-3.3-70b-versatile');
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('auto');
+  await page.getByLabel('Model', { exact: true }).selectOption('openai/gpt-oss-120b');
+  connection = page.waitForRequest((request) => request.url().includes('/api/ai/test-connection'));
+  await page.getByRole('button', { name: 'Test connection', exact: true }).click();
+  expect((await connection).postDataJSON()).toEqual({ providerId: 'groq', modelId: 'openai/gpt-oss-120b' });
+  await expect(page.getByText(/Đã kết nối provider và tìm thấy model/)).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: /Settings/ }).click();
   await expect(page.getByLabel('AI Provider')).toHaveValue('groq');
-  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('llama-3.3-70b-versatile');
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('openai/gpt-oss-120b');
   const stored = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage)));
-  expect(stored).toEqual({ 'game-creator.provider.v1': JSON.stringify({ providerId: 'groq', modelId: 'llama-3.3-70b-versatile' }) });
-  expect(calls).toHaveLength(1);
+  expect(stored).toEqual({ 'game-creator.provider.v1': JSON.stringify({ providerId: 'groq', modelId: 'openai/gpt-oss-120b' }) });
+  expect(JSON.stringify(stored)).not.toMatch(/key/i);
+  expect(calls).toHaveLength(2);
+});
+
+test('flags a saved retired model and generates with the server default only after the user picks it', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('game-creator.provider.v1', JSON.stringify({ providerId: 'groq', modelId: 'llama-3.3-70b-versatile' })));
+  await page.goto('/');
+  await expect(page.locator('.settings-summary')).toContainText('Unavailable');
+  await page.getByLabel('Bạn muốn tạo game gì?').fill('top-down collector');
+  await expect(page.getByRole('button', { name: 'Generate Game' })).toBeDisabled();
+  await expect(page.getByText(/Model đã lưu \(llama-3\.3-70b-versatile\) không còn trong allowlist/).first()).toBeVisible();
+  await choose(page, 'groq');
+  await page.getByLabel('Model', { exact: true }).selectOption('auto');
+  const request = page.waitForRequest((request) => request.url().includes('/api/games/generate'));
+  await generate(page, 'top-down collector');
+  expect((await request).postDataJSON()).toEqual({ providerId: 'groq', prompt: 'top-down collector' });
 });
 
 test('Gemini platformer and Groq top-down collect coins, win and restart in sandbox', async ({ page }) => {
@@ -127,7 +154,8 @@ test('quota errors are visible without provider fallback or retries', async ({ p
   await page.goto('/'); await choose(page, 'gemini');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('[quota]');
   await page.getByRole('button', { name: 'Generate Game' }).click();
-  await expect(page.getByText('Provider đã hết quota. Hãy thử lại sau.')).toBeVisible();
+  await expect(page.getByText('Provider đã hết quota. Hãy thử lại sau. Có thể thử lại sau khoảng 60 giây.')).toBeVisible();
+  await expect(page.locator('.error-code')).toHaveText('Mã lỗi: rate_limit');
   expect(requests).toBe(1);
   await expect(page.getByLabel('AI Provider')).toHaveValue('gemini');
   await expect(page.locator('iframe')).toHaveCount(0);
@@ -135,16 +163,63 @@ test('quota errors are visible without provider fallback or retries', async ({ p
 
 test('unconfigured provider stays unavailable after reload', async ({ page }) => {
   await page.route('**/api/ai/providers', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ providers: [
-    { id: 'gemini', name: 'Google Gemini', available: false, reason: 'missing_key', models: [] },
-    { id: 'groq', name: 'Groq', available: false, reason: 'missing_key', models: [] },
+    { id: 'gemini', name: 'Google Gemini', available: false, reason: 'missing_key', defaultModelId: 'gemini-3.5-flash-lite', models: [] },
+    { id: 'groq', name: 'Groq', available: false, reason: 'missing_key', defaultModelId: 'openai/gpt-oss-20b', models: [] },
   ] }) }));
   await page.goto('/'); await choose(page, 'gemini');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('Tạo game ninja');
   await expect(page.getByRole('button', { name: 'Generate Game' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Test connection' })).toBeDisabled();
-  await expect(page.locator('.settings-info').filter({ hasText: 'Chưa có API key' })).toBeVisible();
+  await expect(page.locator('.settings-info').filter({ hasText: 'Chưa có API key. Thêm GEMINI_API_KEY' })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Tình trạng cấu hình provider' })).toContainText('GROQ_API_KEY');
   await page.reload();
   await page.getByRole('button', { name: /Settings/ }).click();
   await expect(page.getByLabel('AI Provider')).toHaveValue('gemini');
-  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('auto');
+});
+
+test('backend 500 responses without a structured body show a readable error', async ({ page }) => {
+  await page.route('**/api/games/generate', (route) => route.fulfill({ status: 502, contentType: 'text/plain', body: 'bad gateway' }));
+  await page.goto('/'); await choose(page, 'gemini');
+  await page.getByLabel('Bạn muốn tạo game gì?').fill('Tạo game ninja');
+  await page.getByRole('button', { name: 'Generate Game' }).click();
+  await expect(page.getByText('Backend trả về lỗi HTTP 502. Hãy kiểm tra server và thử lại.')).toBeVisible();
+  await expect(page.locator('iframe')).toHaveCount(0);
+});
+
+for (const genre of ['top-down', 'platformer']) {
+  test(`${genre}: repaired coins keep their count/value and all must be collected to win`, async ({ page }) => {
+    await page.goto('/'); await choose(page, 'groq');
+    const response = page.waitForResponse((response) => response.url().includes('/api/games/generate'));
+    const canvas = await generate(page, `${genre} [repair] nhặt đủ 2 xu`);
+    const body = await (await response).json();
+    expect(body.data.game.collectibles).toHaveLength(2);
+    expect(body.data.game.collectibles.map((coin: { value: number }) => coin.value)).toEqual([10, 25]);
+    expect(body.data.game.enemies).toHaveLength(1);
+    expect(body.data.game.win.type).toBe('collect_all');
+    if (genre === 'platformer') await expect.poll(async () => (await playerPosition(canvas))?.bottom ?? 0).toBeGreaterThan(495);
+    const frame = page.frameLocator('iframe');
+    await page.keyboard.down('ArrowRight');
+    await expect(frame.locator('#game-hud')).toContainText('Điểm 10');
+    await page.keyboard.up('ArrowRight');
+    await expect(frame.getByRole('dialog')).toBeHidden();
+    await page.keyboard.down('ArrowLeft');
+    await expect(frame.getByRole('heading', { name: 'Bạn thắng!' })).toBeVisible();
+    await page.keyboard.up('ArrowLeft');
+    await expect(frame.locator('#game-hud')).toContainText('Điểm 35');
+  });
+}
+
+test('unrepairable placement shows a specific error without a partial game or retry', async ({ page }) => {
+  let requests = 0;
+  page.on('request', (request) => { if (request.url().includes('/api/games/generate')) requests += 1; });
+  await page.goto('/'); await choose(page, 'groq');
+  await page.getByLabel('Bạn muốn tạo game gì?').fill('platformer [unrepairable] nhặt đủ 2 xu');
+  const response = page.waitForResponse((response) => response.url().includes('/api/games/generate'));
+  await page.getByRole('button', { name: 'Generate Game' }).click();
+  expect((await response).status()).toBe(422);
+  await expect(page.getByText(/Xu 2 không thể tiếp cận an toàn/)).toBeVisible();
+  await expect(page.getByText(/giữ nguyên số lượng vật thể và mục tiêu/)).toBeVisible();
+  await expect(page.locator('iframe')).toHaveCount(0);
+  expect(requests).toBe(1);
 });

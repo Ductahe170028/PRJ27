@@ -21,8 +21,8 @@ export class GroqProvider implements AIProvider {
         response_format: request.model.capabilities.outputMode === 'json_schema'
           ? { type: 'json_schema', json_schema: { name: 'game_spec_v1', strict: true, schema: request.jsonSchema } }
           : { type: 'json_object' },
-        ...(request.model.id.startsWith('openai/gpt-oss-') ? { reasoning_effort: 'low' as const } : {}),
-        max_completion_tokens: 4_096,
+        ...(request.model.id.startsWith('openai/gpt-oss-') ? { reasoning_effort: 'low' as const, include_reasoning: false } : {}),
+        max_completion_tokens: request.maxOutputTokens ?? 4_096,
         temperature: 0.6,
       }, { signal: request.signal });
       const choice = response.choices[0];
@@ -35,7 +35,12 @@ export class GroqProvider implements AIProvider {
 
   async testConnection(model: ModelInfo, signal: AbortSignal) {
     try {
-      await this.client().models.retrieve(model.id, { signal });
+      // SDK retrieve() encodes '/' in namespaced IDs; Groq can return 404 for
+      // that URL even when the same model is available. List avoids this route.
+      const result = await this.client().models.list({ signal });
+      if (!result.data.some((item) => item.id === model.id && !('active' in item && item.active === false))) {
+        throw new AIError('invalid_model', 'Đã kết nối Groq nhưng model của ứng dụng hiện không khả dụng với API key này. Không tự chuyển sang model khác.', 400);
+      }
     } catch (error) { throw normalizeProviderError(error); }
   }
 }

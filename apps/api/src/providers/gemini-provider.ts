@@ -1,7 +1,16 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import type { ModelInfo } from '@game-creator/contracts';
 import type { AIProvider, AIRequest } from './ai-provider.js';
 import { AIError, normalizeProviderError } from './errors.js';
+
+// Gemini 3.x uses thinking_level (not thinking_budget) and supports different
+// levels per model; gemini-3.8-flash rejects MINIMAL. Thinking tokens count
+// toward maxOutputTokens. https://ai.google.dev/gemini-api/docs/thinking
+const THINKING_LEVEL: Readonly<Record<string, ThinkingLevel>> = {
+  'gemini-3.5-flash-lite': ThinkingLevel.MINIMAL,
+  'gemini-3.6-flash': ThinkingLevel.MINIMAL,
+  'gemini-3.8-flash': ThinkingLevel.LOW,
+};
 
 export class GeminiProvider implements AIProvider {
   readonly id = 'gemini';
@@ -15,6 +24,7 @@ export class GeminiProvider implements AIProvider {
 
   async generate(request: AIRequest): Promise<string> {
     try {
+      // Sampling parameters (temperature/top_p/top_k) are deprecated for Gemini 3.5+.
       const response = await this.client().models.generateContent({
         model: request.model.id,
         contents: request.prompt,
@@ -22,9 +32,8 @@ export class GeminiProvider implements AIProvider {
           systemInstruction: request.systemPrompt,
           responseMimeType: 'application/json',
           responseJsonSchema: request.jsonSchema,
-          maxOutputTokens: 4_096,
-          thinkingConfig: { thinkingBudget: 0 },
-          temperature: 0.6,
+          maxOutputTokens: request.maxOutputTokens ?? 8_192,
+          thinkingConfig: { thinkingLevel: THINKING_LEVEL[request.model.id] ?? ThinkingLevel.LOW },
           abortSignal: request.signal,
         },
       });

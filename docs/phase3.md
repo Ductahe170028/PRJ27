@@ -1,0 +1,117 @@
+# Phase 3 — AI Code Agent (local MVP)
+
+Standard giữ nguyên endpoints, renderer, provider và validation của Phase 1–2. Advanced là pipeline riêng, nhận cùng lựa chọn Gemini/Groq/model. Không có provider mặc định ngầm, fallback template hoặc retry khi upstream hết quota/lỗi xác thực. Không cần dịch vụ hoặc asset trả phí; các model vẫn bị giới hạn bởi catalog/allowlist hiện có. Việc tài khoản provider đã bật billing hay chưa vẫn do chủ tài khoản kiểm soát.
+
+## Chạy thử trên Windows
+
+Tại root, dùng Node 22+ và npm:
+
+```powershell
+npm install
+npx playwright install chromium
+npm run dev
+```
+
+Mở http://127.0.0.1:5173, chọn Advanced AI Mode rồi chọn Gemini hoặc Groq trong Settings. Key chỉ đặt trong `apps/api/.env`. Không thay nội dung key hiện có. `npm run dev` build/watch cả hai runtime; nếu chạy frontend/backend riêng, chạy `npm run build` trước để tester đọc được `apps/web/public/runtime/advanced.js`.
+
+Hai prompt gợi ý:
+
+- `Tạo game bắn máy bay, có đạn, kẻ địch xuất hiện liên tục, điểm số và boss. Đánh bại boss để thắng.`
+- `Tạo game đỡ bóng phá gạch. Thanh đỡ di chuyển ngang, bóng bật vào tường và thanh đỡ, phá hết gạch để thắng, bóng rơi xuống dưới thì thua.`
+
+Mỗi yêu cầu phải được model viết thành code mới. Hai chương trình mẫu trong `apps/api/test/agent-fixtures.ts` chỉ dùng cho test, không được import vào entrypoint production và không thay thế kết quả AI.
+
+## Module và luồng xử lý
+
+| File/module | Trách nhiệm |
+| --- | --- |
+| `packages/contracts/src/code-agent.ts` | Plan, source, project, stream events, GameAPI và HTML sandbox chung |
+| `apps/api/src/agent/agents.ts` | GamePlanner, CodeGenerator, CodeRepairAgent; dùng lại GameGenerationService và ProviderRegistry |
+| `code-validator.ts` | AST policy, strict TypeScript trên thư viện kiểu tối thiểu, compile và chèn bộ đếm |
+| `isolated-validator.ts`, `validator-worker.mjs` | Worker kiểm tra/biên dịch, giới hạn tài nguyên, hủy và timeout |
+| `game-tester.ts` | Playwright + Chromium process mới, không profile người dùng, smoke test và thu lỗi |
+| `orchestrator.ts`, `routes.ts` | Planning → Coding → Validating → Testing → Repairing → Completed/Failed, khóa 1 job |
+| `apps/web/src/game/code-runtime.ts` | Phaser host, API giới hạn, input, render, score, restart, ngân sách runtime |
+| `AdvancedWorkspace.tsx`, `CodePreview.tsx`, `lib/agent-api.ts` | Mode, stream trạng thái, kế hoạch/log lỗi, preview và Retry |
+
+Plan là một JSON gồm title, summary, mechanics, movement, action, objective. CodeGenerator trả JSON `{ "source": "..." }` với duy nhất `game.ts`; không trả file tùy ý, package.json hoặc lệnh shell. CodeRepairAgent nhận yêu cầu gốc, kế hoạch, source và tối đa 10 chẩn đoán. Mỗi bản sửa phải kiểm tra và chạy thử lại. Không lưu source/project vào database hoặc file theo tên do AI cung cấp.
+
+## Giao diện code
+
+Model viết hai hàm TypeScript:
+
+```typescript
+function create(api: GameAPI): void {
+  const player = api.spawn("player", 480, 470, 32, 24, 0xc5f277);
+  api.setPlayer(player);
+  api.state.player = player.id;
+}
+
+function update(api: GameAPI, dt: number): void {
+  const player = api.get(api.state.player!);
+  if (!player) { return; }
+  if (api.input.left) { player.x -= 240 * dt; }
+  if (api.input.right) { player.x += 240 * dt; }
+}
+```
+
+Ví dụ chỉ minh họa interface; game hoàn chỉnh cần tương tác, điểm, thắng/thua. `GAME_CODE_API` trong contracts là hợp đồng đầy đủ, được gửi nguyên văn cho model và dùng cho typecheck. API cung cấp entity hình chữ nhật, input bàn phím/chuột, AABB overlap, score, status, win/lose. Entity có x/y, kích thước, màu, vx/vy/hp; engine không tự áp dụng vx/vy, model phải viết logic di chuyển, trọng lực, bắn đạn, wave, boss, phản xạ bóng, v.v. Phaser chỉ dựng khung hình và chuyển input.
+
+Không cho code cầm trực tiếp Phaser.Scene/Game hoặc DOM: đó là các đối tượng có thể dẫn tới loader/network/browser host. Vì vậy đây là một **tập con TypeScript với facade Phaser**, không phải môi trường chạy mọi thư viện/code Phaser. Hỗ trợ helper functions, vòng lặp có braces, mảng đánh chỉ số số học và một số hàm Math. State bền giữa frame chỉ là số; String nối động, `any`, cast, import/export, `new`, class, async, try/catch, reflection/prototype và truy cập thuộc tính động đều bị từ chối. API/AST policy chưa phù hợp game cần asset ngoài, audio, nhiều scene hoặc thư viện bổ sung.
+
+## Giới hạn chi phí và thời gian
+
+| Mục | Giới hạn |
+| --- | --- |
+| Prompt | 1–2000 ký tự |
+| Source | 1 file, tối đa 24 KB UTF-8 |
+| Plan | 900 output tokens |
+| Generate/repair | 4096 output tokens mỗi lần |
+| AI calls | 1 planning + 1 coding + tối đa 2 repair = tối đa 4 |
+| Jobs Advanced | 1, từ chối job đồng thời bằng 429; không xếp hàng |
+| Ngân sách provider | Dùng chung AI_REQUESTS_PER_MINUTE/PER_DAY/MAX_CONCURRENT với Standard; mỗi AI step tính một request |
+| Toàn pipeline | 4 phút; đóng tab/hủy request sẽ hủy công việc |
+| Compile worker | 5 giây, V8 old generation 128 MiB + young generation 32 MiB, stack 4 MiB |
+| Chromium test | Launch tối đa 15 giây, kiểm tra tối đa 15 giây, kill process khi timeout/hủy |
+| Chromium heap | V8 old space 128 MiB; không phải giới hạn tổng RAM của process |
+| Runtime | 160 entity, 256 trường state số, entity size 1–200px; 5000 lần kiểm tra hàm/vòng lặp và 20ms cho mỗi callback |
+| Preview | Heartbeat/watchdog, phiên tối đa 10 phút |
+
+Giới hạn CPU runtime là hợp tác bằng code đã instrument, không phải OS quota. Một phép native vẫn có thể kéo dài hơn deadline trước khi tới điểm kiểm tra tiếp theo; AST/API hạn chế các phép cấp phát lớn để giảm nguy cơ. Browser iframe không có hard memory quota riêng. Nếu hết quota ở bước coding/repair, dừng ngay và hiển thị `rate_limit`, không chờ tự gọi lại, không đổi model/provider. Groq free tier có thể hết token/phút ngay khi cần sửa; người dùng quyết định Retry sau. Không cam kết mọi prompt/model sẽ tạo game hợp lệ trong ngân sách này.
+
+## API và trạng thái
+
+- `GET /api/agent/config`: `{enabled, localOnly:true, maxRepairs:2, message}`; không gọi AI.
+- `POST /api/agent/generate`: `{prompt, providerId, modelId?}`, `Content-Type: application/json`.
+- Response thành công bắt đầu bằng `200 application/x-ndjson`. Mỗi dòng là một event strict: `status`, `plan`, `log`, `completed` hoặc `failed`. `completed.project` chứa JavaScript đã biên dịch và đã qua smoke test, plan, provider/model thực tế và số lần sửa.
+- Các lỗi trước stream (local gate, input, selection, concurrency) dùng HTTP 400/403/429/503 như thường. Sau khi stream bắt đầu, lỗi nằm trong event `failed.error` gồm code/message/retryAfterSeconds; không thể đổi HTTP status đã gửi. Frontend luôn đọc event kết thúc và báo lỗi nếu mất kết nối giữa chừng.
+- `invalid_code`: kế hoạch/đầu ra không hợp lệ; `agent_failed`: chưa qua kiểm tra sau 2 sửa; `tester_unavailable`: thiếu browser/runtime hoặc Chromium sandbox không chạy; `advanced_unavailable`: bị chặn bởi local gate. Các lỗi upstream dùng mã hiện có.
+
+Retry là một Generate mới, không phải Phase 4 chỉnh sửa game. Không có background provider call khi mở Settings hoặc chuyển mode. Standard giữ nguyên `/api/games/generate`.
+
+## Cách ly và giới hạn bảo mật
+
+Backend **không chạy source AI** bằng eval, vm, import, shell hoặc require. Worker chỉ nhận source làm dữ liệu cho TypeScript AST/compiler. Module được worker import là validator tin cậy trong repo, không phải đường dẫn từ model. Browser mới chạy artifact đã compile; frontend main không eval/new Function nội dung AI.
+
+Preview và Playwright dùng cùng HTML sandbox: iframe chỉ `allow-scripts`, không `allow-same-origin`, không quyền popup/top-navigation/forms/downloads/storage. CSP chặn network, worker, subframe, media, object, base URI và form; script chỉ được chạy bằng nonce riêng cho runtime tin cậy và artifact đã validate. Model không được truy cập window/document/location/navigator hoặc Phaser host để tự điều hướng iframe. Tài liệu nền tảng: [HTML iframe sandbox](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox), [Playwright Chromium sandbox](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-option-chromium-sandbox).
+
+Tester dùng Chromium sandbox bật, context/profile tạm mới, service worker bị chặn, route abort mọi network request, không truyền API keys vào browser environment. Không tắt sandbox khi lỗi. Preview chỉ gửi/nhận thông báo có session UUID và kiểm tra cửa sổ gửi; host không nhận lệnh đặc quyền từ code game. HTML đóng script được escape, status/log render dưới dạng text.
+
+**Chưa đủ để triển khai công khai cho người dùng không tin cậy.** Static policy và browser sandbox là các lớp giảm rủi ro, không phải bằng chứng không thể thoát sandbox; chưa có OS container/VM, hard CPU/RAM/network isolation, tenant isolation hoặc security audit. Tính năng luôn tắt với `NODE_ENV=production`, và chỉ nhận request từ loopback kèm Host/Origin localhost/127.0.0.1/::1. Không đưa Advanced qua tunnel/reverse proxy hoặc mở cổng ra Internet; proxy có thể làm mất ý nghĩa kiểm tra địa chỉ local. Nếu cần public sau này, phải bổ sung cách ly OS và kiểm định riêng.
+
+## Kiểm thử
+
+```powershell
+npm run lint
+npm run typecheck
+npm test
+npm run test:e2e
+```
+
+Unit/API dùng mock AI: source hợp lệ, cú pháp/type sai, capability bị cấm, runtime lỗi giả lập, sửa thành công, thất bại sau hai sửa, 429/401/403, budget chung, concurrency, local gate và hồi quy Standard. Có test compiler worker thật. E2E dùng provider mock nhưng compiler, Chromium GameTester, HTTP stream, React và Phaser thật; kiểm tra shooter, paddle, phát hiện/sửa runtime error, quota, Retry và tất cả test Phase 1–2. Không đọc key hoặc gọi Gemini/Groq thật. Có thể chẩn đoán riêng browser sau build bằng `node --import tsx apps/api/test/browser-agent.smoke.ts`.
+
+GameTester xác nhận canvas/objects/update, di chuyển player theo plan, gửi Space/click và so sánh hình ảnh/HUD trước-sau, không phát sinh console/page/runtime errors và restart reset điểm. Đây là **smoke test**: chuyển động tự động cũng có thể làm hình ảnh thay đổi, nên chưa chứng minh quan hệ nhân quả của input, boss/điểm/độ khó/cân bằng hoặc mọi điều kiện thắng đúng với mô tả tự nhiên. Test không tự tạo chiến lược chơi hết mọi game; cần người dùng chơi thử kết quả. Chưa kiểm thử live AI Phase 3 để tránh tiêu quota; khả năng hiểu yêu cầu còn phụ thuộc model.
+
+Không triển khai Phase 4, Phase 5, database, Docker, authentication, dịch vụ asset trả phí hoặc publishing.
+
+Kiểm tra dependency ngày 2026-11-03: `npm audit --omit=dev` không có cảnh báo. Audit đầy đủ còn 7 mục moderate cùng bắt nguồn từ minimatch trong ESLint/parser ([GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)); npm báo chưa có bản sửa trong các khoảng phiên bản hiện dùng. Không ép override minimatch lên major khác vì có thể làm hỏng API của công cụ lint. ESLint chỉ chạy trên repo với glob cố định, không chạy trên prompt/code AI; pipeline Advanced dùng TypeScript compiler. Cần theo dõi bản cập nhật tooling tương thích Node 22.11.

@@ -7,14 +7,18 @@ export function createProviderRegistry(env: NodeJS.ProcessEnv = process.env) {
   const providers = [new GeminiProvider(env.GEMINI_API_KEY?.trim() ?? ''), new GroqProvider(env.GROQ_API_KEY?.trim() ?? '')];
   return new ProviderRegistry(providers.map((provider) => {
     const prefix = provider.id.toUpperCase();
-    const ids = [...new Set((env[`${prefix}_ALLOWED_MODELS`] ?? '').split(',').map((id) => id.trim()).filter(Boolean))];
     const catalog = MODEL_CATALOG[provider.id] ?? [];
+    // An API key is enough: an empty allowlist means the whole verified catalog.
+    // *_ALLOWED_MODELS may only narrow it; unknown IDs make the provider unavailable.
+    const configured = env[`${prefix}_ALLOWED_MODELS`]?.trim();
+    const ids = configured
+      ? [...new Set(configured.split(',').map((id) => id.trim()).filter(Boolean))]
+      : catalog.map((item) => item.id);
     return {
       provider,
       configured: Boolean(env[`${prefix}_API_KEY`]?.trim()),
-      freeTierConfirmed: env[`${prefix}_FREE_TIER_CONFIRMED`] === 'true',
-      models: catalog.filter((model) => ids.includes(model.id)),
-      invalidModels: ids.length > 10 || ids.some((id) => !catalog.some((model) => model.id === id)),
+      models: catalog.filter((item) => ids.includes(item.id)),
+      invalidModels: ids.length > 10 || ids.some((id) => !catalog.some((item) => item.id === id)),
     };
   }));
 }

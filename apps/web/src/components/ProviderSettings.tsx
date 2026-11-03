@@ -1,21 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Settings2, LoaderCircle } from 'lucide-react';
-import { SelectionPreferenceSchema, type ProviderInfo, type ProviderSelection } from '@game-creator/contracts';
-import { getProviders, testConnection } from '../lib/api';
+import { AUTO_MODEL_ID, SelectionPreferenceSchema, type ProviderInfo, type ProviderSelection } from '@game-creator/contracts';
+import { describeError, getProviders, testConnection } from '../lib/api';
 
 const STORAGE_KEY = 'game-creator.provider.v1';
 const DEMO: ProviderSelection = { providerId: 'demo', modelId: 'platformer-v1' };
-const reasonCopy: Record<NonNullable<ProviderInfo['reason']>, string> = {
-  missing_key: 'Chưa có API key. Bổ sung trong apps/api/.env rồi khởi động lại backend.',
-  models_unconfigured: 'Chưa cấu hình ALLOWED_MODELS trong .env của backend.',
-  free_tier_unconfirmed: 'Chưa xác nhận model dùng được trong free tier của tài khoản ở .env.',
-  invalid_model: 'Allowlist chứa model không được hỗ trợ. Kiểm tra cấu hình backend.',
-};
+
+function reasonCopy(provider: ProviderInfo) {
+  const prefix = provider.id.toUpperCase();
+  switch (provider.reason) {
+    case 'missing_key': return `Chưa có API key. Thêm ${prefix}_API_KEY vào apps/api/.env rồi khởi động lại backend.`;
+    case 'models_unconfigured': return `Allowlist model đang trống. Kiểm tra ${prefix}_ALLOWED_MODELS ở backend.`;
+    case 'invalid_model': return `${prefix}_ALLOWED_MODELS chứa model không được hỗ trợ. Kiểm tra apps/api/.env.`;
+    default: return '';
+  }
+}
 
 function loadSelection(): ProviderSelection {
   try {
     const parsed = SelectionPreferenceSchema.safeParse(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
-    return parsed.success ? parsed.data : DEMO;
+    if (!parsed.success) return DEMO;
+    // Older versions stored '' when no model was chosen yet.
+    return parsed.data.modelId === '' ? { ...parsed.data, modelId: AUTO_MODEL_ID } : parsed.data;
   } catch { return DEMO; }
 }
 
@@ -30,6 +36,7 @@ export function useProviderSettings() {
   const loadRequest = useRef<AbortController | null>(null);
   const testRequest = useRef<AbortController | null>(null);
 
+  // Reads backend configuration only; never calls an AI provider.
   const refresh = useCallback(async () => {
     loadRequest.current?.abort();
     const controller = new AbortController();
@@ -69,35 +76,39 @@ export function useProviderSettings() {
       if (!controller.signal.aborted) { setTestMessage(result.message); setTestError(false); }
     } catch (error) {
       if (!controller.signal.aborted) {
-        setTestMessage(error instanceof Error ? error.message : 'Không kiểm tra được kết nối.');
+        setTestMessage(describeError(error, 'Không kiểm tra được kết nối.').message);
         setTestError(true);
       }
     } finally { if (!controller.signal.aborted) setTesting(false); }
   }
 
   const provider = providers.find((item) => item.id === selection.providerId);
-  const model = provider?.models.find((item) => item.id === selection.modelId);
+  const automatic = selection.modelId === AUTO_MODEL_ID;
+  const model = provider?.models.find((item) => item.id === (automatic ? provider.defaultModelId : selection.modelId));
   const isDemo = selection.providerId === 'demo' && selection.modelId === 'platformer-v1';
   const available = isDemo || Boolean(!loading && !loadError && provider?.available && model);
   const message = isDemo ? 'Demo cục bộ · Không gọi AI'
     : loading ? 'Đang đọc cấu hình backend…' : loadError || (!provider ? 'Provider đã lưu không còn được hỗ trợ.'
-      : provider.reason ? reasonCopy[provider.reason] : !model ? 'Hãy chọn model trong allowlist hiện tại.' : 'Đã cấu hình · Chưa kiểm tra kết nối');
-  return { selection, providers, provider, model, available, isDemo, message, loading, loadError, testing, testMessage, testError, select, refresh, test };
+      : provider.reason ? reasonCopy(provider)
+      : !model ? `Model đã lưu (${selection.modelId || 'trống'}) không còn trong allowlist. Hãy chọn model khác.`
+      : 'Đã cấu hình · Chưa kiểm tra kết nối');
+  return { selection, providers, provider, model, automatic, available, isDemo, message, loading, loadError, testing, testMessage, testError, select, refresh, test };
 }
 
-export function ProviderSettings({ settings, disabled }: { settings: ReturnType<typeof useProviderSettings>; disabled: boolean }) {
+export function ProviderSettings({ settings, disabled, advanced = false }: { settings: ReturnType<typeof useProviderSettings>; disabled: boolean; advanced?: boolean }) {
   const [open, setOpen] = useState(false);
   const { selection, provider, model, providers, isDemo } = settings;
+  const defaultModel = provider?.models.find((item) => item.id === provider.defaultModelId);
   return <section className="panel settings-panel" aria-label="AI Settings">
     <button className="settings-toggle" type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="provider-settings">
       <Settings2 size={17}/><span>Settings</span><span className="settings-current">{isDemo ? 'Demo' : provider?.name ?? selection.providerId}</span>
     </button>
-    <p className="settings-summary">{isDemo ? 'Moonlight Run' : model?.id ?? 'Chưa chọn model'}<span className={settings.available ? 'available' : 'unavailable'}>{settings.available ? 'Sẵn sàng' : 'Unavailable'}</span></p>
+    <p className="settings-summary">{isDemo ? 'Moonlight Run' : model ? `${model.id}${settings.automatic ? ' · tự động' : ''}` : 'Chưa chọn model'}<span className={settings.available ? 'available' : 'unavailable'}>{settings.available ? 'Sẵn sàng' : 'Unavailable'}</span></p>
     {open && <div id="provider-settings" className="settings-content">
       <label className="field-label" htmlFor="provider">AI Provider</label>
       <select id="provider" value={selection.providerId} disabled={disabled || settings.loading} onChange={(event) => {
         const id = event.target.value;
-        settings.select(id === 'demo' ? DEMO : { providerId: id, modelId: providers.find((item) => item.id === id)?.models[0]?.id ?? '' });
+        settings.select(id === 'demo' ? DEMO : { providerId: id, modelId: AUTO_MODEL_ID });
       }}>
         <option value="demo">Demo — không gọi AI</option>
         {providers.map((item) => <option key={item.id} value={item.id}>{item.name}{item.available ? '' : ' — unavailable'}</option>)}
@@ -106,20 +117,27 @@ export function ProviderSettings({ settings, disabled }: { settings: ReturnType<
       <label className="field-label" htmlFor="model">Model</label>
       <select id="model" value={selection.modelId} disabled={disabled || isDemo || !provider?.models.length} onChange={(event) => settings.select({ ...selection, modelId: event.target.value })}>
         {isDemo ? <option value="platformer-v1">Moonlight Run (demo)</option> : <>
-          {!model && <option value={selection.modelId}>{selection.modelId || 'Chưa có model trong allowlist'}</option>}
+          <option value={AUTO_MODEL_ID}>{defaultModel ? `Tự động — ${defaultModel.name} (khuyến nghị)` : 'Tự động'}</option>
+          {!settings.automatic && !model && <option value={selection.modelId}>{selection.modelId || 'Chưa chọn'} — không còn hỗ trợ</option>}
           {provider?.models.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.id})</option>)}
         </>}
       </select>
-      <p className="settings-info">{settings.message}</p>
-      {!isDemo && model && <p className="settings-info">Output: {model.capabilities.outputMode === 'json_schema' ? 'Structured JSON' : 'JSON mode + validation'} · Platformer / Top-down</p>}
+      <p className={settings.available ? 'settings-info' : 'settings-info settings-warning'}>{settings.message}</p>
+      {!isDemo && model && <p className="settings-info">{advanced ? 'AI viết cơ chế chơi · Kiểm tra và sửa lỗi tự động' : `${model.capabilities.outputMode === 'json_schema' ? 'Structured output (JSON schema)' : 'JSON mode + kiểm tra Zod'} · Platformer / Top-down`}</p>}
       <div className="settings-actions">
         <button type="button" onClick={() => void settings.test()} disabled={disabled || settings.testing || !settings.available || isDemo}>
           {settings.testing && <LoaderCircle size={13} className="spin"/>}{settings.testing ? 'Đang kiểm tra…' : 'Test connection'}
         </button>
         <button type="button" onClick={() => void settings.refresh()} disabled={disabled || settings.loading || settings.testing}>Tải lại cấu hình</button>
       </div>
-      <p className="settings-info">Test connection chỉ kiểm tra quyền truy cập model, không sinh game. Tạo game sử dụng quota của provider bạn chọn.</p>
       {settings.testMessage && <p className={settings.testError ? 'field-error' : 'settings-success'} role={settings.testError ? 'alert' : 'status'}>{settings.testMessage}</p>}
+      {providers.length > 0 && <ul className="provider-status" aria-label="Tình trạng cấu hình provider">
+        {providers.map((item) => <li key={item.id}>
+          <span>{item.name}</span>
+          <span className={item.available ? 'available' : 'unavailable'}>{item.available ? `Đã cấu hình · ${item.models.length} model` : reasonCopy(item)}</span>
+        </li>)}
+      </ul>}
+      <p className="settings-info">Test connection chỉ kiểm tra API key và quyền dùng model, không sinh game. Danh sách chỉ gồm model có free tier; nếu tài khoản provider đã bật billing, provider có thể tính phí theo bảng giá của họ.</p>
     </div>}
   </section>;
 }

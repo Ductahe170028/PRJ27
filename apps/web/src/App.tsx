@@ -4,10 +4,11 @@ import {
   Gamepad2, Layers2, LoaderCircle, MonitorPlay, RefreshCw, Sparkles, Terminal,
 } from 'lucide-react';
 import { GenerateGameRequestSchema, PROMPT_MAX_LENGTH, type GameProject } from '@game-creator/contracts';
-import { checkHealth, generateGame } from './lib/api';
+import { checkHealth, describeError, generateGame } from './lib/api';
 import { EmptyPreview } from './components/EmptyPreview';
 import { GamePreview } from './components/GamePreview';
 import { ProviderSettings, useProviderSettings } from './components/ProviderSettings';
+import { AdvancedWorkspace } from './components/AdvancedWorkspace';
 
 type Phase = 'idle' | 'generating' | 'booting' | 'playing' | 'error';
 type Health = 'checking' | 'online' | 'offline';
@@ -22,11 +23,14 @@ const phaseCopy: Record<Phase, { title: string; description: string }> = {
 
 export function App() {
   const settings = useProviderSettings();
+  const [advanced, setAdvanced] = useState(false);
+  const [advancedBusy, setAdvancedBusy] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [project, setProject] = useState<GameProject | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [health, setHealth] = useState<Health>('checking');
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
   const [fieldError, setFieldError] = useState('');
   const [healthError, setHealthError] = useState('');
   const generationRequest = useRef<AbortController | null>(null);
@@ -70,6 +74,7 @@ export function App() {
     generationRequest.current = controller;
     setFieldError('');
     setError('');
+    setErrorCode('');
     setProject(null);
     setPhase('generating');
     try {
@@ -82,7 +87,9 @@ export function App() {
       setPhase('booting');
     } catch (cause) {
       if (controller.signal.aborted) return;
-      setError(cause instanceof Error ? cause.message : 'Không thể tạo game. Hãy thử lại.');
+      const described = describeError(cause, 'Không thể tạo game. Hãy thử lại.');
+      setError(described.message);
+      setErrorCode(described.code);
       setPhase('error');
     }
   }
@@ -90,6 +97,7 @@ export function App() {
   const onStarted = useCallback(() => setPhase('playing'), []);
   const onRuntimeError = useCallback((message: string) => {
     setError(message);
+    setErrorCode('');
     setProject(null);
     setPhase('error');
   }, []);
@@ -107,7 +115,7 @@ export function App() {
           <span className="small-dot"/>
           {health === 'online' ? 'Backend đã kết nối' : health === 'checking' ? 'Đang kết nối backend' : 'Backend chưa kết nối'}
         </span>
-        <span className="phase-badge">PHASE 02</span>
+        <span className="phase-badge">PHASE 03</span>
       </div>
     </header>
 
@@ -118,15 +126,19 @@ export function App() {
           <h1>Ý tưởng của bạn. <span>Sân chơi tiếp theo.</span></h1>
           <p>Chọn AI, mô tả ý tưởng và chơi màn game của bạn.</p>
         </div>
-        <div className="demo-mode"><span className="demo-mode-icon"><Code2 size={17}/></span><div><strong>{settings.isDemo ? 'Demo mode' : settings.provider?.name ?? settings.selection.providerId}</strong><span>{settings.isDemo ? 'Game mẫu · Không gọi AI' : 'AI generation · GameSpec v1'}</span></div></div>
+        <div className="demo-mode"><span className="demo-mode-icon"><Code2 size={17}/></span><div><strong>{advanced ? 'Advanced AI Mode' : settings.isDemo ? 'Demo mode' : settings.provider?.name ?? settings.selection.providerId}</strong><span>{advanced ? 'Code Agent · Local preview' : settings.isDemo ? 'Game mẫu · Không gọi AI' : 'AI generation · GameSpec v1'}</span></div></div>
       </div>
 
+      <div className="generation-mode" role="group" aria-label="Chế độ tạo game">
+        <button type="button" aria-pressed={!advanced} disabled={busy || advancedBusy} onClick={() => setAdvanced(false)}>Standard Mode <span>GameSpec · nhanh và ổn định</span></button>
+        <button type="button" aria-pressed={advanced} disabled={busy || advancedBusy} onClick={() => setAdvanced(true)}>Advanced AI Mode <span>Code mới · kiểm tra và sửa lỗi</span></button>
+      </div>
       {health === 'offline' && <div className="connection-alert" role="alert">
         <CircleAlert size={17}/><span>{healthError}</span>
         <button type="button" onClick={() => void refreshHealth()}><RefreshCw size={13}/> Kiểm tra lại</button>
       </div>}
 
-      <div className="workspace-grid">
+      {advanced ? <AdvancedWorkspace settings={settings} onBusy={setAdvancedBusy}/> : <div className="workspace-grid">
         <aside className="creator-column" aria-label="Tạo game">
           <ProviderSettings settings={settings} disabled={busy}/>
           <section className="panel prompt-panel">
@@ -154,7 +166,7 @@ export function App() {
                 <span>{busy ? 'Đang tạo game…' : 'Generate Game'}</span>
                 {!busy && <ArrowUpRight size={18}/>}
               </button>
-              <p id="prompt-hint" className="demo-note">{!settings.available ? settings.message : settings.isDemo ? 'Demo luôn chạy Moonlight Run. Vào Settings để chọn Gemini hoặc Groq.' : `Tạo game bằng ${settings.provider?.name} · ${settings.selection.modelId}. Hỗ trợ tiếng Việt và tiếng Anh.`}</p>
+              <p id="prompt-hint" className="demo-note">{!settings.available ? settings.message : settings.isDemo ? 'Demo luôn chạy Moonlight Run. Vào Settings để chọn Gemini hoặc Groq.' : `Tạo game bằng ${settings.provider?.name} · ${settings.model?.name ?? settings.selection.modelId}${settings.automatic ? ' (tự động)' : ''}. Hỗ trợ tiếng Việt và tiếng Anh.`}</p>
             </form>
           </section>
 
@@ -162,7 +174,7 @@ export function App() {
             <div className="status-heading"><Terminal size={14}/><h2>Trạng thái</h2><span className="status-tiny-label">{phase === 'playing' ? 'COMPLETE' : busy ? 'RUNNING' : phase === 'error' ? 'ERROR' : 'READY'}</span></div>
             <div className="status-message" role={phase === 'error' ? 'alert' : 'status'} aria-live="polite" aria-atomic="true">
               <div className="status-symbol">{busy ? <LoaderCircle size={18} className="spin"/> : phase === 'playing' ? <Check size={18}/> : phase === 'error' ? <CircleAlert size={18}/> : <span className="small-dot"/>}</div>
-              <div><h3>{phaseCopy[phase].title}</h3><p>{phase === 'error' ? error : phaseCopy[phase].description}</p></div>
+              <div><h3>{phaseCopy[phase].title}</h3><p>{phase === 'error' ? error : phaseCopy[phase].description}</p>{phase === 'error' && errorCode && <p className="error-code">Mã lỗi: <code>{errorCode}</code></p>}</div>
             </div>
             <div className="generation-steps" aria-label="Tiến trình">
               {['Mô tả', settings.isDemo ? 'Demo API' : 'AI + Kiểm tra', 'Preview'].map((label, index) => <div key={label} className={index < completedSteps ? 'step-complete' : ''}>
@@ -190,10 +202,10 @@ export function App() {
           </div>
           <div className="preview-footer"><span><span className="small-dot"/> Phaser 3 <span className="footer-separator">/</span> Arcade Physics</span><span>960 × 540 <span className="footer-separator">·</span> Sandbox preview</span></div>
         </section>
-      </div>
+      </div>}
 
       <div className="workspace-caption"><span><ArrowDown size={13}/> Nhập ý tưởng. Tạo game. Bấm vào preview để chơi.</span><span>NỀN TẢNG HÔM NAY. SÁNG TẠO NGÀY MAI.</span></div>
     </main>
-    <footer className="site-footer"><span>AI Game Creator <span className="footer-separator">/</span> Giai đoạn 2</span><span>Built for your next idea<span className="footer-spark">✦</span></span></footer>
+    <footer className="site-footer"><span>AI Game Creator <span className="footer-separator">/</span> Giai đoạn 3</span><span>Built for your next idea<span className="footer-spark">✦</span></span></footer>
   </div>;
 }

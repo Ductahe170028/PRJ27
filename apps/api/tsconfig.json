@@ -6,7 +6,8 @@
     "rootDir": "src",
     "outDir": "dist",
     "sourceMap": true,
-    "lib": ["ES2022"],
+    "allowJs": true,
+    "lib": ["ES2022", "DOM"],
     "types": ["node"]
   },
   "include": ["src"]

@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build:game && concurrently -k -n ui,runtime \"vite\" \"vite build --config vite.game.config.ts --watch\"",
-    "build:game": "vite build --config vite.game.config.ts",
+    "dev": "npm run build:game && concurrently -k -n ui,runtime,advanced \"vite\" \"vite build --config vite.game.config.ts --watch\" \"vite build --config vite.advanced.config.ts --watch\"",
+    "build:game": "vite build --config vite.game.config.ts && vite build --config vite.advanced.config.ts",
     "build": "npm run typecheck && npm run build:game && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "preview": "vite preview --host 127.0.0.1 --port 5173 --strictPort"

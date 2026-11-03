@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import {
-  AIGameProjectSchema, GAME_SPEC_MAX_BYTES, GameSpecSchema,
-  type GenerateGameRequest, type ProviderSelection,
+  AIGameProjectSchema, GAME_SPEC_MAX_BYTES, GameSpecPlacementInputSchema,
+  type GenerateGameRequest, type ProviderRequestSelection,
 } from '@game-creator/contracts';
 import { ProviderRegistry } from '../providers/provider-registry.js';
 import { AIError, normalizeProviderError } from '../providers/errors.js';
 import { RequestBudget } from './request-budget.js';
 import { GAME_SYSTEM_PROMPT, providerJsonSchema } from './system-prompt.js';
+import { normalizeGeneratedSpec } from './normalize-game-spec.js';
+import { repairGamePlacement } from './repair-game-placement.js';
+import type { AIRequest } from '../providers/ai-provider.js';
 
 export function parseGameSpec(text: string) {
   if (Buffer.byteLength(text, 'utf8') > GAME_SPEC_MAX_BYTES) throw new AIError('invalid_game_spec', 'GameSpec vượt quá giới hạn 32 KB.', 422);
@@ -14,12 +17,13 @@ export function parseGameSpec(text: string) {
   const clean = text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
   let data: unknown;
   try { data = JSON.parse(clean); } catch { throw new AIError('invalid_game_spec', 'Provider không trả về JSON hợp lệ. Hãy thử mô tả đơn giản hơn.', 422); }
-  const parsed = GameSpecSchema.safeParse(data);
+  const normalized = normalizeGeneratedSpec(data);
+  const parsed = GameSpecPlacementInputSchema.safeParse(normalized);
   if (!parsed.success) {
     throw new AIError('invalid_game_spec', 'Dữ liệu màn chơi không hợp lệ hoặc không thể chơi an toàn. Hãy đơn giản hóa mô tả rồi thử lại.', 422, undefined,
       parsed.error.issues.slice(0, 5).map((issue) => issue.path.map(String).join('.')));
   }
-  return parsed.data;
+  return repairGamePlacement(parsed.data);
 }
 
 export class GameGenerationService {
@@ -44,7 +48,7 @@ export class GameGenerationService {
     finally { clearTimeout(timer); signal.removeEventListener('abort', onDisconnect); release(); }
   }
 
-  async generate(request: GenerateGameRequest & ProviderSelection, client: string, signal: AbortSignal) {
+  async generate(request: GenerateGameRequest & ProviderRequestSelection, client: string, signal: AbortSignal) {
     const { provider, model } = this.registry.resolve(request.providerId, request.modelId);
     const text = await this.execute(client, signal, (abortSignal) => provider.generate({
       prompt: request.prompt, model, signal: abortSignal,
@@ -58,12 +62,17 @@ export class GameGenerationService {
     });
   }
 
-  async testConnection(selection: ProviderSelection, client: string, signal: AbortSignal) {
+  async testConnection(selection: ProviderRequestSelection, client: string, signal: AbortSignal) {
     const { provider, model } = this.registry.resolve(selection.providerId, selection.modelId);
     await this.execute(client, signal, (abortSignal) => provider.testConnection(model, abortSignal));
     return {
       status: 'connected' as const, providerId: provider.id, modelId: model.id,
-      message: 'API key và model truy cập được. Kiểm tra này không sinh nội dung và không xác nhận quota còn lại.',
+      message: 'Đã kết nối provider và tìm thấy model của ứng dụng. Kiểm tra này không sinh nội dung và không xác nhận quota còn lại.',
     };
+  }
+
+  async generateArtifact(selection: ProviderRequestSelection, input: Pick<AIRequest, 'prompt' | 'systemPrompt' | 'jsonSchema' | 'maxOutputTokens'>, client: string, signal: AbortSignal) {
+    const { provider, model } = this.registry.resolve(selection.providerId, selection.modelId);
+    return this.execute(client, signal, (abortSignal) => provider.generate({ ...input, model, signal: abortSignal }));
   }
 }

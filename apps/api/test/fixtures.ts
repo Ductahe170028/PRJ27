@@ -25,6 +25,6 @@ export function mockProvider(id = 'gemini', generate: (request: AIRequest) => Pr
 
 export function mockRegistry(providers = [mockProvider(), mockProvider('groq')]) {
   return new ProviderRegistry(providers.map((provider) => ({
-    provider, configured: true, freeTierConfirmed: true, models: MODEL_CATALOG[provider.id] ?? [],
+    provider, configured: true, models: MODEL_CATALOG[provider.id] ?? [],
   })));
 }

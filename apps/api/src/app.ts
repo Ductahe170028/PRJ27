@@ -1,17 +1,21 @@
 import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
-import { GenerateGameRequestSchema, SelectionSchema } from '@game-creator/contracts';
+import { GenerateGameRequestSchema, ProviderRequestSchema } from '@game-creator/contracts';
 import { DemoGameProvider } from './providers/demo-game-provider.js';
 import { GameService } from './services/game-service.js';
 import { createProviderRegistry } from './providers/create-registry.js';
 import { AIError } from './providers/errors.js';
 import { GameGenerationService } from './services/game-generation-service.js';
 import { RequestBudget } from './services/request-budget.js';
+import { AgentOrchestrator } from './agent/orchestrator.js';
+import { mountAgentRoutes } from './agent/routes.js';
 
 interface AppOptions {
   service?: GameService;
   generationService?: GameGenerationService;
   clientOrigins?: string[];
+  agent?: AgentOrchestrator;
+  advancedEnabled?: boolean;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -42,7 +46,7 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post('/api/ai/test-connection', async (request, response) => {
-    const parsed = SelectionSchema.safeParse(request.body);
+    const parsed = ProviderRequestSchema.safeParse(request.body);
     if (!parsed.success) throw new AIError('invalid_model', 'Hãy chọn provider và model hợp lệ.', 400);
     const controller = new AbortController();
     const disconnect = () => { if (!response.writableEnded) controller.abort(); };
@@ -68,17 +72,19 @@ export function createApp(options: AppOptions = {}) {
       response.status(201).json({ data: await service.generate(result.data) });
       return;
     }
-    if (!providerId || !modelId || providerId === 'demo') {
+    if (!providerId || providerId === 'demo') {
       throw new AIError('invalid_model', 'Cần chọn cả provider và model hợp lệ.', 400);
     }
     const controller = new AbortController();
     const disconnect = () => { if (!response.writableEnded) controller.abort(); };
     response.on('close', disconnect);
     try {
-      const project = await generation.generate({ ...result.data, providerId, modelId }, request.ip ?? 'local', controller.signal);
+      const project = await generation.generate({ ...result.data, providerId }, request.ip ?? 'local', controller.signal);
       response.status(201).json({ data: project });
     } finally { response.off('close', disconnect); }
   });
+
+  mountAgentRoutes(app, options.agent ?? new AgentOrchestrator(generation), options.advancedEnabled ?? (process.env.ADVANCED_AI_ENABLED !== 'false' && process.env.NODE_ENV !== 'production'));
 
   app.use((_request, response) => {
     response.status(404).json({ error: { code: 'NOT_FOUND', message: 'API không tồn tại.' } });

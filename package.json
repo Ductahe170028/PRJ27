@@ -3,9 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=22.0.0", "npm": ">=10.0.0" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
+    "lint": "eslint . --max-warnings 0",
     "dev": "npm run build:contracts && concurrently -k -n api,web,contracts -c cyan,green,gray \"npm run dev:api\" \"npm run dev:web\" \"npm run dev -w @game-creator/contracts\"",
     "dev:api": "npm run dev -w @game-creator/api",
     "dev:web": "npm run dev -w @game-creator/web",
@@ -21,10 +28,14 @@
     "@playwright/test": "1.60.0",
     "@types/node": "^22.15.0",
     "@types/supertest": "^6.0.3",
+    "@typescript-eslint/parser": "8.46.0",
     "concurrently": "^9.2.1",
+    "eslint": "^9.39.5",
     "supertest": "^7.1.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.12"
   },
-  "overrides": { "vite": "^6.4.5" }
+  "overrides": {
+    "vite": "^6.4.5"
+  }
 }

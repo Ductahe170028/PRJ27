@@ -3,6 +3,7 @@ import { GameSpecSchema } from './game-spec.js';
 import { CapabilitySchema, SelectionSchema } from './ai.js';
 export * from './game-spec.js';
 export * from './ai.js';
+export * from './code-agent.js';
 
 export const PROMPT_MAX_LENGTH = 2_000;
 
@@ -65,7 +66,11 @@ export const HealthResponseSchema = z.object({
   mode: z.literal('multi-provider'),
 }).strict();
 export const ApiErrorSchema = z.object({
-  error: z.object({ code: z.string(), message: z.string() }),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    retryAfterSeconds: z.number().int().positive().optional(),
+  }),
 });
 
 export const RuntimeEventSchema = z.object({

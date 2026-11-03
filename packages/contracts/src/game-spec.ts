@@ -46,6 +46,14 @@ export const GameSpecShape = z.object({
   }).strict(),
 }).strict();
 
+// Server repair may move item centers back into bounds. Every other field,
+// array limit and unknown-property check stays strict before any repair runs.
+const repairPosition = { x: z.number().int(), y: z.number().int() };
+export const GameSpecPlacementInputSchema = GameSpecShape.extend({
+  enemies: z.array(GameSpecShape.shape.enemies.element.extend(repairPosition)).min(1).max(8),
+  collectibles: z.array(GameSpecShape.shape.collectibles.element.extend(repairPosition)).min(1).max(24),
+});
+
 export const GameSpecSchema = GameSpecShape.superRefine((game, ctx) => {
   const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
   const blocks = [...game.platforms, ...game.obstacles];
@@ -63,7 +71,7 @@ export const GameSpecSchema = GameSpecShape.superRefine((game, ctx) => {
     issue(['player'], 'Nhân vật nằm ngoài vùng chơi.');
   }
   for (const [i, coin] of game.collectibles.entries()) {
-    if (blocks.some((block) => overlaps(coin.x, coin.y, 16, block))) issue(['collectibles', i], 'Vật phẩm nằm trong vật cản.');
+    if (blocks.some((block) => overlaps(coin.x, coin.y, 20, block))) issue(['collectibles', i], 'Vật phẩm nằm trong vật cản.');
   }
   for (const [i, enemy] of game.enemies.entries()) {
     if (enemy.x - enemy.size / 2 < 0 || enemy.x + enemy.size / 2 > 960 || enemy.y - enemy.size / 2 < 70 || enemy.y + enemy.size / 2 > 500

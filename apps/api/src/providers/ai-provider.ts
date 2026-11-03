@@ -6,6 +6,7 @@ export interface AIRequest {
   systemPrompt: string;
   jsonSchema: Record<string, unknown>;
   signal: AbortSignal;
+  maxOutputTokens?: number;
 }
 
 export interface AIProvider {
