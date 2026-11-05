@@ -3,6 +3,7 @@ import { CODE_MAX_REPAIRS, type AgentEvent, type AgentRequest } from '@game-crea
 import { AIError, normalizeProviderError } from '../providers/errors.js';
 import { GameGenerationService } from '../services/game-generation-service.js';
 import { CodeGenerator, CodeRepairAgent, GamePlanner, readSource } from './agents.js';
+import { narrowStateReads } from './state-narrowing.js';
 import type { ValidationResult } from './code-validator.js';
 import { IsolatedCodeValidator } from './isolated-validator.js';
 import { PlaywrightGameTester, type GameTester } from './game-tester.js';
@@ -68,10 +69,18 @@ export class AgentOrchestrator {
       for (attempt = 0; attempt <= CODE_MAX_REPAIRS; attempt += 1) {
         if (signal.aborted) throw new AIError('timeout', 'Lượt tạo game đã hết thời gian hoặc bị hủy.', 504);
         status('Validating', 'Kiểm tra TypeScript, API cho phép và giới hạn code.');
-        const source = readSource(output);
-        const validation = source === undefined ? { errors: ['Provider phải trả JSON {source: string}, một file TypeScript tối đa 24 KB.'] } : await this.validator.validate(source, signal);
+        const read = readSource(output);
+        const narrowed = read === undefined ? undefined : narrowStateReads(read);
+        const source = narrowed?.source;
+        const validation = source === undefined ? { errors: [rejectedOutput(output)] } : await this.validator.validate(source, signal);
         signal.throwIfAborted();
-        let errors = validation.errors;
+        let errors = [...validation.errors];
+        if (errors.length > 0 && narrowed) {
+          for (const note of narrowed.notes) {
+            if (errors.length >= 10) break;
+            if (!errors.includes(note)) errors.push(note);
+          }
+        }
         if (!errors.length && validation.javascript) {
           status('Testing', 'Chạy Chromium cách ly: khởi động, thao tác và chơi lại.');
           errors = (await this.tester.test(validation.javascript, plan, signal, request.prompt)).errors;
@@ -96,4 +105,12 @@ export class AgentOrchestrator {
       clearTimeout(timer);
     }
   }
+}
+
+function rejectedOutput(output: string): string {
+  try {
+    const parsed = JSON.parse(output) as { generationError?: unknown };
+    if (typeof parsed.generationError === 'string') return parsed.generationError.slice(0, 500);
+  } catch { /* The model text itself was not JSON. */ }
+  return 'Provider không trả JSON code hợp lệ (thiếu source hoặc setup/update/helpers). Một file TypeScript tối đa 24 KB. Đây không phải lỗi TypeScript hay hết quota.';
 }

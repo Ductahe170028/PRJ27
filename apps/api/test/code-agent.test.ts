@@ -59,6 +59,19 @@ describe('CodeValidator', () => {
   it('does not execute top-level code in Node', () => {
     expect(validator.validate('process.exit(1);').errors.length).toBeGreaterThan(0);
   });
+  it.each([
+    ['const dt = 0;', "Duplicate identifier 'dt'"],
+    ['const edge = w;', "Cannot find name 'w'"],
+    ['api.state.ids = [];', 'number'],
+    ['const ids = api.state.ids ?? 0; ids.push(1);', "type 'number'"],
+    ['const ids = api.state.ids ?? 0; ids.indexOf(1);', "type 'number'"],
+    ['const e = api.get(1) ?? {}; api.remove(e);', 'Entity'],
+    ['const n: number = api.state.score;', 'undefined'],
+    ['const key = "score"; api.state[key] = 1;', 'index động'],
+  ])('rejects the reported TypeScript mistake: %s', (body, expected) => {
+    const source = `function create(api: GameAPI): void {}\nfunction update(api: GameAPI, dt: number): void { ${body} }`;
+    expect(validator.validate(source).errors.join(' ')).toContain(expected);
+  });
   it('bounds source size and requires both entrypoints', () => {
     expect(validator.validate('x'.repeat(25000)).errors).toHaveLength(1);
     expect(validator.validate('function create(api: GameAPI) {}').errors.join()).toContain('update');
@@ -66,6 +79,14 @@ describe('CodeValidator', () => {
 });
 
 describe('AgentOrchestrator', () => {
+  it('narrows a safe state counter before validation and does not spend a repair', async () => {
+    const source = 'function create(api: GameAPI): void { api.state.pipeTimer = 0; }\nfunction update(api: GameAPI, dt: number): void { api.state.pipeTimer += dt; }';
+    const h = harness([JSON.stringify(shooterPlan), code(source)]);
+    await h.run();
+    expect(h.test).toHaveBeenCalledOnce();
+    expect(JSON.stringify(h.test.mock.calls)).toContain('??');
+    expect(h.events.at(-1)).toMatchObject({ type: 'completed', project: { repairs: 0 } });
+  });
   it('plans, compiles and tests with the selected provider/model, without extra calls', async () => {
     const h = harness([JSON.stringify(shooterPlan), code()]); await h.run();
     expect(h.generate).toHaveBeenCalledTimes(2); expect(h.test).toHaveBeenCalledOnce();

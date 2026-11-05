@@ -54,6 +54,65 @@ function update(api: GameAPI, dt: number): void {
 }
 `;
 export const runtimeErrorSource = 'function create(api: GameAPI): void { api.get(-1)!.x = 5; } function update(api: GameAPI, dt: number): void {}';
+export const platformerSource = `
+function create(api: GameAPI): void {
+  const p = api.spawn("player", 80, 180, 28, 28, 12972663);
+  api.setPlayer(p); api.state.player = p.id; api.state.grounded = 0;
+  api.spawn("ground", 160, 430, 200, 24, 3289920);
+  api.spawn("coin", 220, 390, 16, 16, 16766720);
+}
+function update(api: GameAPI, dt: number): void {
+  const p = api.get(api.state.player ?? 0); if (!p) { return; }
+  if (api.input.left) { p.x -= 180 * dt; } if (api.input.right) { p.x += 180 * dt; }
+  p.vy += 1100 * dt;
+  if (api.input.action && (api.state.grounded ?? 0) === 1) { p.vy = -340; api.state.grounded = 0; }
+  p.y += p.vy * dt; api.state.grounded = 0;
+  for (const e of api.entities) {
+    if (e.kind === "ground" && p.vy >= 0 && api.overlaps(p, e)) { p.y = e.y - (e.height + p.height) / 2; p.vy = 0; api.state.grounded = 1; }
+    if (e.kind === "coin" && api.overlaps(p, e)) { api.remove(e); api.addScore(1); }
+  }
+  if (p.y > 530) { api.lose(); }
+}
+`;
+export const topDownSource = `
+function create(api: GameAPI): void {
+  const p = api.spawn("player", 120, 200, 28, 28, 5298687);
+  api.setPlayer(p); api.state.player = p.id;
+  api.spawn("item", 280, 200, 16, 16, 16766720);
+  api.spawn("enemy", 520, 200, 28, 28, 16711724);
+}
+function update(api: GameAPI, dt: number): void {
+  const p = api.get(api.state.player ?? 0); if (!p) { return; }
+  if (api.input.left) { p.x -= 200 * dt; } if (api.input.right) { p.x += 200 * dt; }
+  if (api.input.up) { p.y -= 200 * dt; } if (api.input.down) { p.y += 200 * dt; }
+  for (const e of api.entities) {
+    if (e.kind === "item" && api.overlaps(p, e)) { api.remove(e); api.addScore(1); }
+    if (e.kind === "enemy" && api.overlaps(p, e)) { api.lose(); }
+  }
+}
+`;
+export const flapSource = `
+function create(api: GameAPI): void {
+  const bird = api.spawn("bird", 160, 220, 28, 28, 16766720);
+  api.setPlayer(bird); api.state.player = bird.id; api.state.scored = 0; api.state.score = 0;
+  api.spawn("pipe", 520, 80, 70, 160, 52940);
+  api.spawn("pipe", 520, 440, 70, 200, 52940);
+}
+function update(api: GameAPI, dt: number): void {
+  const bird = api.get(api.state.player ?? 0); if (!bird) { return; }
+  bird.vy += 900 * dt;
+  if (api.input.action || api.input.pointerDown) { bird.vy = -280; }
+  bird.y += bird.vy * dt;
+  for (const e of api.entities) {
+    if (e.kind !== "pipe") { continue; }
+    e.x -= 140 * dt;
+    if (e.x < bird.x && (api.state.scored ?? 0) === 0) { api.state.scored = 1; api.state.score = (api.state.score ?? 0) + 1; api.addScore(1); }
+    if (api.overlaps(bird, e)) { api.lose(); }
+  }
+  if (bird.y < 70 || bird.y > 520) { api.lose(); }
+  if ((api.state.score ?? 0) >= 10) { api.win(); }
+}
+`;
 export async function agentFixture(request: AIRequest): Promise<string> {
   const properties = request.jsonSchema.properties as Record<string, unknown> | undefined;
   if (properties?.mechanics) return JSON.stringify(request.prompt.includes('paddle') ? paddlePlan : shooterPlan);

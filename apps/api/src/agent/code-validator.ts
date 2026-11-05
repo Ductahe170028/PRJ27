@@ -55,6 +55,14 @@ export class CodeValidator {
       || !tree.statements.some((n) => ts.isFunctionDeclaration(n) && n.name?.text === 'update')) error(tree, 'Cần function create(api: GameAPI) và update(api: GameAPI, dt: number).');
     const visit = (node: ts.Node) => {
       if (ts.isIdentifier(node) && (forbidden.has(node.text) || node.text.startsWith('__'))) error(node, `Không được truy cập ${node.text}.`);
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'spawn') {
+        for (const argument of [node.arguments[3], node.arguments[4]]) {
+          if (argument && ts.isNumericLiteral(argument)) {
+            const value = Number(argument.text);
+            if (!(value >= 1 && value <= 200)) error(argument, 'Chiều rộng và chiều cao của spawn phải từ 1 đến 200. Ống dài hơn phải là nhiều entity cao tối đa 200, mép chạm nhau.');
+          }
+        }
+      }
       if (ts.isStringLiteralLike(node) && node.text.length > 500) error(node, 'Chuỗi tối đa 500 ký tự.');
       if (ts.isArrayLiteralExpression(node) && node.elements.length > 256) error(node, 'Mảng literal tối đa 256 phần tử.');
       if (ts.isElementAccessExpression(node)) {
@@ -88,7 +96,11 @@ export class CodeValidator {
     for (const diagnostic of ts.getPreEmitDiagnostics(program)) {
       if (errors.length >= 10) break;
       const line = diagnostic.file && diagnostic.start !== undefined ? diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start).line + 1 : 1;
-      errors.push(`game.ts:${line}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ').slice(0, 400)}`);
+      const snippet = diagnostic.file && diagnostic.start !== undefined
+        ? diagnostic.file.text.slice(Math.max(0, diagnostic.start - 40), diagnostic.start + Math.max(diagnostic.length ?? 0, 50)).replace(/\s+/g, ' ').replaceAll('`', '\'').trim().slice(0, 100)
+        : '';
+      const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ').slice(0, 220);
+      errors.push(`game.ts:${line}: ${snippet ? `\`${snippet}\` ` : ''}${message}`);
     }
     if (errors.length) return { errors };
     // Inject a private budget check on EVERY function entry and loop iteration.

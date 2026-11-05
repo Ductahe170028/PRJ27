@@ -68,7 +68,11 @@ describe('Groq free-plan pacing', () => {
     for (const cause of [throttle('tokens per day TPD', { 'retry-after': '3' }), throttle('quota'), throttle('TPM', { 'retry-after': '3600' }), throttle('bad key', {}, 401)]) {
       expect(limiter.error(model, cause)).not.toBeInstanceOf(TransientRateLimitError);
     }
-    expect(limiter.error(model, { status: 400, error: { error: { code: 'json_validate_failed' } } })).toMatchObject({ code: 'invalid_code' });
+    const invalidJson = limiter.error(model, { status: 400, error: { error: { code: 'json_validate_failed', failed_generation: 'SECRET-CODE' } } });
+    expect(invalidJson).toMatchObject({ code: 'invalid_code', failedGeneration: 'SECRET-CODE' });
+    expect(invalidJson.message).toContain('json_validate_failed');
+    expect(invalidJson.message).toContain('không phải lỗi TypeScript');
+    expect(invalidJson.message).not.toContain('SECRET-CODE');
     expect(limiter.error(model, { status: 429, headers: new Headers({ 'retry-after': '2' }), error: { error: { code: 'insufficient_quota', message: 'Quota exceeded' } } })).not.toBeInstanceOf(TransientRateLimitError);
   });
 

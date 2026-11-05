@@ -25,6 +25,14 @@ export class RequestCapacityError extends AIError {
   }
 }
 
+/** Structured output was rejected by the provider. failedGeneration is the raw
+ * body when the provider returned one; it is never copied into the message. */
+export class StructuredOutputError extends AIError {
+  constructor(message: string, readonly failedGeneration?: string) {
+    super('invalid_code', message, 422);
+  }
+}
+
 const DEFAULT_RETRY_SECONDS = 60;
 
 function positiveSeconds(value: unknown): number | undefined {

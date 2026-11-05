@@ -1,5 +1,5 @@
 import type { AIRequest } from './ai-provider.js';
-import { AIError, RequestCapacityError, TransientRateLimitError, normalizeProviderError } from './errors.js';
+import { AIError, RequestCapacityError, StructuredOutputError, TransientRateLimitError, normalizeProviderError } from './errors.js';
 
 // Free-plan fallback for the supported GPT-OSS models. Live headers override it.
 // These are estimates for admission, never presented as measured token usage.
@@ -105,7 +105,10 @@ export class GroqRateLimiter {
     const body = typeof record.error === 'object' && record.error !== null ? record.error as Record<string, unknown> : {};
     const detail = typeof body.error === 'object' && body.error !== null ? body.error as Record<string, unknown> : body;
     const message = typeof detail.message === 'string' ? detail.message : typeof record.message === 'string' ? record.message : '';
-    if (status === 400 && detail.code === 'json_validate_failed') return new AIError('invalid_code', 'Groq không tạo được JSON code hợp lệ. Hãy thử lại với mô tả ngắn hơn.', 422);
+    if (status === 400 && detail.code === 'json_validate_failed') {
+      const failed = typeof detail.failed_generation === 'string' && detail.failed_generation.length <= 65_536 ? detail.failed_generation : undefined;
+      return new StructuredOutputError('Groq trả JSON không khớp schema structured output (json_validate_failed). Đây không phải lỗi TypeScript, rate limit hay hết quota.', failed);
+    }
     const limit = /Limit[: ]+(\d+)/i.exec(message)?.[1];
     const requested = /Requested[: ]+(\d+)/i.exec(message)?.[1];
     const tokenMinute = /tokens per minute|\bTPM\b/i.test(message);
