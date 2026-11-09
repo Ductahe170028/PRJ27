@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GroqRateLimiter, durationMs, retryAfterMs, estimateInputTokens } from '../src/providers/groq-rate-limit.js';
+import { GroqRateLimiter, durationMs, retryAfterMs, estimateInputTokens, groqErrorDetail, responseFormatDiagnostic, safeSchemaPath } from '../src/providers/groq-rate-limit.js';
 import { RequestCapacityError, TransientRateLimitError } from '../src/providers/errors.js';
 import { GameGenerationService } from '../src/services/game-generation-service.js';
 import { MODEL_CATALOG } from '../src/providers/model-catalog.js';
@@ -70,9 +70,23 @@ describe('Groq free-plan pacing', () => {
     }
     const invalidJson = limiter.error(model, { status: 400, error: { error: { code: 'json_validate_failed', failed_generation: 'SECRET-CODE' } } });
     expect(invalidJson).toMatchObject({ code: 'invalid_code', failedGeneration: 'SECRET-CODE' });
+    expect(invalidJson.message).toContain('JSON do model sinh');
     expect(invalidJson.message).toContain('json_validate_failed');
     expect(invalidJson.message).toContain('không phải lỗi TypeScript');
     expect(invalidJson.message).not.toContain('SECRET-CODE');
+    expect(invalidJson.message).not.toContain('từ chối JSON Schema');
+    const rejectedSchema = limiter.error(model, { status: 400, error: { message: 'ignored upstream text', code: 'json_validate_failed', schema_path: '/properties/title/minLength' } });
+    expect(rejectedSchema).toMatchObject({ failedGeneration: undefined, schemaPath: '/properties/title/minLength' });
+    expect(rejectedSchema.message).toContain('từ chối JSON Schema');
+    expect(rejectedSchema.message).toContain('/properties/title/minLength');
+    expect(rejectedSchema.message).toContain('Không có failed_generation');
+    expect(rejectedSchema.message).not.toContain('ignored upstream text');
+    expect(rejectedSchema.message).not.toContain('không khớp');
+    expect(groqErrorDetail({ error: { error: { code: 'json_validate_failed', failed_generation: 'body' } } }).code).toBe('json_validate_failed');
+    expect(safeSchemaPath('Bearer gsk_secret')).toBeUndefined();
+    expect(responseFormatDiagnostic({ type: 'json_schema', json_schema: { name: 'game_spec_v1', strict: true, schema: { properties: { title: { minLength: 1, maxLength: 80 }, mechanics: { minItems: 2, maxItems: 8 } } } } }).unsupportedKeywords).toEqual([
+      'schema.properties.title.minLength', 'schema.properties.title.maxLength', 'schema.properties.mechanics.minItems', 'schema.properties.mechanics.maxItems',
+    ]);
     expect(limiter.error(model, { status: 429, headers: new Headers({ 'retry-after': '2' }), error: { error: { code: 'insufficient_quota', message: 'Quota exceeded' } } })).not.toBeInstanceOf(TransientRateLimitError);
   });
 

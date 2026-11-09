@@ -7,6 +7,59 @@ export function estimateInputTokens(request: Pick<AIRequest, 'prompt' | 'systemP
   return Math.ceil(Buffer.byteLength(request.prompt + request.systemPrompt + JSON.stringify(request.jsonSchema), 'utf8') / 3) + 128;
 }
 
+export const UNSUPPORTED_SCHEMA_KEYWORDS = new Set(['$schema', 'minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'pattern']);
+const SCHEMA_PATH = /^(?:#|\/)?[A-Za-z0-9_./[\]-]{1,180}$/;
+
+export function safeSchemaPath(value: unknown): string | undefined {
+  return typeof value === 'string' && SCHEMA_PATH.test(value) ? value : undefined;
+}
+
+/** Unwrap a Groq HTTP body or SDK error down to the innermost error object. */
+export function groqErrorDetail(value: unknown): Record<string, unknown> {
+  let current: unknown = value;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (typeof current !== 'object' || current === null) return {};
+    const record = current as Record<string, unknown>;
+    if (typeof record.error !== 'object' || record.error === null) return record;
+    current = record.error;
+  }
+  return typeof current === 'object' && current !== null ? current as Record<string, unknown> : {};
+}
+
+export function unsupportedSchemaPaths(schema: unknown, path = 'schema'): string[] {
+  if (Array.isArray(schema)) return schema.flatMap((item, index) => unsupportedSchemaPaths(item, `${path}[${index}]`));
+  if (!schema || typeof schema !== 'object') return [];
+  const found: string[] = [];
+  for (const [key, child] of Object.entries(schema)) {
+    if (UNSUPPORTED_SCHEMA_KEYWORDS.has(key)) found.push(`${path}.${key}`);
+    else found.push(...unsupportedSchemaPaths(child, `${path}.${key}`));
+  }
+  return found.slice(0, 24);
+}
+
+export function responseFormatDiagnostic(responseFormat: unknown): { type?: string; name?: string; strict?: boolean; schema?: unknown; unsupportedKeywords: string[] } {
+  const format = typeof responseFormat === 'object' && responseFormat !== null ? responseFormat as Record<string, unknown> : {};
+  const wrapped = typeof format.json_schema === 'object' && format.json_schema !== null ? format.json_schema as Record<string, unknown> : {};
+  const schema = wrapped.schema ?? format.schema;
+  return {
+    ...(typeof format.type === 'string' ? { type: format.type } : {}),
+    ...(typeof wrapped.name === 'string' && wrapped.name.length <= 64 ? { name: wrapped.name } : {}),
+    ...(typeof wrapped.strict === 'boolean' ? { strict: wrapped.strict } : {}),
+    ...(schema && typeof schema === 'object' ? { schema } : {}),
+    unsupportedKeywords: unsupportedSchemaPaths(schema),
+  };
+}
+
+function structuredOutputError(detail: Record<string, unknown>): StructuredOutputError {
+  const failed = typeof detail.failed_generation === 'string' && detail.failed_generation.length <= 65_536 ? detail.failed_generation : undefined;
+  const schemaPath = safeSchemaPath(detail.schema_path);
+  if (failed) {
+    return new StructuredOutputError('Groq trả JSON do model sinh không khớp schema (json_validate_failed). Đây không phải provider từ chối schema, không phải lỗi TypeScript, rate limit hay hết quota.', failed, schemaPath);
+  }
+  const where = schemaPath ? ` Thuộc tính schema: ${schemaPath}.` : '';
+  return new StructuredOutputError(`Groq từ chối JSON Schema trước khi trả nội dung (json_validate_failed).${where} Không có failed_generation. Đây không phải JSON do model sinh ra, không phải lỗi TypeScript, rate limit hay hết quota.`, undefined, schemaPath);
+}
+
 export function durationMs(value: string | null): number | undefined {
   if (!value || !/^(?:\d+(?:\.\d+)?(?:ms|s|m|h))+$/.test(value)) return undefined;
   let total = 0;
@@ -102,13 +155,9 @@ export class GroqRateLimiter {
     const headers = record.headers instanceof Headers ? record.headers : new Headers();
     const state = this.observe(model, headers);
     const status = Number(record.status);
-    const body = typeof record.error === 'object' && record.error !== null ? record.error as Record<string, unknown> : {};
-    const detail = typeof body.error === 'object' && body.error !== null ? body.error as Record<string, unknown> : body;
+    const detail = groqErrorDetail(record);
     const message = typeof detail.message === 'string' ? detail.message : typeof record.message === 'string' ? record.message : '';
-    if (status === 400 && detail.code === 'json_validate_failed') {
-      const failed = typeof detail.failed_generation === 'string' && detail.failed_generation.length <= 65_536 ? detail.failed_generation : undefined;
-      return new StructuredOutputError('Groq trả JSON không khớp schema structured output (json_validate_failed). Đây không phải lỗi TypeScript, rate limit hay hết quota.', failed);
-    }
+    if (status === 400 && detail.code === 'json_validate_failed') return structuredOutputError(detail);
     const limit = /Limit[: ]+(\d+)/i.exec(message)?.[1];
     const requested = /Requested[: ]+(\d+)/i.exec(message)?.[1];
     const tokenMinute = /tokens per minute|\bTPM\b/i.test(message);

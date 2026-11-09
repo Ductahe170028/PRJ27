@@ -1,5 +1,5 @@
 import type { AgentEvent, ProviderSelection } from '@game-creator/contracts';
-import { baseUrl, fetchJson, requestSelection, responseError } from './api-client';
+import { fetchJson, fetchResponse, requestSelection, responseError } from './api-client';
 import { readAgentStream } from './agent-stream';
 
 export async function getAgentConfig(signal: AbortSignal): Promise<{ enabled: boolean; message: string }> {
@@ -9,11 +9,10 @@ export async function getAgentConfig(signal: AbortSignal): Promise<{ enabled: bo
 }
 
 export async function generateAdvanced(prompt: string, selection: ProviderSelection, signal: AbortSignal, emit: (event: AgentEvent) => void): Promise<void> {
-  const response = await fetch(`${baseUrl}/api/agent/generate`, {
+  const response = await fetchResponse('/api/agent/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, ...requestSelection(selection) }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(255_000)]),
-  });
+  }, signal, 255_000);
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     throw responseError(body, response.status, `Advanced trả lỗi HTTP ${response.status}.`);

@@ -9,18 +9,21 @@ const MAX_SIZE = 200;
  * update, api.get can miss, and one entity cannot be taller or wider than 200.
  */
 export function prepareGeneratedSource(source: string): PreparedSource {
-  const tree = ts.createSourceFile('game.ts', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
-  const parseDiagnostics = (tree as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
+  const parsed = ts.createSourceFile('game.ts', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  const parseDiagnostics = (parsed as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
   if ((parseDiagnostics?.length ?? 0) > 0) return { source, notes: [] };
   const notes: string[] = [];
+  const renamed = renameTopBindings(parsed);
+  const hoisted = hoistSetupFunctions(renamed.file);
+  const tree = hoisted.file;
   const create = functionBody(tree, 'create');
   const update = functionBody(tree, 'update');
-  if (!create || !update) return { source, notes };
+  if (!create || !update) return renamed.changed || hoisted.changed ? { source: printFile(tree), notes } : { source, notes };
   const shared = constsToCopy(create, update, notes);
   const playerLink = missingPlayerLink(create, update);
   const timers = spawnTimers(update);
   const numberKeys = initializedNumberKeys(create);
-  let changed = shared.length > 0 || playerLink !== undefined || timers.size > 0;
+  let changed = renamed.changed || hoisted.changed || shared.length > 0 || playerLink !== undefined || timers.size > 0;
   const factory = ts.factory;
   const nextFunctions = tree.statements.map((statement) => {
     if (!ts.isFunctionDeclaration(statement) || !statement.body || !statement.name) return statement;
@@ -46,8 +49,12 @@ export function prepareGeneratedSource(source: string): PreparedSource {
     return factory.updateFunctionDeclaration(statement, statement.modifiers, statement.asteriskToken, statement.name, statement.typeParameters, statement.parameters, statement.type, factory.updateBlock(statement.body, body));
   });
   if (!changed) return { source, notes };
-  const printed = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed }).printFile(factory.updateSourceFile(tree, nextFunctions));
+  const printed = printFile(factory.updateSourceFile(tree, nextFunctions));
   return { source: printed, notes };
+}
+
+function printFile(file: ts.SourceFile): string {
+  return ts.createPrinter({ newLine: ts.NewLineKind.LineFeed }).printFile(file);
 }
 
 function functionBody(tree: ts.SourceFile, name: string): ts.Block | undefined {
@@ -95,8 +102,29 @@ function rewriteStatements(statements: readonly ts.Statement[], constants: Map<s
   const output: ts.Statement[] = [];
   let changed = false;
   for (let index = 0; index < statements.length; index += 1) {
-    const statement = statements[index]!;
+    let statement = statements[index]!;
     if (isUndefinedStateAssignment(statement)) { changed = true; continue; }
+    const expressions = fixStateExpressions(statement);
+    if (expressions.changed) { statement = expressions.statement; changed = true; }
+    const loop = entitiesForEach(statement);
+    if (loop) {
+      const inner = rewriteStatements(loop.body, new Map(constants), false, true);
+      output.push(ts.factory.createForOfStatement(
+        undefined,
+        ts.factory.createVariableDeclarationList([ts.factory.createVariableDeclaration(loop.parameter, undefined, undefined, undefined)], ts.NodeFlags.Const),
+        loop.list,
+        ts.factory.createBlock(inner.statements, true),
+      ));
+      changed = true;
+      continue;
+    }
+    const arrow = rewriteArrowBody(statement, constants, inLoop);
+    if (arrow) {
+      output.push(arrow);
+      changed = true;
+      rememberConst(arrow, constants);
+      continue;
+    }
     const nested = rewriteNested(statement, constants, canReturn, inLoop);
     if (nested) {
       output.push(...nested.statements);
@@ -285,6 +313,7 @@ function needsEntityGuard(statements: readonly ts.Statement[], name: string): bo
 
 function isUnsafeEntityUse(node: ts.Identifier): boolean {
   const parent = node.parent;
+  if (!parent) return false;
   if (ts.isPropertyAccessExpression(parent) && parent.expression === node) return true;
   if (!ts.isCallExpression(parent)) return false;
   const argument = parent.arguments.find((item) => unwrap(item) === node);
@@ -396,7 +425,7 @@ function copyableNumber(node: ts.Expression, locals: ReadonlySet<string>): boole
       if (!math) bad = true;
     } else if (ts.isIdentifier(current)) {
       const parent = current.parent;
-      if (ts.isPropertyAccessExpression(parent) && parent.name === current) return;
+      if (parent && ts.isPropertyAccessExpression(parent) && parent.name === current) return;
       if (current.text !== 'api' && current.text !== 'Math' && !locals.has(current.text)) bad = true;
     }
     ts.forEachChild(current, walk);
@@ -478,7 +507,7 @@ function identifiers(node: ts.Node): string[] {
     if (current !== node && ts.isFunctionLike(current)) return;
     if (ts.isIdentifier(current)) {
       const parent = current.parent;
-      if (!(ts.isPropertyAccessExpression(parent) && parent.name === current)) names.push(current.text);
+      if (!(parent && ts.isPropertyAccessExpression(parent) && parent.name === current)) names.push(current.text);
     }
     ts.forEachChild(current, walk);
   };
@@ -794,4 +823,279 @@ function cloneStatement(statement: ts.Statement): ts.Statement {
   return ts.factory.createVariableStatement(undefined, ts.factory.createVariableDeclarationList([
     ts.factory.createVariableDeclaration(declaration.name.text, undefined, undefined, cloneExpression(declaration.initializer)),
   ], statement.declarationList.flags));
+}
+
+function renameTopBindings(tree: ts.SourceFile): { file: ts.SourceFile; changed: boolean } {
+  if (!declaresName(tree, 'top')) return { file: tree, changed: false };
+  let changed = false;
+  const result = ts.transform(tree, [(context) => (file) => {
+    const visit = (node: ts.Node): ts.Node => {
+      if (isFunctionLike(node) && declaresName(node, 'top')) {
+        changed = true;
+        return renameTopIn(node, context);
+      }
+      return ts.visitEachChild(node, visit, context);
+    };
+    return ts.visitNode(file, visit) as ts.SourceFile;
+  }]);
+  const file = result.transformed[0];
+  result.dispose();
+  return changed && file && ts.isSourceFile(file) ? { file, changed: true } : { file: tree, changed: false };
+}
+
+function renameTopIn(node: ts.Node, context: ts.TransformationContext): ts.Node {
+  const replacement = bindingNames(node).has('upperPipe') ? 'pipeTop' : 'upperPipe';
+  const visit = (child: ts.Node): ts.Node => {
+    if (child !== node && isFunctionLike(child) && declaresName(child, 'top')) return renameTopIn(child, context);
+    if (ts.isIdentifier(child) && child.text === 'top' && !isPropertyName(child)) return context.factory.createIdentifier(replacement);
+    return ts.visitEachChild(child, visit, context);
+  };
+  return visit(node);
+}
+
+function hoistSetupFunctions(tree: ts.SourceFile): { file: ts.SourceFile; changed: boolean } {
+  const create = functionBody(tree, 'create');
+  const update = functionBody(tree, 'update');
+  if (!create || !update) return { file: tree, changed: false };
+  const taken = bindings(update);
+  const values = new Map<string, number>();
+  const lifted: ts.Statement[] = [];
+  const names = new Set<string>();
+  const kept: ts.Statement[] = [];
+  for (const statement of create.statements) {
+    const arrow = hoistCandidate(statement, taken, values);
+    const decl = constDecl(statement);
+    if (decl) {
+      const value = resolveNumber(decl.initializer, values);
+      if (value !== undefined) values.set(decl.name, value);
+    }
+    if (!arrow || !callsAreZeroArg(tree, arrow.name)) { kept.push(statement); continue; }
+    const body = substituteNumbers(arrow.body, arrow.values);
+    const rewritten = rewriteStatements([...body.statements], new Map(), false, false);
+    lifted.push(hoistedFunction(arrow.name, rewritten.statements));
+    names.add(arrow.name);
+  }
+  if (names.size === 0) return { file: tree, changed: false };
+  const factory = ts.factory;
+  const statements = tree.statements.map((statement) => {
+    if (!ts.isFunctionDeclaration(statement) || !statement.body || !statement.name) return statement;
+    const body = statement.name.text === 'create' ? kept : [...statement.body.statements];
+    const calls = rewriteZeroArgCalls(statement.name.text === 'create' ? body : [...statement.body.statements], names);
+    if (statement.name.text !== 'create' && statement.name.text !== 'update') return statement;
+    return factory.updateFunctionDeclaration(statement, statement.modifiers, statement.asteriskToken, statement.name, statement.typeParameters, statement.parameters, statement.type, factory.updateBlock(statement.body, calls));
+  });
+  return { file: factory.updateSourceFile(tree, [...statements, ...lifted]), changed: true };
+}
+
+function hoistCandidate(statement: ts.Statement, taken: ReadonlySet<string>, values: ReadonlyMap<string, number>): { name: string; body: ts.Block; values: Map<string, number> } | undefined {
+  const decl = constDecl(statement);
+  if (!decl || taken.has(decl.name)) return undefined;
+  const fn = unwrap(decl.initializer);
+  if ((!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) || fn.parameters.length > 0 || !ts.isBlock(fn.body)) return undefined;
+  const locals = bindings(fn);
+  const captured = new Map<string, number>();
+  for (const name of identifiers(fn.body)) {
+    if (name === 'api' || name === 'Math' || locals.has(name) || decl.name === name) continue;
+    const value = values.get(name);
+    if (value === undefined) return undefined;
+    captured.set(name, value);
+  }
+  return { name: decl.name, body: fn.body, values: captured };
+}
+
+function callsAreZeroArg(root: ts.Node, name: string): boolean {
+  let seen = false;
+  let ok = true;
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === name) {
+      seen = true;
+      if (node.arguments.length !== 0) ok = false;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(root);
+  return seen && ok;
+}
+
+function rewriteZeroArgCalls(statements: readonly ts.Statement[], names: ReadonlySet<string>): ts.Statement[] {
+  return statements.map((statement) => rewriteCallStatement(statement, names));
+}
+
+function rewriteCallStatement(statement: ts.Statement, names: ReadonlySet<string>): ts.Statement {
+  const factory = ts.factory;
+  if (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression) && ts.isIdentifier(statement.expression.expression) && names.has(statement.expression.expression.text) && statement.expression.arguments.length === 0) {
+    return factory.createExpressionStatement(factory.createCallExpression(factory.createIdentifier(statement.expression.expression.text), undefined, [factory.createIdentifier('api')]));
+  }
+  if (ts.isBlock(statement)) return factory.updateBlock(statement, rewriteZeroArgCalls(statement.statements, names));
+  if (ts.isIfStatement(statement)) {
+    return factory.updateIfStatement(statement, statement.expression, rewriteCallStatement(statement.thenStatement, names), statement.elseStatement ? rewriteCallStatement(statement.elseStatement, names) : undefined);
+  }
+  if (ts.isForOfStatement(statement)) return factory.updateForOfStatement(statement, statement.awaitModifier, statement.initializer, statement.expression, rewriteCallStatement(statement.statement, names));
+  if (ts.isForStatement(statement)) return factory.updateForStatement(statement, statement.initializer, statement.condition, statement.incrementor, rewriteCallStatement(statement.statement, names));
+  if (ts.isWhileStatement(statement)) return factory.updateWhileStatement(statement, statement.expression, rewriteCallStatement(statement.statement, names));
+  if (ts.isDoStatement(statement)) return factory.updateDoStatement(statement, rewriteCallStatement(statement.statement, names), statement.expression);
+  return statement;
+}
+
+function hoistedFunction(name: string, statements: readonly ts.Statement[]): ts.FunctionDeclaration {
+  const factory = ts.factory;
+  return factory.createFunctionDeclaration(
+    undefined,
+    undefined,
+    factory.createIdentifier(name),
+    undefined,
+    [factory.createParameterDeclaration(undefined, undefined, factory.createIdentifier('api'), undefined, factory.createTypeReferenceNode('GameAPI'), undefined)],
+    factory.createKeywordTypeNode(ts.SyntaxKind.VoidKeyword),
+    factory.createBlock(statements, true),
+  );
+}
+
+function substituteNumbers(body: ts.Block, values: ReadonlyMap<string, number>): ts.Block {
+  if (values.size === 0) return body;
+  const result = ts.transform(body, [(context): ts.Transformer<ts.Block> => (node) => {
+    const visit = (child: ts.Node): ts.Node => {
+      if (child !== node && isFunctionLike(child)) return child;
+      if (ts.isIdentifier(child) && values.has(child.text) && !isPropertyName(child) && !isDeclarationName(child)) {
+        return context.factory.createNumericLiteral(String(values.get(child.text)));
+      }
+      return ts.visitEachChild(child, visit, context);
+    };
+    return ts.visitNode(node, visit) as ts.Block;
+  }]);
+  const block = result.transformed[0];
+  result.dispose();
+  return block && ts.isBlock(block) ? block : body;
+}
+
+function fixStateExpressions(statement: ts.Statement): { statement: ts.Statement; changed: boolean } {
+  if (ts.isExpressionStatement(statement)) {
+    const expression = mapStateExpression(statement.expression);
+    if (!expression.changed) return { statement, changed: false };
+    return { statement: ts.factory.createExpressionStatement(expression.node), changed: true };
+  }
+  if (ts.isIfStatement(statement)) {
+    const expression = mapStateExpression(statement.expression);
+    if (!expression.changed) return { statement, changed: false };
+    return { statement: ts.factory.updateIfStatement(statement, expression.node, statement.thenStatement, statement.elseStatement), changed: true };
+  }
+  if (ts.isVariableStatement(statement) && statement.declarationList.declarations.length === 1) {
+    const declaration = statement.declarationList.declarations[0]!;
+    if (!declaration.initializer) return { statement, changed: false };
+    const expression = mapStateExpression(declaration.initializer);
+    if (!expression.changed || !ts.isIdentifier(declaration.name)) return { statement, changed: false };
+    return {
+      statement: ts.factory.createVariableStatement(undefined, ts.factory.createVariableDeclarationList([
+        ts.factory.createVariableDeclaration(declaration.name.text, undefined, undefined, expression.node),
+      ], statement.declarationList.flags)),
+      changed: true,
+    };
+  }
+  return { statement, changed: false };
+}
+
+function mapStateExpression(node: ts.Expression): { node: ts.Expression; changed: boolean } {
+  const factory = ts.factory;
+  if (ts.isParenthesizedExpression(node)) {
+    const inner = mapStateExpression(node.expression);
+    return inner.changed ? { node: factory.createParenthesizedExpression(inner.node), changed: true } : { node, changed: false };
+  }
+  if (!ts.isBinaryExpression(node)) return { node, changed: false };
+  if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken && neverNullish(node.left)) {
+    const inner = mapStateExpression(node.left);
+    return { node: inner.node, changed: true };
+  }
+  const compared = stateBooleanLiteral(node);
+  if (compared) return { node: compared, changed: true };
+  const left = mapStateExpression(node.left);
+  const right = mapStateExpression(node.right);
+  if (!left.changed && !right.changed) return { node, changed: false };
+  return { node: factory.createBinaryExpression(left.node, node.operatorToken.kind, right.node), changed: true };
+}
+
+function stateBooleanLiteral(node: ts.BinaryExpression): ts.Expression | undefined {
+  if (node.operatorToken.kind !== ts.SyntaxKind.EqualsToken && node.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken && node.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsToken && node.operatorToken.kind !== ts.SyntaxKind.ExclamationEqualsEqualsToken && node.operatorToken.kind !== ts.SyntaxKind.ExclamationEqualsToken) return undefined;
+  if (!stateKeyName(node.left)) return undefined;
+  const value = node.right.kind === ts.SyntaxKind.TrueKeyword ? 1 : node.right.kind === ts.SyntaxKind.FalseKeyword ? 0 : undefined;
+  if (value === undefined) return undefined;
+  return ts.factory.createBinaryExpression(cloneExpression(node.left), node.operatorToken.kind, numeric(value));
+}
+
+function neverNullish(node: ts.Expression): boolean {
+  const current = unwrap(node);
+  if (ts.isNumericLiteral(current) || current.kind === ts.SyntaxKind.TrueKeyword || current.kind === ts.SyntaxKind.FalseKeyword) return true;
+  if (!ts.isBinaryExpression(current)) return false;
+  const kind = current.operatorToken.kind;
+  return kind === ts.SyntaxKind.QuestionQuestionToken || kind === ts.SyntaxKind.LessThanToken || kind === ts.SyntaxKind.GreaterThanToken || kind === ts.SyntaxKind.LessThanEqualsToken || kind === ts.SyntaxKind.GreaterThanEqualsToken || kind === ts.SyntaxKind.EqualsEqualsEqualsToken || kind === ts.SyntaxKind.ExclamationEqualsEqualsToken || kind === ts.SyntaxKind.EqualsEqualsToken || kind === ts.SyntaxKind.ExclamationEqualsToken;
+}
+
+function entitiesForEach(statement: ts.Statement): { parameter: string; list: ts.Expression; body: ts.Statement[] } | undefined {
+  if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) return undefined;
+  const call = statement.expression;
+  const callee = call.expression;
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== 'forEach' || call.arguments.length !== 1) return undefined;
+  const list = unwrap(callee.expression);
+  if (!ts.isPropertyAccessExpression(list) || list.name.text !== 'entities' || !ts.isIdentifier(list.expression) || list.expression.text !== 'api') return undefined;
+  const callback = unwrap(call.arguments[0]!);
+  const parameter = callback && ts.isArrowFunction(callback) ? callback.parameters[0] : undefined;
+  if (!ts.isArrowFunction(callback) || !parameter || !ts.isIdentifier(parameter.name)) return undefined;
+  if (ts.isBlock(callback.body)) {
+    if (containsReturn(callback.body)) return undefined;
+    return { parameter: parameter.name.text, list: callee.expression, body: [...callback.body.statements] };
+  }
+  return { parameter: parameter.name.text, list: callee.expression, body: [ts.factory.createExpressionStatement(callback.body)] };
+}
+
+function rewriteArrowBody(statement: ts.Statement, constants: Map<string, number>, inLoop: boolean): ts.Statement | undefined {
+  const decl = constDecl(statement);
+  if (!decl) return undefined;
+  const fn = unwrap(decl.initializer);
+  if (!ts.isArrowFunction(fn) || !ts.isBlock(fn.body)) return undefined;
+  const inner = rewriteStatements([...fn.body.statements], new Map(constants), false, inLoop);
+  if (!inner.changed) return undefined;
+  const factory = ts.factory;
+  const next = factory.createArrowFunction(undefined, undefined, fn.parameters.map((parameter) => factory.createParameterDeclaration(undefined, undefined, parameter.name, undefined, parameter.type, undefined)), undefined, factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken), factory.createBlock(inner.statements, true));
+  return factory.createVariableStatement(undefined, factory.createVariableDeclarationList([
+    factory.createVariableDeclaration(decl.name, undefined, undefined, next),
+  ], ts.NodeFlags.Const));
+}
+
+function containsReturn(node: ts.Node): boolean {
+  let found = false;
+  const visit = (child: ts.Node): void => {
+    if (found || (child !== node && isFunctionLike(child))) return;
+    if (ts.isReturnStatement(child)) found = true;
+    else ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function declaresName(node: ts.Node, name: string): boolean {
+  return bindingNames(node).has(name);
+}
+
+function bindingNames(node: ts.Node): Set<string> {
+  const names = new Set<string>();
+  const visit = (child: ts.Node): void => {
+    if (child !== node && isFunctionLike(child)) return;
+    if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name)) names.add(child.name.text);
+    if (isFunctionLike(child)) child.parameters.forEach((parameter) => { if (ts.isIdentifier(parameter.name)) names.add(parameter.name.text); });
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return names;
+}
+
+function isFunctionLike(node: ts.Node): node is ts.FunctionLikeDeclaration {
+  return ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node);
+}
+
+function isPropertyName(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  return !!parent && ts.isPropertyAccessExpression(parent) && parent.name === node;
+}
+
+function isDeclarationName(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  return !!parent && ((ts.isVariableDeclaration(parent) && parent.name === node) || (isFunctionLike(parent) && parent.name === node));
 }

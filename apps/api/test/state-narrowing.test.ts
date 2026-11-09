@@ -291,11 +291,69 @@ it('stacks an unused const spawn when its height is computed and taller than 200
   }
 });
 
-it('tells repair to move a setup function into helpers', () => {
+it('normalizes the real Groq Flappy repairs without changing pipe motion', () => {
+  const source = game(
+    `const gap = 120; api.state.gap = gap; api.state.pipeTimer = 0; api.state.playerId = undefined; api.state.lost = null; api.state.restart = false; api.state.pipeInterval = 2;
+     const spawnPipe = () => { const topHeight = Math.floor(Math.random() * 200) + 50; const bottomY = topHeight + gap; const top = api.spawn("upperPipe", api.width + 20, topHeight / 2, 20, topHeight, 1); const bottom = api.spawn("lowerPipe", api.width + 20, bottomY + 100, 20, 200, 1); };
+     spawnPipe();`,
+    `const playerId = api.state.playerId; if (playerId === undefined) { return; } const player = api.get(playerId); if (player === undefined) { return; }
+     const pipeTimer = api.state.pipeTimer ?? 0; api.state.pipeTimer = pipeTimer + dt;
+     if (pipeTimer >= api.state.pipeInterval ?? 0) { spawnPipe(); api.state.pipeTimer = 0; }
+     api.entities.forEach((e) => { if (e.kind !== "player") { api.remove(e); } });
+     if (api.state.restart === true) { api.state.restart = false; }`,
+  );
+  const fixed = narrowStateReads(source).source;
+  expect(fixed).not.toMatch(/\btop\b/);
+  expect(fixed).toContain('function spawnPipe(api: GameAPI): void');
+  expect(fixed).toContain('spawnPipe(api)');
+  expect(fixed).toContain('for (const e of api.entities)');
+  expect(fixed).not.toContain('forEach');
+  expect(fixed).not.toContain('false');
+  expect(fixed).not.toContain('true');
+  expect(fixed).not.toMatch(/[^=!]= undefined/);
+  expect(fixed).not.toMatch(/[^=!]= null/);
+  expect(fixed).not.toMatch(/\?\?\s*0\)\s*\?\?/);
+  expect(validator.validate(fixed).errors, validator.validate(fixed).errors.join('\n')).toEqual([]);
+  expect(narrowStateReads(fixed).source).toBe(fixed);
+  const compiled = validator.validate(fixed);
+  const math = Object.create(Math) as Math;
+  math.random = () => 0.99;
+  const context = { __budget() {}, Math: math, create: (_api: object) => {}, update: (_api: object, _dt: number) => {} };
+  vm.createContext(context);
+  vm.runInContext(compiled.javascript ?? '', context);
+  const heights: number[] = [];
+  const api = {
+    width: 960, height: 540, time: 0, state: Object.create(null) as Record<string, number>, entities: [] as unknown[],
+    input: { action: false, pointerDown: false },
+    spawn(_kind: string, _x: number, _y: number, width: number, height: number) {
+      heights.push(height);
+      return { id: heights.length, kind: _kind, x: _x, y: _y, width, height, color: 1, vx: 0, vy: 0, hp: 1, alive: true };
+    },
+    get: () => undefined, remove() {}, setPlayer() {}, overlaps: () => false, addScore() {}, status() {}, win() {}, lose() {},
+  };
+  context.create(api);
+  expect(heights.length).toBeGreaterThan(2);
+  expect(heights.every((height) => height >= 1 && height <= 200)).toBe(true);
+});
+
+it('leaves a forEach that returns so return still means continue', () => {
+  const source = game('api.spawn("a", 10, 10, 10, 10, 1);', 'api.entities.forEach((e) => { if (e.kind === "a") { return; } e.x += 1; });');
+  expect(narrowStateReads(source).source).toContain('forEach');
+});
+
+it('moves a zero-argument setup function into helpers', () => {
   const source = game('const spawnPipe = () => { api.spawn("pipe", 10, 10, 20, 20, 1); }; spawnPipe();', 'spawnPipe();');
+  const fixed = narrowStateReads(source).source;
+  expect(fixed).toContain('function spawnPipe(api: GameAPI): void');
+  expect(fixed).toContain('spawnPipe(api)');
+  expect(validator.validate(fixed).errors).toEqual([]);
+});
+
+it('tells repair to move a setup function that captures a local entity', () => {
+  const source = game('const player = api.spawn("bird", 80, 200, 20, 20, 1); const follow = () => { player.x += 1; }; follow();', 'follow();');
   const notes = narrowStateReads(source).notes.join('\n');
   expect(notes).toContain('helpers');
-  expect(notes).not.toContain('api.state.spawnPipe');
+  expect(notes).not.toContain('api.state.follow');
 });
 
 it('scores each upper pipe once when it passes the player', () => {

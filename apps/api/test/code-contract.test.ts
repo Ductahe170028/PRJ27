@@ -39,6 +39,12 @@ it.each([
   await expect(new CodeGenerator(service([payload])).generate(request, shooterPlan, 'test', signal)).rejects.toMatchObject({ code: 'invalid_code', message: expect.stringContaining(message) });
 });
 
+it('recovers setup and update when structured output omits helpers or adds a key', async () => {
+  const error = new StructuredOutputError('schema', JSON.stringify({ setup: parts.setup, update: parts.update, note: 'ignored' }));
+  const source = readSource(await new CodeGenerator(service([error])).generate(request, shooterPlan, 'test', signal))!;
+  expect(new CodeValidator().validate(source).errors).toEqual([]);
+});
+
 it('recovers a schema rejection when the provider still returned parseable parts', async () => {
   const error = new StructuredOutputError('schema', JSON.stringify(parts));
   const source = readSource(await new CodeGenerator(service([error])).generate(request, shooterPlan, 'test', signal))!;
@@ -50,9 +56,29 @@ it('does not replace a schema rejection with a generic parse error when recovery
   await expect(new CodeGenerator(service([error])).generate(request, shooterPlan, 'test', signal)).rejects.toBe(error);
 });
 
+it('sends Planning without length keywords and still returns the GamePlan contract', async () => {
+  let schema: AIRequest['jsonSchema'] | undefined;
+  const generate = async (input: AIRequest) => { schema = input.jsonSchema; return JSON.stringify(shooterPlan); };
+  const plan = await new GamePlanner(new GameGenerationService(mockRegistry([mockProvider('groq', generate)]))).plan(request, 'test', signal);
+  expect(plan).toEqual(shooterPlan);
+  expect(JSON.stringify(schema)).not.toMatch(/"minLength"|"maxLength"|"minItems"|"maxItems"|"minimum"|"maximum"/);
+  expect(schema).toMatchObject({ additionalProperties: false, properties: { movement: { enum: ['horizontal', 'vertical', 'free', 'none'] }, action: { enum: ['space', 'pointer', 'none'] } } });
+});
+
+it.each([
+  [JSON.stringify({ ...shooterPlan, objective: undefined }), 'objective'],
+  [JSON.stringify({ ...shooterPlan, mechanics: 'pipes' }), 'mechanics'],
+  [JSON.stringify({ ...shooterPlan, extra: true }), 'extra'],
+])('rejects plan JSON that is %s as model output, not a provider schema rejection', async (payload, field) => {
+  const error = await new GamePlanner(service([payload])).plan(request, 'test', signal).then(() => undefined, (caught: unknown) => caught);
+  expect(error).toMatchObject({ code: 'invalid_code', message: expect.stringContaining(field) });
+  expect((error as { message: string }).message).toContain('không phải Groq từ chối schema');
+  expect((error as { message: string }).message).not.toContain('json_validate_failed');
+});
+
 it('gives planning, coding and repair the same API limits', async () => {
   const outputs = [JSON.stringify(shooterPlan), JSON.stringify(parts)];
-  const generate = async (input: AIRequest) => { const next = outputs.shift(); expect(input.systemPrompt).toContain('state holds only numbers'); return next ?? ''; };
+  const generate = async (input: AIRequest) => { const next = outputs.shift(); expect(input.systemPrompt).toContain('state holds only numbers'); expect(input.systemPrompt).toContain('movement is none'); return next ?? ''; };
   const generation = new GameGenerationService(mockRegistry([mockProvider('groq', generate)]));
   await new GamePlanner(generation).plan(request, 'test', signal);
   const coding = new GameGenerationService(mockRegistry([mockProvider('groq', async (input) => {
@@ -101,6 +127,9 @@ it('gives planning, coding and repair the same API limits', async () => {
   expect(repairHints(["game.ts:66: Property 'scored' does not exist on type 'Entity'."]).join('\n')).toContain('api.state.lastScored');
   expect(repairHints(['Kích thước vật thể phải từ 1 đến 200.']).join('\n')).toContain('height 200');
   expect(repairHints(["game.ts:35: Cannot find name 'pipeGap'."]).join('\n')).toContain('invisible in update');
+  expect(repairHints(["Type 'boolean' is not assignable to type 'number'."]).join('\n')).toContain('1 and 0');
+  expect(repairHints(["Property 'forEach' does not exist on type 'Entity[]'."]).join('\n')).toContain('for (const e of api.entities)');
+  expect(repairHints(['Right operand of ?? is unreachable because the left operand is never nullish.']).join('\n')).toContain('api.state.pipeInterval ?? 0');
   const gap = repairHints(["game.ts:33: `const yGap = Math.random() * (api.height - gap - 40) + 20` 'gap' is possibly 'undefined'."]);
   expect(gap.join('\n')).toContain('const gap = api.state.gap ?? 0');
   expect(gap.join('\n')).not.toContain('api.get returns Entity | undefined');

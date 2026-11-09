@@ -34,6 +34,17 @@ describe('shared API error handling', () => {
     await expect(pending).rejects.toThrow('phản hồi quá lâu');
     expect(AbortSignal.timeout).toHaveBeenCalledWith(60_000);
   });
+  it('keeps the longer timeout for Advanced generation', async () => {
+    const timeout = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => new Promise((_resolve, reject) => {
+      options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
+    })));
+    const pending = generateAdvanced('game', selection, signal(), vi.fn());
+    timeout.abort(new DOMException('Timed out', 'TimeoutError'));
+    await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(255_000);
+  });
   it('cancels a response with the wrong streaming content type', async () => {
     const cancel = vi.fn();
     const body = new ReadableStream<Uint8Array>({ cancel });

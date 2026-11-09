@@ -25,10 +25,11 @@ export class RequestCapacityError extends AIError {
   }
 }
 
-/** Structured output was rejected by the provider. failedGeneration is the raw
- * body when the provider returned one; it is never copied into the message. */
+/** Structured output failed. failedGeneration is model text when Groq returned
+ * one; schemaPath is a provider schema pointer. Neither is copied into logs of
+ * the API key, and the raw upstream message is never forwarded. */
 export class StructuredOutputError extends AIError {
-  constructor(message: string, readonly failedGeneration?: string) {
+  constructor(message: string, readonly failedGeneration?: string, readonly schemaPath?: string) {
     super('invalid_code', message, 422);
   }
 }

@@ -5,6 +5,7 @@ import { AgentOrchestrator } from '../src/agent/orchestrator.js';
 import { GameGenerationService } from '../src/services/game-generation-service.js';
 import { createProviderRegistry } from '../src/providers/create-registry.js';
 import type { AgentEvent } from '@game-creator/contracts';
+import { groqErrorDetail, responseFormatDiagnostic, safeSchemaPath } from '../src/providers/groq-rate-limit.js';
 
 if (!process.argv.includes('--live')) throw new Error('Use --live to explicitly enable real Groq requests.');
 const simple = process.argv.includes('--simple');
@@ -26,16 +27,24 @@ globalThis.fetch = async (input, init) => {
   const payload = JSON.parse(await request.clone().text()) as { messages?: Array<{ content: string }>; max_completion_tokens?: number; response_format?: unknown };
   const response = await nativeFetch(request);
   const data = await response.clone().json() as { usage?: unknown; choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string } };
+  const detail = groqErrorDetail(data);
+  const format = responseFormatDiagnostic(payload.response_format);
   const quota: Record<string, number> = {};
   for (const name of ['Limit', 'Used', 'Requested']) {
-    const match = new RegExp(`${name}[: ]+([\\d.]+)`, 'i').exec(data.error?.message ?? '');
+    const match = new RegExp(`${name}[: ]+([\\d.]+)`, 'i').exec(typeof detail.message === 'string' ? detail.message : '');
     if (match) quota[name.toLowerCase()] = Number(match[1]);
   }
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => { if (key.startsWith('x-ratelimit-') || key === 'retry-after') headers[key] = value; });
   const record = { stage, httpStatus: response.status, inputChars: payload.messages?.reduce((n, message) => n + message.content.length, 0),
     schemaChars: JSON.stringify(payload.response_format ?? {}).length, maxOutput: payload.max_completion_tokens,
-    usage: data.usage ?? null, headers, quota, ...(data.error?.code ? { errorCode: data.error.code } : {}) };
+    responseFormat: { type: format.type, name: format.name, strict: format.strict, schema: format.schema, unsupportedKeywords: format.unsupportedKeywords },
+    usage: data.usage ?? null, headers, quota,
+    ...(typeof detail.code === 'string' ? { errorCode: detail.code } : {}),
+    ...(safeSchemaPath(detail.schema_path) ? { schemaPath: safeSchemaPath(detail.schema_path) } : {}),
+    ...(typeof detail.schema_code === 'string' && detail.schema_code.length <= 80 ? { schemaCode: detail.schema_code } : {}),
+    failedGenerationPresent: typeof detail.failed_generation === 'string',
+    contentPresent: typeof data.choices?.[0]?.message?.content === 'string' && data.choices[0].message.content.length > 0 };
   measurements.push(record); console.log(JSON.stringify(record));
   const content = data.choices?.[0]?.message?.content;
   outputs.push(content === undefined ? { stage } : { stage, content });

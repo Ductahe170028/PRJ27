@@ -14,12 +14,16 @@ export function describeError(error: unknown, fallback: string) {
   return { message: `${error.message}${retry}`, code: error instanceof ApiRequestError ? error.code ?? '' : '' };
 }
 
+export function fetchResponse(path: string, options: RequestInit, signal: AbortSignal, timeoutMs = 60_000): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
+    ...options,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+  });
+}
+
 export async function fetchJson(path: string, options: RequestInit, signal: AbortSignal): Promise<unknown> {
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
-      ...options,
-      signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
-    });
+    const response = await fetchResponse(path, options, signal);
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       throw responseError(body, response.status);

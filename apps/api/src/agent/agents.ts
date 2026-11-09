@@ -5,6 +5,7 @@ import { estimateInputTokens } from '../providers/groq-rate-limit.js';
 import type { ProviderTelemetry } from '../providers/ai-provider.js';
 import ts from 'typescript';
 import { CODE_CONTRACT, PLAN_LIMITS, parseModelObject, readPart, repairHints } from './code-contract.js';
+import { providerJsonSchema } from '../services/system-prompt.js';
 
 const planSchema = { type: 'object', additionalProperties: false, required: ['title', 'summary', 'mechanics', 'movement', 'action', 'objective'], properties: {
   title: { type: 'string', minLength: 1, maxLength: 80 }, summary: { type: 'string', minLength: 1, maxLength: 500 },
@@ -19,7 +20,7 @@ const partProperties = {
 const partSchema = (keys: Array<keyof typeof partProperties>) => ({ type: 'object', additionalProperties: false, required: keys,
   properties: Object.fromEntries(keys.map((key) => [key, partProperties[key]])) });
 const RULES = `${CODE_CONTRACT}
-Implement ALL requested mechanics and counts. Keep code concise. Setup locals are not visible in update. Prefer <=8 state keys and literal constants for speed, size and color. Scoring must call api.addScore. Set hp after spawn when more than 1 life is intended. Ignore self-collision. A boss must be reachable and destroyable. Move every live shot on every frame, outside the input branch. Math: random/floor/ceil/round/abs/min/max/sqrt/sin/cos/atan2/hypot/PI only. <=160 objects and <=5000 checks/frame. No assets.`;
+Implement ALL requested mechanics and counts. Keep code concise. Prefer <=8 state keys and literal constants for speed, size and color. Scoring must call api.addScore. Set hp after spawn when more than 1 life is intended. Ignore self-collision. A boss must be reachable and destroyable. Move every live shot on every frame, outside the input branch. Math: random/floor/ceil/round/abs/min/max/sqrt/sin/cos/atan2/hypot/PI only. <=160 objects and <=5000 checks/frame. No assets.`;
 
 type Observer = (event: ProviderTelemetry) => void;
 // Original request remains authoritative; omit duplicated display title/summary.
@@ -29,15 +30,37 @@ const observer = (onTelemetry?: Observer) => onTelemetry ? { onTelemetry } : {};
 export class GamePlanner {
   constructor(private readonly generation: GameGenerationService) {}
   async plan(request: AgentRequest, client: string, signal: AbortSignal, onTelemetry?: Observer): Promise<GamePlan> {
-    const text = await this.generation.generateArtifact(request, { prompt: request.prompt, maxOutputTokens: 450, jsonSchema: planSchema, ...observer(onTelemetry),
+    // Groq strict mode only accepts a JSON Schema subset. Length and item bounds
+    // stay in GamePlanSchema; sending them as minLength/maxLength/minItems/maxItems
+    // makes Groq return 400 json_validate_failed with no content and no failed_generation.
+    const text = await this.generation.generateArtifact(request, { prompt: request.prompt, maxOutputTokens: 450, jsonSchema: providerJsonSchema(planSchema), ...observer(onTelemetry),
       systemPrompt: `Plan a small 960x540 game. JSON only, concise text in user language: title <=40 chars, summary one short sentence, 2-5 short mechanics, objective <=100 chars. Preserve ALL requested counts/features including boss/bullets. Colored shapes, <=160 objects, no external assets. Include reachable win/loss. movement/action describe real keyboard/Space/pointer input; at least one not none. ${PLAN_LIMITS}` }, client, signal);
     try {
       if (Buffer.byteLength(text) > 8192) throw new Error();
       const plan = GamePlanSchema.parse(JSON.parse(text));
       if (plan.movement === 'none' && plan.action === 'none') throw new Error();
       return plan;
-    } catch { throw new AIError('invalid_code', 'Provider không trả kế hoạch game tương tác hợp lệ. Hãy rút gọn yêu cầu hoặc chọn model khác trong Settings.', 422); }
+    } catch (error) {
+      if (error instanceof AIError) throw error;
+      const issues = planIssues(error);
+      const detail = issues.length ? ` JSON do model sinh không đúng contract: ${issues.join(', ')}.` : '';
+      throw new AIError('invalid_code', `Provider không trả kế hoạch game tương tác hợp lệ.${detail} Đây không phải Groq từ chối schema. Hãy rút gọn yêu cầu hoặc chọn model khác trong Settings.`, 422);
+    }
   }
+}
+
+function planIssues(error: unknown): string[] {
+  if (typeof error !== 'object' || error === null || !('issues' in error)) return [];
+  const issues = (error as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return [];
+  return issues.slice(0, 5).flatMap((issue) => {
+    if (typeof issue !== 'object' || issue === null) return [];
+    const record = issue as { path?: unknown; keys?: unknown; code?: unknown };
+    const path = Array.isArray(record.path) ? record.path.map(String).join('.') : '';
+    const keys = Array.isArray(record.keys) ? record.keys.filter((key): key is string => typeof key === 'string').join(',') : '';
+    const label = path || keys || (typeof record.code === 'string' ? record.code : '');
+    return label ? [label.slice(0, 80)] : [];
+  });
 }
 
 export class CodeGenerator {
@@ -92,7 +115,7 @@ export class CodeRepairAgent extends CodeGenerator {
     const input = this.input({ ...brief(request, plan), ...(rejected ? {} : { source }), diagnostics: errors, fixes: repairHints(errors),
       task: rejected
         ? 'SOURCE was rejected before TypeScript compile. Do not echo the error. Write complete setup/update bodies from the plan and the system contract.'
-        : 'Fix ONLY the listed errors in the current source. A number | undefined error is one expression, not an array and not a reason to rewrite the game. Do not assign undefined to api.state. A const in setup is not visible in update. Entity has no extra fields such as scored. Spawn width and height are 1..200; stack segments when a pipe must be taller. SOURCE is the assembled file; return statement bodies, not function create/update wrappers. Do not declare dt, w or h. Never write const dt=dt. Do not invent API members or state arrays. Keep mechanics that are not listed as errors.' }, 2400, onTelemetry);
+        : 'Fix ONLY the listed errors in the current source. A number | undefined error is one expression, not an array and not a reason to rewrite the game. Do not assign true, false, undefined or null to api.state; use 1 and 0. A const or function in setup is not visible in update: move a function to helpers and call it with api. Never name a local top. Entity[] has no forEach. Entity has no extra fields such as scored. Spawn width and height are 1..200; stack segments when a pipe must be taller. Parenthesize ?? as (api.state.pipeInterval ?? 0). SOURCE is the assembled file; return statement bodies, not function create/update wrappers. Do not declare dt, w or h. Never write const dt=dt. Do not invent API members or state arrays. Keep mechanics that are not listed as errors.' }, 2400, onTelemetry);
     try { return finish(await this.generation.generateArtifact(request, input, client, signal)); }
     catch (error) {
       const recovered = recoverStructuredOutput(error);
@@ -108,7 +131,13 @@ export class CodeRepairAgent extends CodeGenerator {
 function recoverStructuredOutput(error: unknown): string | undefined {
   if (!(error instanceof StructuredOutputError) || !error.failedGeneration) return undefined;
   try { return finish(error.failedGeneration); }
-  catch { return undefined; }
+  catch { /* Groq may reject a missing helpers field or an extra key while the parts are still usable. */ }
+  try {
+    const fields = parseModelObject(error.failedGeneration);
+    if (typeof fields.setup !== 'string' || typeof fields.update !== 'string') return undefined;
+    const helpers = typeof fields.helpers === 'string' ? fields.helpers : '';
+    return finish(JSON.stringify({ setup: fields.setup, update: fields.update, helpers }));
+  } catch { return undefined; }
 }
 
 function parseParts<K extends keyof typeof partProperties>(text: string, keys: K[]): Record<K, string> {
