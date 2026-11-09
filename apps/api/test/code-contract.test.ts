@@ -138,6 +138,10 @@ it('gives planning, coding and repair the same API limits', async () => {
   expect(gap.join('\n')).toContain('const gap = api.state.gap ?? 0');
   expect(gap.join('\n')).not.toContain('api.get returns Entity | undefined');
   expect(repairHints(['Space không làm nhân vật đi lên khi trò chơi còn đang chơi.']).join('\n')).toContain('api.state.playerId = player.id');
+  const click = repairHints(['Click được nhấn khi đang chơi nhưng nhân vật không đi lên trước khi trò chơi kết thúc.', 'Phím di chuyển không đổi vị trí nhân vật.']);
+  expect(click.join('\n')).toContain('api.input.pointerDown');
+  expect(click.join('\n')).toContain('api.input.action');
+  expect(repairHints(['Kích thước vật thể phải từ 1 đến 200.']).join('\n')).toContain('Math.min');
 });
 
 interface Entity { id: number; kind: string; x: number; y: number; width: number; height: number; color: number; vx: number; vy: number; hp: number; alive: boolean }

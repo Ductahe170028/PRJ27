@@ -269,6 +269,48 @@ it('stores the player id, coalesces a gap, primes the first pipe, and stacks a v
   }
 });
 
+it('stacks a helper pipe whose spawn is only followed by hp = 1', () => {
+  const source = `function create(api: GameAPI): void { spawnPipe(api); }
+function update(api: GameAPI, dt: number): void {}
+function spawnPipe(api: GameAPI): void {
+  const centerY = Math.floor(Math.random() * (api.height - 120 - 40)) + 20;
+  const upperHeight = centerY - 60;
+  const lowerHeight = api.height - (centerY + 60);
+  const upper = api.spawn("upperPipe", 800, upperHeight / 2, 20, upperHeight, 2);
+  upper.hp = 1;
+  const lower = api.spawn("lowerPipe", 800, api.height - lowerHeight / 2, 20, lowerHeight, 2);
+  lower.hp = 1;
+}`;
+  const fixed = narrowStateReads(source).source;
+  expect(fixed).not.toContain('.hp = 1');
+  expect(fixed).toContain('spanPiece');
+  expect(validator.validate(fixed).errors, validator.validate(fixed).errors.join('\n')).toEqual([]);
+  expect(narrowStateReads(fixed).source).toBe(fixed);
+  for (const random of [0, 0.99]) {
+    const compiled = validator.validate(fixed);
+    const math = Object.create(Math) as Math;
+    math.random = () => random;
+    const calls: number[] = [];
+    const context = { __budget() {}, Math: math, create: (_api: object) => {}, update: (_api: object, _dt: number) => {} };
+    vm.createContext(context);
+    vm.runInContext(compiled.javascript ?? '', context);
+    context.create({
+      width: 960, height: 540, time: 0, state: Object.create(null), entities: [],
+      input: { action: false, pointerDown: false },
+      spawn(_kind: string, _x: number, _y: number, width: number, height: number) {
+        calls.push(height);
+        expect(width).toBeGreaterThanOrEqual(1);
+        expect(width).toBeLessThanOrEqual(200);
+        expect(height).toBeGreaterThanOrEqual(1);
+        expect(height).toBeLessThanOrEqual(200);
+        return { id: calls.length, hp: 1 };
+      },
+      get: () => undefined, remove() {}, setPlayer() {}, overlaps: () => false, addScore() {}, status() {}, win() {}, lose() {},
+    });
+    expect(calls.length).toBeGreaterThan(0);
+  }
+});
+
 it('stacks an unused const spawn when its height is computed and taller than 200', () => {
   const source = game(
     'api.state.gap = 120; const gapY = 400; const upperHeight = gapY - (api.state.gap ?? 0) / 2; const upper = api.spawn("upperPipe", 800, upperHeight / 2, 50, upperHeight, 1);',

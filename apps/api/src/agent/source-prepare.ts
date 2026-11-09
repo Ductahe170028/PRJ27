@@ -134,6 +134,13 @@ function rewriteStatements(statements: readonly ts.Statement[], constants: Map<s
       rememberConst(statement, constants);
       continue;
     }
+    const recovered = recoverStackedSpawn(statements, index, constants, inLoop);
+    if (recovered) {
+      output.push(recovered.statement);
+      index = recovered.last;
+      changed = true;
+      continue;
+    }
     const split = splitSpawnStatement(statement, constants, inLoop);
     if (split) {
       output.push(...split);
@@ -193,6 +200,39 @@ function rewriteChild(statement: ts.Statement, constants: Map<string, number>, c
 
 function loopBody(statement: ts.ForOfStatement | ts.ForStatement | ts.WhileStatement | ts.DoStatement): ts.Statement {
   return statement.statement;
+}
+
+function recoverStackedSpawn(statements: readonly ts.Statement[], index: number, constants: ReadonlyMap<string, number>, inLoop: boolean): { statement: ts.Statement; last: number } | undefined {
+  if (inLoop) return undefined;
+  const statement = statements[index];
+  const decl = statement ? constDecl(statement) : undefined;
+  if (!statement || !decl) return undefined;
+  const stacked = dynamicStack(decl.initializer, constants, false);
+  if (!stacked) return undefined;
+  const skip = new Set<number>([index]);
+  for (let next = index + 1; next < statements.length && isRedundantHp(statements[next]!, decl.name); next += 1) skip.add(next);
+  if (skip.size === 1 || identifierUsed(statements, decl.name, skip)) return undefined;
+  return { statement: stacked, last: Math.max(...skip) };
+}
+
+function isRedundantHp(statement: ts.Statement, name: string): boolean {
+  if (!ts.isExpressionStatement(statement) || !ts.isBinaryExpression(statement.expression)) return false;
+  const assignment = statement.expression;
+  if (assignment.operatorToken.kind !== ts.SyntaxKind.EqualsToken || !ts.isNumericLiteral(assignment.right) || assignment.right.text !== '1') return false;
+  const target = assignment.left;
+  return ts.isPropertyAccessExpression(target) && target.name.text === 'hp' && ts.isIdentifier(target.expression) && target.expression.text === name;
+}
+
+function identifierUsed(statements: readonly ts.Statement[], name: string, skip: ReadonlySet<number>): boolean {
+  let used = false;
+  const visit = (node: ts.Node): void => {
+    if (used) return;
+    if (ts.isPropertyAccessExpression(node)) { visit(node.expression); return; }
+    if (ts.isIdentifier(node) && node.text === name) used = true;
+    else ts.forEachChild(node, visit);
+  };
+  statements.forEach((statement, index) => { if (!skip.has(index)) visit(statement); });
+  return used;
 }
 
 function splitSpawnStatement(statement: ts.Statement, constants: ReadonlyMap<string, number>, inLoop: boolean): ts.Statement[] | undefined {

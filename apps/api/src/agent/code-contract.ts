@@ -37,7 +37,7 @@ Never assign [] to state. Never call push, pop, splice or indexOf on a state fie
 kind is the spawn string; use "upperPipe" and "lowerPipe", not a kind spawn never used. Entity[] has no forEach. for (const e of api.entities) { if (e.kind === "upperPipe" || e.kind === "lowerPipe") { e.x -= 140 * dt; } }
 api.get returns Entity | undefined. Check the id, then the entity. Never use {} as an entity.
 spawn sets hp=1 and vx=vy=0. The engine does NOT move entities; every frame add vx*dt and vy*dt yourself, including after the action key is released. addScore is the only visible score. setPlayer once. Initialize every state key in setup. Literal keys only: api.state.score, never state[name] or entity[name].
-Patterns, not presets: gravity e.vy += 900 * dt; jump or flap sets e.vy to a negative number; horizontal/vertical input changes x/y; a shot is a new entity spawned just outside the shooter with its own vx/vy, moved on every frame; bounce flips vx or vy; overlap then addScore/hp/remove/win/lose. No win or lose in the first 3 seconds.
+Patterns, not presets: gravity e.vy += 900 * dt; flap is if (api.input.action || api.input.pointerDown) { e.vy = -300; } horizontal/vertical input changes x/y; a shot is a new entity spawned just outside the shooter with its own vx/vy, moved on every frame; bounce flips vx or vy; overlap then addScore/hp/remove/win/lose. No win or lose in the first 3 seconds.
 Allowed array methods: length, push, pop, splice, numeric index, for-of. No indexOf. Loops need braces. Do not reference a variable in its own initializer. No imports, DOM, network, storage, timers, async, new, classes, any, casts, try/catch, destructuring, spread, dynamic strings or string concatenation.
 Reserved names, even for locals: top, parent, self, window, document, globalThis, frames, location, open, fetch, eval, Function. Name an upper pipe upperPipe, not top.`;
 
@@ -67,15 +67,15 @@ export function repairHints(diagnostics: readonly string[]): string[] {
   if (diagnostics.some((line) => undefinedUse(line) === 'number')) {
     hints.unshift('A local copied from api.state is number | undefined. In arithmetic write const gap = api.state.gap ?? 0. Do not treat that number as an Entity and do not use ?? 0 for an id passed to api.get.');
   }
-  if (/không làm nhân vật đi lên|không chịu trọng lực|không đổi vị trí nhân vật/.test(text)) {
-    hints.unshift('The player never moved. After setPlayer(player), store api.state.playerId = player.id with the same key update reads. Apply gravity every frame and set vy negative on Space or click. Do not leave the rest of update after a // comment.');
+  if (/không đi lên|không làm nhân vật đi lên|không chịu trọng lực|không đổi vị trí nhân vật/.test(text)) {
+    hints.unshift('Flap on Space and click: if (api.input.action || api.input.pointerDown) { player.vy = -300; } Keep gravity player.vy += 900 * dt. After setPlayer(player), store api.state.playerId = player.id with the same key update reads. Do not move this player with arrow keys.');
   }
   if (/di chuyển liên tục|Va chạm được yêu cầu/.test(text)) {
     hints.unshift('Spawn the first pipe pair immediately and move it every frame. Width and height are 1..200; stack a taller pipe so the edges touch. Overlap with the player calls lose.');
   }
   const extraField = text.match(/Property '(\w+)' does not exist on type 'Entity'/);
   if (extraField) hints.unshift(`Entity has no property ${extraField[1]}. Fields are only id, kind, x, y, width, height, color, vx, vy, hp, alive. Do not store a flag on the entity. Score one pipe once: const scored = api.state.lastScored; if (e.kind === "upperPipe" && e.x < player.x && (scored === undefined || e.id > scored)) { api.state.lastScored = e.id; api.addScore(1); }`);
-  if (/1 đến 200|Kích thước vật thể/.test(text)) hints.unshift('Every spawn width and height must be from 1 to 200. Do not spawn one pipe with height api.height or Math.floor(Math.random() * 200) + 50. Stack segments of height 200 on the same x so their edges touch, and make the last segment the remainder.');
+  if (/1 đến 200|Kích thước vật thể/.test(text)) hints.unshift('Every spawn width and height must be from 1 to 200. Math.min(200, height) is still illegal when height is below 1. Stack segments of height 200 on the same x so their edges touch, and make the last segment the remainder. Do not spawn one pipe with height api.height.');
   if (/forEach' does not exist/.test(text)) hints.unshift('Entity[] has no forEach. Write for (const e of api.entities) { ... } with braces. Do not use return inside that loop to mean continue.');
   if (/left operand is never nullish/.test(text)) hints.unshift('Delete the extra ?? . Keep one parenthesized fallback: if (timer >= (api.state.pipeInterval ?? 0)).');
   if (/have no overlap/.test(text)) hints.unshift('e.kind is the exact string passed to spawn. Do not compare one entity with two different kind literals. Spawn the top pipe as "upperPipe" and the bottom as "lowerPipe", move both, and score only upperPipe once.');

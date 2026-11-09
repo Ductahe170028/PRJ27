@@ -46,6 +46,12 @@ test('breakout fixture keeps the ball moving and steers the paddle', async () =>
   expect(result.errors).toEqual([]);
 });
 
+test('flappy with a negated arrow sentence still flaps, falls, scrolls, collides and restarts', async () => {
+  const request = 'Tạo game Flappy Bird 2D. Nhấn Space hoặc click chuột trái để chim bay lên, có trọng lực khi thả phím. Các cặp ống di chuyển liên tục từ phải sang trái. Không yêu cầu phím R hoặc phím mũi tên. Vượt qua mỗi cặp ống được 1 điểm. Va chạm với ống hoặc biên màn hình thì thua. Đạt 10 điểm thì thắng.';
+  const result = await play(flapSource, plan('horizontal', 'space', ['Space or left click makes bird flap upward', 'Pipes move left continuously', 'Gravity pulls bird down'], 'Survive by passing pipe pairs.'), request);
+  expect(result.errors).toEqual([]);
+});
+
 test('flappy fixture flaps on Space and click, falls, scrolls, collides and restarts', async () => {
   const result = await play(flapSource, plan('free', 'space', ['Space hoặc click để bay lên', 'Ống di chuyển liên tục', 'Va chạm thì thua'], 'Đạt 10 điểm.'),
     'Tạo game Flappy Bird 2D. Nhấn Space hoặc click để chim bay lên, có trọng lực khi thả phím. Các cặp ống di chuyển liên tục từ phải sang trái. Vượt qua mỗi cặp ống được 1 điểm. Va chạm với ống hoặc biên màn hình thì thua. Đạt 10 điểm thì thắng. Có nút Restart.');
@@ -57,6 +63,7 @@ test('a game that is already over is not reported as a broken Space key, and the
     'Nhấn Space hoặc click để chim bay lên, có trọng lực. Va chạm thì thua.');
   expect(ended.errors.join('\n')).toContain('trước input đầu tiên');
   expect(ended.errors.join('\n')).not.toContain('không đi lên');
+  expect(ended.errors.join('\n')).not.toContain('Phím di chuyển');
   expect(ended.errors.join('\n')).not.toContain('không tạo thay đổi hiển thị');
   const next = await play(flapSource, plan('free', 'space', ['Space hoặc click để bay lên', 'Ống di chuyển liên tục', 'Va chạm thì thua'], 'Đạt 10 điểm.'),
     'Nhấn Space hoặc click để chim bay lên, có trọng lực khi thả phím. Các cặp ống di chuyển liên tục từ phải sang trái. Va chạm với ống thì thua.');

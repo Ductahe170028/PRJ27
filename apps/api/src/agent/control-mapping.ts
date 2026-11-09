@@ -24,7 +24,8 @@ function axisFromText(text: string): ControlAxis | undefined {
   if (!STEERING.test(text)) return undefined;
   if (/\b(bon huong|4 huong|wasd)\b/.test(text)) return 'free';
   const vertical = /\b(phim len|phim xuong|len xuong|up|down|vertical)\b/.test(text);
-  const horizontal = /\b(phim trai|phim phai|trai phai|a\/d|left|right|horizontal)\b/.test(text);
+  const horizontalText = text.replace(/\b(?:left|right)\s+click\b/g, ' ').replace(/\bclick\s+(?:left|right)\b/g, ' ');
+  const horizontal = /\b(phim trai|phim phai|trai phai|a\/d|left and right|right and left|horizontal)\b/.test(horizontalText);
   if (vertical && horizontal) return 'free';
   if (vertical) return 'vertical';
   if (horizontal) return 'horizontal';
@@ -35,8 +36,14 @@ function axisFromText(text: string): ControlAxis | undefined {
  * The game title is ignored. `free` is not steering unless the text asks for it,
  * so a flap/click game is not exercised with arrow keys.
  */
+function withoutNegatedSteering(text: string): string {
+  return text.replace(/\b(?:khong\s+(?:yeu cau|can|dung|su dung)|without|no|not)\b[^.!\n]{0,100}/g, (clause) => (
+    /\b(?:mui ten|arrow keys?|arrows?|wasd|phim trai|phim phai)\b/.test(clause) ? ' ' : clause
+  ));
+}
+
 export function controlMapping(plan: GamePlan, request = ''): ControlMapping {
-  const text = normalize([request, plan.objective, ...plan.mechanics].join('\n'));
+  const text = withoutNegatedSteering(normalize([request, plan.objective, ...plan.mechanics].join('\n')));
   const inferred = axisFromText(text);
   let axis: ControlAxis = plan.movement;
   if (axis === 'free') axis = inferred ?? 'none';

@@ -14,6 +14,9 @@ it('maps a flap prompt from its words, including click, and does not invent arro
     axis: 'none', actions: ['space', 'pointer'], lift: true, autonomous: true, lossOnContact: true, pickup: false,
   });
   expect(controlMapping(plan('vertical', 'space', ['Nhấn Space hoặc click để chim bật lên', 'Ống di chuyển từ phải sang trái']), FLAPPY).axis).toBe('none');
+  const refused = 'Tạo game Flappy Bird 2D. Nhấn Space hoặc click chuột trái để chim bay lên, có trọng lực khi thả phím. Các cặp ống di chuyển liên tục từ phải sang trái. Không yêu cầu phím R hoặc phím mũi tên. Va chạm với ống thì thua.';
+  const mapped = controlMapping(plan('horizontal', 'space', ['Space or left click makes bird flap upward', 'Pipes move left continuously', 'Gravity pulls bird down'], 'Survive by passing pipe pairs.'), refused);
+  expect(mapped).toMatchObject({ axis: 'none', actions: ['space', 'pointer'], lift: true, autonomous: true, lossOnContact: true });
 });
 
 it('does not read the game title when the same words ask for arrows', () => {
