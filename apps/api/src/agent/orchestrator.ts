@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { CODE_MAX_REPAIRS, type AgentEvent, type AgentRequest } from '@game-creator/contracts';
-import { AIError, normalizeProviderError } from '../providers/errors.js';
+import { AIError, StructuredOutputError, normalizeProviderError } from '../providers/errors.js';
+import { diagnosticSink } from '../providers/diagnostic-sink.js';
 import { GameGenerationService } from '../services/game-generation-service.js';
 import { CodeGenerator, CodeRepairAgent, GamePlanner, readSource } from './agents.js';
 import { narrowStateReads } from './state-narrowing.js';
@@ -8,11 +9,13 @@ import type { ValidationResult } from './code-validator.js';
 import { IsolatedCodeValidator } from './isolated-validator.js';
 import { PlaywrightGameTester, type GameTester } from './game-tester.js';
 import type { ProviderTelemetry } from '../providers/ai-provider.js';
+import { NullRunDiagnostics, openRunDiagnostics, type RecordedFailure, type RepairProgress, type RunDiagnostics, type RunSummary } from './run-diagnostics.js';
 
 export class AgentOrchestrator {
   private active = false;
   constructor(private readonly generation: GameGenerationService, private readonly tester: GameTester = new PlaywrightGameTester(),
-    private readonly validator: { validate(source: string, signal: AbortSignal): ValidationResult | Promise<ValidationResult> } = new IsolatedCodeValidator()) {}
+    private readonly validator: { validate(source: string, signal: AbortSignal): ValidationResult | Promise<ValidationResult> } = new IsolatedCodeValidator(),
+    private readonly openRun: (request: AgentRequest) => Promise<RunDiagnostics> = openRunDiagnostics) {}
 
   // Reserve before starting the response. No queue and only one browser job.
   reserve(request: AgentRequest): { request: AgentRequest; release: () => void } {
@@ -35,8 +38,25 @@ export class AgentOrchestrator {
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), 240_000);
     const signal = AbortSignal.any([disconnect, deadline.signal]);
+    let diagnostics: RunDiagnostics = new NullRunDiagnostics();
+    const diag = async (task: () => Promise<void>) => { try { await task(); } catch { /* Diagnostics never change the pipeline result. */ } };
+    const box: RunSummary = { outcome: 'cancelled', repairs: 0 };
+    try {
+      if (disconnect.aborted) return;
+      try { diagnostics = await this.openRun(request); }
+      catch { diagnostics = new NullRunDiagnostics(); }
+      if (diagnostics.directory) console.info(`[advanced] diagnostics ${diagnostics.directory}`);
+      await diagnosticSink.run(diagnostics, () => this.pipeline(request, client, signal, disconnect, deadline, emit, diagnostics, diag, box));
+    } finally {
+      await diag(() => diagnostics.summary(box));
+      clearTimeout(timer);
+    }
+  }
+
+  private async pipeline(request: AgentRequest, client: string, signal: AbortSignal, disconnect: AbortSignal, deadline: AbortController, emit: (event: AgentEvent) => void, diagnostics: RunDiagnostics, diag: (task: () => Promise<void>) => Promise<void>, box: RunSummary): Promise<void> {
     let attempt = 0;
-    const status = (stage: Extract<AgentEvent, { type: 'status' }>['stage'], message: string) => emit({ type: 'status', stage, message, attempt });
+    let activeStage: Extract<AgentEvent, { type: 'status' }>['stage'] = 'Planning';
+    const status = (stage: Extract<AgentEvent, { type: 'status' }>['stage'], message: string) => { activeStage = stage; emit({ type: 'status', stage, message, attempt }); };
     const codeAttempt = async (generate: () => Promise<string>): Promise<string> => {
       try { return await generate(); }
       catch (error) {
@@ -60,12 +80,18 @@ export class AgentOrchestrator {
     };
     try {
       signal.throwIfAborted();
+      diagnostics.stage = 'planning';
+      await diag(() => diagnostics.planningRequest({ provider: request.providerId, model: request.modelId ?? '', prompt: request.prompt, maxOutputTokens: 450 }));
       status('Planning', `${request.providerId} · ${request.modelId} — Đang lập kế hoạch cơ chế chơi.`);
       const plan = await new GamePlanner(this.generation).plan(request, client, signal, observe('Planning'));
       signal.throwIfAborted();
+      await diag(() => diagnostics.planningResponse(plan));
       emit({ type: 'plan', plan });
+      diagnostics.stage = 'coding';
       status('Coding', 'Đang viết TypeScript cho cơ chế chơi trong kế hoạch.');
       let output = await codeAttempt(() => new CodeGenerator(this.generation).generate(request, plan, client, signal, observe('Coding')));
+      await diag(() => diagnostics.agentOutput(output));
+      let previousErrors = '';
       for (attempt = 0; attempt <= CODE_MAX_REPAIRS; attempt += 1) {
         if (signal.aborted) throw new AIError('timeout', 'Lượt tạo game đã hết thời gian hoặc bị hủy.', 504);
         status('Validating', 'Kiểm tra TypeScript, API cho phép và giới hạn code.');
@@ -81,30 +107,75 @@ export class AgentOrchestrator {
             if (!errors.includes(note)) errors.push(note);
           }
         }
+        await diag(() => diagnostics.checkedSource(attempt, {
+          ...(typeof read === 'string' ? { before: read } : {}),
+          ...(source !== undefined ? { after: source } : {}),
+          errors,
+        }));
         if (!errors.length && validation.javascript) {
           status('Testing', 'Chạy Chromium cách ly: khởi động, thao tác và chơi lại.');
-          errors = (await this.tester.test(validation.javascript, plan, signal, request.prompt)).errors;
+          const tested = await this.tester.test(validation.javascript, plan, signal, request.prompt);
+          errors = tested.errors;
+          await diag(() => diagnostics.testing({ attempt, passed: errors.length === 0, errors }));
           signal.throwIfAborted();
           if (!errors.length) {
+            await diag(() => diagnostics.checkedProgress(attempt, { errors, fingerprintBefore: previousErrors, fingerprintAfter: errorFingerprint(errors), progress: 'passed' }));
+            box.outcome = 'completed';
+            box.repairs = attempt;
             status('Completed', 'Game đã qua kiểm tra và sẵn sàng mở preview.');
             emit({ type: 'completed', project: { id: randomUUID(), mode: 'advanced', provider: request.providerId, modelId: request.modelId!, plan, javascript: validation.javascript, repairs: attempt } });
             return;
           }
         }
+        const found = errors;
+        const fingerprint = errorFingerprint(found);
+        const stalled = previousErrors !== '' && fingerprint === previousErrors;
+        const fingerprintBefore = previousErrors;
+        previousErrors = fingerprint;
+        const progress: RepairProgress = attempt > 0 && stalled ? 'repair_no_progress' : found.length ? 'validation_errors' : 'passed';
+        await diag(() => diagnostics.checkedProgress(attempt, { errors: found, fingerprintBefore, fingerprintAfter: fingerprint, progress }));
+        if (stalled) errors = ['repair_no_progress: lần sửa trước giữ nguyên các lỗi này. Sửa đúng các dòng được liệt kê; không trả lại cùng source.', ...errors];
         emit({ type: 'log', lines: errors.slice(0, 10).map((line) => line.slice(0, 500)) });
-        if (attempt === CODE_MAX_REPAIRS) throw new AIError('agent_failed', 'Game chưa vượt qua kiểm tra sau 2 lần sửa. Xem log hoặc nhấn Retry để bắt đầu lượt mới.', 422);
+        if (attempt === CODE_MAX_REPAIRS) throw new AIError('agent_failed', `Game chưa vượt qua kiểm tra sau 2 lần sửa.${stalled ? ' repair_no_progress.' : ''} Xem log hoặc nhấn Retry để bắt đầu lượt mới.`, 422);
+        const repairIndex: 1 | 2 = attempt === 0 ? 1 : 2;
+        await diag(() => diagnostics.repairInput(repairIndex, { source: source ?? output, diagnostics: errors, fingerprintBefore: previousErrors, maxOutputTokens: 2400 }));
+        diagnostics.stage = repairIndex === 1 ? 'repair-1' : 'repair-2';
         status('Repairing', `Đang sửa lỗi lần ${attempt + 1}/2, giữ nguyên cơ chế được yêu cầu.`);
         output = await codeAttempt(() => new CodeRepairAgent(this.generation).repair(request, plan, source ?? output, errors, client, signal, observe('Repairing')));
+        await diag(() => diagnostics.agentOutput(output));
       }
     } catch (cause) {
-      if (disconnect.aborted) return;
+      if (disconnect.aborted) {
+        box.failedStage = activeStage;
+        return;
+      }
       const error = deadline.signal.aborted ? new AIError('timeout', 'Advanced đã hết thời hạn 4 phút.', 504) : normalizeProviderError(cause);
+      box.outcome = 'failed';
+      box.failedStage = activeStage;
+      box.errorCode = error.code;
+      box.errorMessage = error.message;
+      box.repairs = attempt;
+      await diag(() => diagnostics.stageError(recordedFailure(error)));
       status('Failed', error.message);
       emit({ type: 'failed', error: { code: error.code, message: error.message, ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}) } });
-    } finally {
-      clearTimeout(timer);
     }
   }
+}
+
+function errorFingerprint(errors: readonly string[]): string {
+  return errors.map((line) => line.replace(/game.ts:\d+:\s*/g, '').replace(/`[^`]*`\s*/g, '')).sort().join('\n');
+}
+
+function recordedFailure(error: AIError): RecordedFailure {
+  const failure: RecordedFailure = { code: error.code, message: error.message, contentPresent: false };
+  if (!(error instanceof StructuredOutputError)) return failure;
+  if (error.providerStatus !== undefined) failure.httpStatus = error.providerStatus;
+  if (error.schemaPath) failure.schemaPath = error.schemaPath;
+  if (error.failedGeneration) {
+    failure.rawContent = error.failedGeneration;
+    failure.contentPresent = true;
+  }
+  return failure;
 }
 
 function rejectedOutput(output: string): string {

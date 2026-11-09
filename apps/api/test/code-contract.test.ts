@@ -129,6 +129,10 @@ it('gives planning, coding and repair the same API limits', async () => {
   expect(repairHints(["game.ts:35: Cannot find name 'pipeGap'."]).join('\n')).toContain('invisible in update');
   expect(repairHints(["Type 'boolean' is not assignable to type 'number'."]).join('\n')).toContain('1 and 0');
   expect(repairHints(["Property 'forEach' does not exist on type 'Entity[]'."]).join('\n')).toContain('for (const e of api.entities)');
+  expect(repairHints(["This comparison appears to be unintentional because the types '\"pipe\"' and '\"upperPipe\"' have no overlap."]).join('\n')).toContain('upperPipe');
+  expect(repairHints(["Parameter 'api' implicitly has an 'any' type."]).join('\n')).toContain('function spawnPipe(api: GameAPI)');
+  expect(repairHints(["Cannot find name 'gap'."]).join('\n')).toContain('api.state.gap ?? 0');
+  expect(repairHints(['repair_no_progress: lần sửa trước giữ nguyên các lỗi này.']).join('\n')).toContain('repair_no_progress');
   expect(repairHints(['Right operand of ?? is unreachable because the left operand is never nullish.']).join('\n')).toContain('api.state.pipeInterval ?? 0');
   const gap = repairHints(["game.ts:33: `const yGap = Math.random() * (api.height - gap - 40) + 20` 'gap' is possibly 'undefined'."]);
   expect(gap.join('\n')).toContain('const gap = api.state.gap ?? 0');

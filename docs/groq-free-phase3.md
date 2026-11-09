@@ -56,7 +56,7 @@ npm run build
 node --import tsx apps/api/test/groq-live.smoke.ts --live --simple
 ```
 
-Bỏ `--simple` để thử prompt có boss. Script ghi usage/header và artifact vào `.local-diagnostics/` (gitignore, lint ignore), không in API key hoặc request headers. `groq-simple.json` là số đo, `groq-simple-outputs.json` là phản hồi code, `groq-simple-project.json` là artifact nếu Completed. Những lần chạy lại ghi đè file cùng tên. Lỗi 400/429 không có usage được ghi `null`, không suy ra usage từ số token còn lại. Dữ liệu đối chứng lần này nằm ở `.local-diagnostics/groq-baseline-simple.json`.
+Bỏ `--simple` để thử prompt có boss. Script in usage đã chọn lọc ra console và không ghi đè file legacy `groq-*.json` / `groq-*-game.ts`. Mỗi lượt Advanced tạo một thư mục mới `.local-diagnostics/advanced-YYYYMMDD-HHMMSS-xxxx/` (gitignore, lint ignore), không lưu API key hay header Authorization. `latest-advanced.txt` chỉ chứa runId của lượt vừa mở. Dữ liệu đối chứng cũ vẫn nằm ở `.local-diagnostics/groq-baseline-simple.json`.
 
 ## Regression
 

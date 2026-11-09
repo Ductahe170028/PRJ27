@@ -109,6 +109,14 @@ describe('AgentOrchestrator', () => {
     expect(h.generate.mock.calls[2]?.[0].prompt).toContain(diagnostic);
     expect(h.events.at(-1)).toMatchObject({ type: 'completed', project: { repairs: 1 } });
   });
+  it('classifies two repairs that leave the same errors as repair_no_progress', async () => {
+    const broken = 'function create(api: GameAPI): void { const gap = gap; }\nfunction update(api: GameAPI, dt: number): void {}';
+    const h = harness([JSON.stringify(shooterPlan), code(broken), code(broken), code(broken)]);
+    await h.run();
+    expect(h.generate).toHaveBeenCalledTimes(4);
+    expect(h.generate.mock.calls[3]?.[0].prompt).toContain('repair_no_progress');
+    expect(h.events.at(-1)).toMatchObject({ type: 'failed', error: { code: 'agent_failed', message: expect.stringContaining('repair_no_progress') } });
+  });
   it('stops after exactly two repairs and never returns a failed artifact', async () => {
     const h = harness([JSON.stringify(shooterPlan), code(), code(), code()], [['runtime'], ['runtime'], ['runtime']]); await h.run();
     expect(h.generate).toHaveBeenCalledTimes(4); expect(h.test).toHaveBeenCalledTimes(3);

@@ -69,14 +69,14 @@ describe('Groq free-plan pacing', () => {
       expect(limiter.error(model, cause)).not.toBeInstanceOf(TransientRateLimitError);
     }
     const invalidJson = limiter.error(model, { status: 400, error: { error: { code: 'json_validate_failed', failed_generation: 'SECRET-CODE' } } });
-    expect(invalidJson).toMatchObject({ code: 'invalid_code', failedGeneration: 'SECRET-CODE' });
+    expect(invalidJson).toMatchObject({ code: 'invalid_code', failedGeneration: 'SECRET-CODE', providerStatus: 400 });
     expect(invalidJson.message).toContain('JSON do model sinh');
     expect(invalidJson.message).toContain('json_validate_failed');
     expect(invalidJson.message).toContain('không phải lỗi TypeScript');
     expect(invalidJson.message).not.toContain('SECRET-CODE');
     expect(invalidJson.message).not.toContain('từ chối JSON Schema');
     const rejectedSchema = limiter.error(model, { status: 400, error: { message: 'ignored upstream text', code: 'json_validate_failed', schema_path: '/properties/title/minLength' } });
-    expect(rejectedSchema).toMatchObject({ failedGeneration: undefined, schemaPath: '/properties/title/minLength' });
+    expect(rejectedSchema).toMatchObject({ failedGeneration: undefined, schemaPath: '/properties/title/minLength', providerStatus: 400 });
     expect(rejectedSchema.message).toContain('từ chối JSON Schema');
     expect(rejectedSchema.message).toContain('/properties/title/minLength');
     expect(rejectedSchema.message).toContain('Không có failed_generation');

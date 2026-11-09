@@ -34,7 +34,7 @@ A const declared in setup does not exist in update. Repeat that numeric const in
 spawn returns an Entity. Store player.id. Never write api.state.bird = api.spawn(...) or api.state.bird.vy.
 Every spawn width and height is a number from 1 to 200 inclusive. Never pass api.height as a size. Math.floor(Math.random() * 200) + 50 can exceed 200. A taller pipe is several entities of height 200 stacked on the same x so the edges touch; the last piece uses the remainder.
 Never assign [] to state. Never call push, pop, splice or indexOf on a state field.
-Groups of objects are entities, not state arrays. Entity[] has no forEach. for (const e of api.entities) { if (e.kind === "pipe") { e.x -= 140 * dt; } }
+kind is the spawn string; use "upperPipe" and "lowerPipe", not a kind spawn never used. Entity[] has no forEach. for (const e of api.entities) { if (e.kind === "upperPipe" || e.kind === "lowerPipe") { e.x -= 140 * dt; } }
 api.get returns Entity | undefined. Check the id, then the entity. Never use {} as an entity.
 spawn sets hp=1 and vx=vy=0. The engine does NOT move entities; every frame add vx*dt and vy*dt yourself, including after the action key is released. addScore is the only visible score. setPlayer once. Initialize every state key in setup. Literal keys only: api.state.score, never state[name] or entity[name].
 Patterns, not presets: gravity e.vy += 900 * dt; jump or flap sets e.vy to a negative number; horizontal/vertical input changes x/y; a shot is a new entity spawned just outside the shooter with its own vx/vy, moved on every frame; bounce flips vx or vy; overlap then addScore/hp/remove/win/lose. No win or lose in the first 3 seconds.
@@ -59,7 +59,7 @@ export function repairHints(diagnostics: readonly string[]): string[] {
   const text = diagnostics.join('\n');
   const hints = HINTS.filter(([pattern]) => pattern.test(text)).map(([, hint]) => hint);
   const missing = [...new Set([...text.matchAll(/Cannot find name '(\w+)'/g)].map((match) => match[1]).filter((name): name is string => Boolean(name)))];
-  if (missing.length) hints.unshift(`These names are not in this function: ${missing.join(', ')}. A const in setup is invisible in update. Repeat the numeric const in update, or assign api.state.${missing[0]} = <number> in setup and read it back. If the missing name is a function, move it into helpers instead of api.state. Do not assign undefined.`);
+  if (missing.length) hints.unshift(`These names are not in this function: ${missing.join(', ')}. A const in setup is invisible in update and in a file-level helper. Inside the helper read const ${missing[0]} = api.state.${missing[0]} ?? 0 after setup assigns that number. If the missing name is a function, move it into helpers as function name(api: GameAPI): void. Do not assign undefined.`);
   if (/(?<![=!])=\s*(?:undefined|null)\b/.test(text) || /boolean' is not assignable to type 'number'/.test(text)) hints.unshift('Do not assign undefined or null to api.state. Use 1 and 0, never true or false. Delete that assignment.');
   if (/Entity \| undefined|Argument of type 'Entity \| undefined'/.test(text) || diagnostics.some((line) => undefinedUse(line) === 'entity')) {
     hints.unshift('api.get returns Entity | undefined. const playerId = api.state.playerId; if (playerId === undefined) { return; } const player = api.get(playerId); if (player === undefined) { return; } Only then pass player to overlaps, remove or setPlayer. Also store api.state.playerId = player.id in setup or update returns immediately.');
@@ -78,6 +78,9 @@ export function repairHints(diagnostics: readonly string[]): string[] {
   if (/1 đến 200|Kích thước vật thể/.test(text)) hints.unshift('Every spawn width and height must be from 1 to 200. Do not spawn one pipe with height api.height or Math.floor(Math.random() * 200) + 50. Stack segments of height 200 on the same x so their edges touch, and make the last segment the remainder.');
   if (/forEach' does not exist/.test(text)) hints.unshift('Entity[] has no forEach. Write for (const e of api.entities) { ... } with braces. Do not use return inside that loop to mean continue.');
   if (/left operand is never nullish/.test(text)) hints.unshift('Delete the extra ?? . Keep one parenthesized fallback: if (timer >= (api.state.pipeInterval ?? 0)).');
+  if (/have no overlap/.test(text)) hints.unshift('e.kind is the exact string passed to spawn. Do not compare one entity with two different kind literals. Spawn the top pipe as "upperPipe" and the bottom as "lowerPipe", move both, and score only upperPipe once.');
+  if (/implicitly has an 'any' type/.test(text)) hints.unshift('Type every helper parameter. Write function spawnPipe(api: GameAPI): void. Do not write function spawnPipe(api).');
+  if (/repair_no_progress/.test(text)) hints.unshift('repair_no_progress: the previous repair left the same errors. Change the listed lines. Do not return the same source.');
   const reserved = [...new Set([...text.matchAll(/Không được truy cập (\w+)/g)].map((match) => match[1]).filter((name): name is string => Boolean(name)))];
   if (reserved.length) hints.unshift(`These names are reserved: ${reserved.join(', ')}. Rename locals (upperPipe instead of top). Do not read those host objects.`);
   const undefinedHint = undefinedStateHint(diagnostics);

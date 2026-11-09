@@ -1,7 +1,9 @@
 import Groq from 'groq-sdk';
 import type { ModelInfo } from '@game-creator/contracts';
 import type { AIProvider, AIRequest } from './ai-provider.js';
+import { diagnosticSink } from './diagnostic-sink.js';
 import { AIError, normalizeProviderError } from './errors.js';
+import { buildGroqExchange } from './groq-exchange.js';
 import { GroqRateLimiter, estimateInputTokens } from './groq-rate-limit.js';
 
 export class GroqProvider implements AIProvider {
@@ -18,13 +20,18 @@ export class GroqProvider implements AIProvider {
   }
 
   async generate(request: AIRequest): Promise<string> {
+    const responseFormat = request.model.capabilities.outputMode === 'json_schema'
+      ? { type: 'json_schema' as const, json_schema: { name: 'game_spec_v1', strict: true, schema: request.jsonSchema } }
+      : { type: 'json_object' as const };
+    const publish = async (outcome: Omit<Parameters<typeof buildGroqExchange>[0], 'provider' | 'model' | 'responseFormat'>) => {
+      try { await diagnosticSink.getStore()?.note(buildGroqExchange({ provider: this.id, model: request.model.id, responseFormat, ...outcome })); }
+      catch { /* A diagnostics failure must not change generation. */ }
+    };
     try {
       const { data: response, response: http } = await this.client().chat.completions.create({
         model: request.model.id,
         messages: [{ role: 'system', content: request.systemPrompt }, { role: 'user', content: request.prompt }],
-        response_format: request.model.capabilities.outputMode === 'json_schema'
-          ? { type: 'json_schema', json_schema: { name: 'game_spec_v1', strict: true, schema: request.jsonSchema } }
-          : { type: 'json_object' },
+        response_format: responseFormat,
         ...(request.model.id.startsWith('openai/gpt-oss-') ? { reasoning_effort: 'low' as const, include_reasoning: false } : {}),
         max_completion_tokens: request.maxOutputTokens ?? 4_096,
         temperature: 0.6,
@@ -37,11 +44,22 @@ export class GroqProvider implements AIProvider {
         limitTokens: rate.limit, ...(rate.remaining !== undefined ? { remainingTokens: rate.remaining } : {}),
       });
       const choice = response.choices[0];
+      const content = choice?.message?.content ?? '';
+      await publish({ httpStatus: http.status, content, usage: response.usage ?? null });
       if (!choice || choice.finish_reason !== 'stop') {
         throw new AIError('invalid_game_spec', 'Groq trả về nội dung chưa hoàn chỉnh. Hãy rút gọn mô tả và thử lại.', 422);
       }
-      return choice.message.content ?? '';
-    } catch (error) { throw this.rateLimiter.error(request.model.id, error); }
+      return content;
+    } catch (error) {
+      if (error instanceof AIError) throw error;
+      const normalized = this.rateLimiter.error(request.model.id, error);
+      const status = typeof error === 'object' && error !== null && 'status' in error ? Number((error as { status: unknown }).status) : undefined;
+      await publish({
+        ...(status !== undefined && Number.isFinite(status) ? { httpStatus: status } : {}),
+        cause: error, usage: null, fallbackMessage: normalized.message, fallbackCode: normalized.code,
+      });
+      throw normalized;
+    }
   }
 
   async testConnection(model: ModelInfo, signal: AbortSignal) {

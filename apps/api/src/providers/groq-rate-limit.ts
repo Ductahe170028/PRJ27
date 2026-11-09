@@ -50,14 +50,14 @@ export function responseFormatDiagnostic(responseFormat: unknown): { type?: stri
   };
 }
 
-function structuredOutputError(detail: Record<string, unknown>): StructuredOutputError {
+function structuredOutputError(detail: Record<string, unknown>, httpStatus?: number): StructuredOutputError {
   const failed = typeof detail.failed_generation === 'string' && detail.failed_generation.length <= 65_536 ? detail.failed_generation : undefined;
   const schemaPath = safeSchemaPath(detail.schema_path);
   if (failed) {
-    return new StructuredOutputError('Groq trả JSON do model sinh không khớp schema (json_validate_failed). Đây không phải provider từ chối schema, không phải lỗi TypeScript, rate limit hay hết quota.', failed, schemaPath);
+    return new StructuredOutputError('Groq trả JSON do model sinh không khớp schema (json_validate_failed). Đây không phải provider từ chối schema, không phải lỗi TypeScript, rate limit hay hết quota.', failed, schemaPath, httpStatus);
   }
   const where = schemaPath ? ` Thuộc tính schema: ${schemaPath}.` : '';
-  return new StructuredOutputError(`Groq từ chối JSON Schema trước khi trả nội dung (json_validate_failed).${where} Không có failed_generation. Đây không phải JSON do model sinh ra, không phải lỗi TypeScript, rate limit hay hết quota.`, undefined, schemaPath);
+  return new StructuredOutputError(`Groq từ chối JSON Schema trước khi trả nội dung (json_validate_failed).${where} Không có failed_generation. Đây không phải JSON do model sinh ra, không phải lỗi TypeScript, rate limit hay hết quota.`, undefined, schemaPath, httpStatus);
 }
 
 export function durationMs(value: string | null): number | undefined {
@@ -157,7 +157,7 @@ export class GroqRateLimiter {
     const status = Number(record.status);
     const detail = groqErrorDetail(record);
     const message = typeof detail.message === 'string' ? detail.message : typeof record.message === 'string' ? record.message : '';
-    if (status === 400 && detail.code === 'json_validate_failed') return structuredOutputError(detail);
+    if (status === 400 && detail.code === 'json_validate_failed') return structuredOutputError(detail, 400);
     const limit = /Limit[: ]+(\d+)/i.exec(message)?.[1];
     const requested = /Requested[: ]+(\d+)/i.exec(message)?.[1];
     const tokenMinute = /tokens per minute|\bTPM\b/i.test(message);

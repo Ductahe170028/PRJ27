@@ -29,8 +29,10 @@ export class RequestCapacityError extends AIError {
  * one; schemaPath is a provider schema pointer. Neither is copied into logs of
  * the API key, and the raw upstream message is never forwarded. */
 export class StructuredOutputError extends AIError {
-  constructor(message: string, readonly failedGeneration?: string, readonly schemaPath?: string) {
+  readonly providerStatus?: number;
+  constructor(message: string, readonly failedGeneration?: string, readonly schemaPath?: string, providerStatus?: number) {
     super('invalid_code', message, 422);
+    if (providerStatus !== undefined) this.providerStatus = providerStatus;
   }
 }
 

@@ -15,15 +15,17 @@ export function prepareGeneratedSource(source: string): PreparedSource {
   const notes: string[] = [];
   const renamed = renameTopBindings(parsed);
   const hoisted = hoistSetupFunctions(renamed.file);
-  const tree = hoisted.file;
+  const captured = bindHelperCaptures(hoisted.file);
+  const kinds = alignPipeKinds(captured.file);
+  const tree = kinds.file;
   const create = functionBody(tree, 'create');
   const update = functionBody(tree, 'update');
-  if (!create || !update) return renamed.changed || hoisted.changed ? { source: printFile(tree), notes } : { source, notes };
+  if (!create || !update) return renamed.changed || hoisted.changed || captured.changed || kinds.changed ? { source: printFile(tree), notes } : { source, notes };
   const shared = constsToCopy(create, update, notes);
   const playerLink = missingPlayerLink(create, update);
   const timers = spawnTimers(update);
   const numberKeys = initializedNumberKeys(create);
-  let changed = renamed.changed || hoisted.changed || shared.length > 0 || playerLink !== undefined || timers.size > 0;
+  let changed = renamed.changed || hoisted.changed || captured.changed || kinds.changed || shared.length > 0 || playerLink !== undefined || timers.size > 0;
   const factory = ts.factory;
   const nextFunctions = tree.statements.map((statement) => {
     if (!ts.isFunctionDeclaration(statement) || !statement.body || !statement.name) return statement;
@@ -853,6 +855,160 @@ function renameTopIn(node: ts.Node, context: ts.TransformationContext): ts.Node 
   return visit(node);
 }
 
+function unboundNames(statements: readonly ts.Statement[]): string[] {
+  const local = bindings(ts.factory.createBlock(statements));
+  const names: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(node)) { visit(node.expression); return; }
+    if (ts.isIdentifier(node)) names.push(node.text);
+    else ts.forEachChild(node, visit);
+  };
+  statements.forEach(visit);
+  return [...new Set(names)].filter((name) => name !== 'api' && name !== 'Math' && !local.has(name));
+}
+
+function bindHelperCaptures(tree: ts.SourceFile): { file: ts.SourceFile; changed: boolean } {
+  const create = functionBody(tree, 'create');
+  const numbers = create ? createNumbers(create) : { consts: new Map<string, number>(), state: new Map<string, number>() };
+  let changed = false;
+  const statements = tree.statements.map((statement) => {
+    if (!ts.isFunctionDeclaration(statement) || !statement.body || !statement.name) return statement;
+    if (statement.name.text === 'create' || statement.name.text === 'update') return statement;
+    const typed = typeApiParameter(statement);
+    const target = typed ?? statement;
+    const replaced = replaceCapturedNumbers(target, numbers);
+    if (!typed && !replaced) return statement;
+    changed = true;
+    return replaced ?? typed ?? statement;
+  });
+  return changed ? { file: ts.factory.updateSourceFile(tree, statements), changed } : { file: tree, changed: false };
+}
+
+function createNumbers(create: ts.Block): { consts: Map<string, number>; state: Map<string, number> } {
+  const consts = new Map<string, number>();
+  const state = new Map<string, number>();
+  for (const statement of create.statements) {
+    const decl = constDecl(statement);
+    if (decl) {
+      const value = resolveNumber(decl.initializer, consts);
+      if (value !== undefined) consts.set(decl.name, value);
+    }
+    if (!ts.isExpressionStatement(statement) || !ts.isBinaryExpression(statement.expression)) continue;
+    const expression = statement.expression;
+    if (expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) continue;
+    const key = stateKeyName(expression.left);
+    const value = key ? resolveNumber(expression.right, consts) : undefined;
+    if (key && value !== undefined) state.set(key, value);
+  }
+  return { consts, state };
+}
+
+function typeApiParameter(fn: ts.FunctionDeclaration): ts.FunctionDeclaration | undefined {
+  if (!fn.name || !fn.body) return undefined;
+  let changed = false;
+  const parameters = fn.parameters.map((parameter) => {
+    if (!ts.isIdentifier(parameter.name) || parameter.name.text !== 'api' || parameter.type) return parameter;
+    changed = true;
+    return ts.factory.createParameterDeclaration(undefined, undefined, parameter.name, undefined, ts.factory.createTypeReferenceNode('GameAPI'), undefined);
+  });
+  return changed ? ts.factory.updateFunctionDeclaration(fn, fn.modifiers, fn.asteriskToken, fn.name, fn.typeParameters, parameters, fn.type, fn.body) : undefined;
+}
+
+function replaceCapturedNumbers(fn: ts.FunctionDeclaration, numbers: { consts: Map<string, number>; state: Map<string, number> }): ts.FunctionDeclaration | undefined {
+  if (!fn.body || !fn.name) return undefined;
+  const local = bindings(fn);
+  let changed = false;
+  const result = ts.transform(fn.body, [(context): ts.Transformer<ts.Block> => (node) => {
+    const visit = (child: ts.Node): ts.Node => {
+      if (child !== node && isFunctionLike(child)) return child;
+      if (ts.isIdentifier(child) && !local.has(child.text) && !isPropertyName(child) && !isDeclarationName(child)) {
+        const literal = numbers.consts.get(child.text);
+        if (literal !== undefined) { changed = true; return context.factory.createNumericLiteral(String(literal)); }
+        if (numbers.state.has(child.text)) { changed = true; return context.factory.createParenthesizedExpression(context.factory.createBinaryExpression(stateAccess(child.text), ts.SyntaxKind.QuestionQuestionToken, numeric(0))); }
+      }
+      return ts.visitEachChild(child, visit, context);
+    };
+    return ts.visitNode(node, visit) as ts.Block;
+  }]);
+  const body = result.transformed[0];
+  result.dispose();
+  if (!changed || !body || !ts.isBlock(body)) return undefined;
+  return ts.factory.updateFunctionDeclaration(fn, fn.modifiers, fn.asteriskToken, fn.name, fn.typeParameters, fn.parameters, fn.type, body);
+}
+
+function alignPipeKinds(tree: ts.SourceFile): { file: ts.SourceFile; changed: boolean } {
+  const pipeSpawns = pipeSpawnCalls(tree);
+  if (pipeSpawns.length !== 2 || !unreachableKindComparison(tree, 'pipe', 'upperPipe')) return { file: tree, changed: false };
+  let index = 0;
+  const result = ts.transform(tree, [(context): ts.Transformer<ts.SourceFile> => (node) => {
+    const visit = (child: ts.Node): ts.Node => {
+      if (ts.isCallExpression(child) && pipeSpawns.includes(child)) {
+        const kind = index === 0 ? 'upperPipe' : 'lowerPipe';
+        index += 1;
+        const args = [...child.arguments];
+        args[0] = context.factory.createStringLiteral(kind);
+        return context.factory.updateCallExpression(child, child.expression, child.typeArguments, args);
+      }
+      if (isKindComparison(child, 'pipe')) return kindEither(context.factory, child);
+      return ts.visitEachChild(child, visit, context);
+    };
+    return ts.visitNode(node, visit) as ts.SourceFile;
+  }]);
+  const file = result.transformed[0];
+  result.dispose();
+  return file && ts.isSourceFile(file) ? { file, changed: true } : { file: tree, changed: false };
+}
+
+function pipeSpawnCalls(tree: ts.SourceFile): ts.CallExpression[] {
+  const calls: ts.CallExpression[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'spawn' && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'api') {
+      const kind = node.arguments[0];
+      if (kind && ts.isStringLiteral(kind) && kind.text === 'pipe') calls.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+  return calls;
+}
+
+function unreachableKindComparison(tree: ts.SourceFile, narrowed: string, other: string): boolean {
+  let found = false;
+  const visit = (node: ts.Node, active: boolean): void => {
+    if (ts.isIfStatement(node) && isKindComparison(node.expression, narrowed)) {
+      visit(node.thenStatement, true);
+      if (node.elseStatement) visit(node.elseStatement, active);
+      return;
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+      if (isKindComparison(node.left, narrowed)) visit(node.right, true);
+      else if (isKindComparison(node.right, narrowed)) visit(node.left, true);
+      else { visit(node.left, active); visit(node.right, active); }
+      return;
+    }
+    if (active && isKindComparison(node, other)) found = true;
+    ts.forEachChild(node, (child) => visit(child, active));
+  };
+  visit(tree, false);
+  return found;
+}
+
+function isKindComparison(node: ts.Node, kind: string): node is ts.BinaryExpression {
+  if (!ts.isBinaryExpression(node)) return false;
+  if (node.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsEqualsToken && node.operatorToken.kind !== ts.SyntaxKind.EqualsEqualsToken) return false;
+  const left = unwrap(node.left);
+  const right = unwrap(node.right);
+  const literal = ts.isStringLiteral(right) ? right : ts.isStringLiteral(left) ? left : undefined;
+  const access = literal === right ? left : literal === left ? right : undefined;
+  return !!literal && literal.text === kind && !!access && ts.isPropertyAccessExpression(access) && access.name.text === 'kind';
+}
+
+function kindEither(factory: ts.NodeFactory, comparison: ts.BinaryExpression): ts.Expression {
+  const access = ts.isPropertyAccessExpression(unwrap(comparison.left)) ? comparison.left : comparison.right;
+  const one = (kind: string) => factory.createBinaryExpression(cloneExpression(access), ts.SyntaxKind.EqualsEqualsEqualsToken, factory.createStringLiteral(kind));
+  return factory.createParenthesizedExpression(factory.createBinaryExpression(one('upperPipe'), ts.SyntaxKind.BarBarToken, one('lowerPipe')));
+}
+
 function hoistSetupFunctions(tree: ts.SourceFile): { file: ts.SourceFile; changed: boolean } {
   const create = functionBody(tree, 'create');
   const update = functionBody(tree, 'update');
@@ -872,6 +1028,7 @@ function hoistSetupFunctions(tree: ts.SourceFile): { file: ts.SourceFile; change
     if (!arrow || !callsAreZeroArg(tree, arrow.name)) { kept.push(statement); continue; }
     const body = substituteNumbers(arrow.body, arrow.values);
     const rewritten = rewriteStatements([...body.statements], new Map(), false, false);
+    if (unboundNames(rewritten.statements).length > 0) { kept.push(statement); continue; }
     lifted.push(hoistedFunction(arrow.name, rewritten.statements));
     names.add(arrow.name);
   }

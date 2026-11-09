@@ -336,6 +336,42 @@ it('normalizes the real Groq Flappy repairs without changing pipe motion', () =>
   expect(heights.every((height) => height >= 1 && height <= 200)).toBe(true);
 });
 
+it('types spawnPipe, binds gap, and scores only the upper pipe of a same-kind pair', () => {
+  const source = `function create(api: GameAPI): void {
+    const gap = 120; api.state.gap = gap;
+    const player = api.spawn("player", 80, 200, 20, 20, 1); api.setPlayer(player); api.state.playerId = player.id;
+    spawnPipe(api);
+  }
+  function update(api: GameAPI, dt: number): void {
+    const playerId = api.state.playerId; if (playerId === undefined) { return; }
+    const player = api.get(playerId); if (player === undefined) { return; }
+    for (const e of api.entities) {
+      if (e.kind === "pipe") { e.x -= 100 * dt; if (e.kind === "upperPipe" && e.x < player.x) {
+        const scored = api.state.lastScored; if (scored === undefined || e.id > scored) { api.state.lastScored = e.id; api.addScore(1); }
+      } }
+    }
+  }
+  function spawnPipe(api) { const y = 80; api.spawn("pipe", 90, y, 20, 80, 2); api.spawn("pipe", 90, y + gap, 20, 80, 2); }`;
+  const fixed = narrowStateReads(source).source;
+  expect(fixed).toContain('function spawnPipe(api: GameAPI)');
+  expect(fixed).toContain('y + 120');
+  expect(fixed).toContain('"upperPipe"');
+  expect(fixed).toContain('"lowerPipe"');
+  expect(fixed).not.toContain('"pipe"');
+  expect(validator.validate(fixed).errors, validator.validate(fixed).errors.join('\n')).toEqual([]);
+  expect(narrowStateReads(fixed).source).toBe(fixed);
+  const played = scoreRun(fixed);
+  played.step(1);
+  expect(played.score).toBe(1);
+  played.step(1);
+  expect(played.score).toBe(1);
+});
+
+it('does not hoist a setup function that still captures an unresolved name', () => {
+  const source = game('const gap = api.state.gap; const spawnPipe = () => { api.spawn("pipe", 10, gap, 20, 20, 1); }; spawnPipe();', 'spawnPipe();');
+  expect(narrowStateReads(source).source).not.toContain('function spawnPipe');
+});
+
 it('leaves a forEach that returns so return still means continue', () => {
   const source = game('api.spawn("a", 10, 10, 10, 10, 1);', 'api.entities.forEach((e) => { if (e.kind === "a") { return; } e.x += 1; });');
   expect(narrowStateReads(source).source).toContain('forEach');

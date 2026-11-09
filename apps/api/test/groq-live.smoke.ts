@@ -1,5 +1,5 @@
 // Opt-in diagnostic: uses the configured Groq key; never run by npm test/E2E.
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { parse } from 'dotenv';
 import { AgentOrchestrator } from '../src/agent/orchestrator.js';
 import { GameGenerationService } from '../src/services/game-generation-service.js';
@@ -9,14 +9,9 @@ import { groqErrorDetail, responseFormatDiagnostic, safeSchemaPath } from '../sr
 
 if (!process.argv.includes('--live')) throw new Error('Use --live to explicitly enable real Groq requests.');
 const simple = process.argv.includes('--simple');
-const label = simple ? 'simple' : 'after';
 const env = { ...parse(await readFile(new URL('../.env', import.meta.url), 'utf8')), ...process.env };
 if (!env.GROQ_API_KEY) throw new Error('Missing GROQ_API_KEY in apps/api/.env.');
 const root = new URL('../../../.local-diagnostics/', import.meta.url);
-await mkdir(root, { recursive: true });
-const measurements: Record<string, unknown>[] = [];
-const outputs: Array<{ stage: string; content?: string }> = [];
-const logs: string[] = [];
 const nativeFetch = globalThis.fetch;
 let stage = 'Planning';
 let last: AgentEvent | undefined;
@@ -45,9 +40,7 @@ globalThis.fetch = async (input, init) => {
     ...(typeof detail.schema_code === 'string' && detail.schema_code.length <= 80 ? { schemaCode: detail.schema_code } : {}),
     failedGenerationPresent: typeof detail.failed_generation === 'string',
     contentPresent: typeof data.choices?.[0]?.message?.content === 'string' && data.choices[0].message.content.length > 0 };
-  measurements.push(record); console.log(JSON.stringify(record));
-  const content = data.choices?.[0]?.message?.content;
-  outputs.push(content === undefined ? { stage } : { stage, content });
+  console.log(JSON.stringify(record));
   return response;
 };
 const agent = new AgentOrchestrator(new GameGenerationService(createProviderRegistry(env)));
@@ -57,38 +50,19 @@ const prompt = flappy
   : simple
   ? 'Tạo game bắn máy bay đơn giản. Phím trái/phải di chuyển, Space bắn đạn lên trên. Kẻ địch bay xuống liên tục. Bắn trúng địch được 10 điểm, đủ 50 điểm thắng, máy bay chạm địch thì thua.'
   : 'Tạo game bắn máy bay đơn giản: di chuyển trái phải, Space bắn đạn, kẻ địch xuất hiện liên tục, va chạm, điểm số, boss và thắng/thua.';
-const outputLabel = flappy ? 'flappy' : label;
 const reservation = agent.reserve({ providerId: 'groq', prompt });
 try {
   await agent.run(reservation.request, 'live-diagnostic', new AbortController().signal, (event) => {
     last = event;
     if (event.type === 'status') stage = event.stage;
-    if (event.type === 'log') logs.push(...event.lines);
     if (event.type === 'status' || event.type === 'log' || event.type === 'failed') console.log(JSON.stringify(event));
   });
-  if (last?.type === 'completed') await writeFile(new URL(`groq-${outputLabel}-project.json`, root), JSON.stringify(last.project, null, 2));
-  await writeFile(new URL(`groq-${outputLabel}.json`, root), JSON.stringify({ prompt, model: reservation.request.modelId, result: last?.type, measurements, logs }, null, 2));
-  await writeFile(new URL(`groq-${outputLabel}-outputs.json`, root), JSON.stringify(outputs, null, 2));
-  await writeFile(new URL(`groq-${outputLabel}-errors.json`, root), JSON.stringify({ result: last?.type, logs }, null, 2));
-  const assembled = assemble([...outputs].reverse().find((item) => item.content)?.content);
-  if (assembled) {
-    const { narrowStateReads } = await import('../src/agent/state-narrowing.js');
-    const narrowed = narrowStateReads(assembled);
-    await writeFile(new URL(`groq-${outputLabel}-game.ts`, root), narrowed.source);
-    await writeFile(new URL(`groq-${outputLabel}-notes.json`, root), JSON.stringify(narrowed.notes, null, 2));
-  }
   if (last?.type !== 'completed') process.exitCode = 1;
-} finally { reservation.release(); globalThis.fetch = nativeFetch; }
-
-function assemble(content: string | undefined): string | undefined {
-  if (!content) return undefined;
+} finally {
+  reservation.release();
+  globalThis.fetch = nativeFetch;
   try {
-    const value = JSON.parse(content) as { source?: unknown; setup?: unknown; update?: unknown; helpers?: unknown };
-    if (typeof value.source === 'string') return value.source;
-    if (typeof value.setup === 'string' && typeof value.update === 'string') {
-      const helpers = typeof value.helpers === 'string' ? value.helpers : '';
-      return `function create(api: GameAPI): void {\n${value.setup}\n}\nfunction update(api: GameAPI, dt: number): void {\n${value.update}\n}\n${helpers}`;
-    }
-  } catch { /* The provider text was not a code object. */ }
-  return undefined;
+    const latest = (await readFile(new URL('latest-advanced.txt', root), 'utf8')).trim();
+    console.log(`[advanced] diagnostics .local-diagnostics/${latest}`);
+  } catch { /* The run ended before a diagnostics directory was opened. */ }
 }
