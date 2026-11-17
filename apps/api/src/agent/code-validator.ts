@@ -21,11 +21,69 @@ const forbidden = new Set([
   'setTimeout', 'setInterval', 'requestAnimationFrame', 'postMessage', 'open', 'alert',
   'toString', 'valueOf', '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__',
 ]);
+
+// A comment can change what TypeScript reports (typescript 5.9.3: scanner commentDirectiveRegEx*, parser commentPragmas):
+//   // @ts-ignore, // @ts-expect-error  drop the diagnostics of the following line
+//   // @ts-nocheck                       drop every semantic diagnostic of the file
+//   /// <reference ... />                load other files or lib.d.ts
+// The type whitelist (noLib + GAME_CODE_API) reaches us only as diagnostics, so source that carries one of these must
+// be refused from its raw text, before a Program exists. The scan below needs neither the parser nor the diagnostics.
+// It accepts a superset of what TypeScript honours (any case, any line of a block comment, any position of `///`),
+// leaves ordinary comments alone, and also refuses a string that spells such a directive: game code never needs one.
+// Blanks exclude line terminators so a match can never leave its line. Both regexes are linear.
+const SUPPRESSION = /@[^\S\r\n\u2028\u2029]*ts-(ignore|expect-error|nocheck)/gi;
+const TRIPLE_SLASH_TAG = /\/\/\/[^\S\r\n\u2028\u2029]*<[^\S\r\n\u2028\u2029]*[a-z]/gi;
+const MAX_DIRECTIVE_ERRORS = 10;
+
+const isLineBreak = (char: string) => char === '\n' || char === '\r' || char === '\u2028' || char === '\u2029';
+const isCommentFiller = (char: string) => char === '/' || char === '*' || (!isLineBreak(char) && /\s/.test(char));
+
+/** True when only `/`, `*` and blanks separate `index` from a `//` or `/*` opener, or from the start of its line. */
+function startsComment(source: string, index: number): boolean {
+  let start = index;
+  while (start > 0 && isCommentFiller(source.charAt(start - 1))) start -= 1;
+  if (start === 0 || isLineBreak(source.charAt(start - 1))) return true;
+  const filler = source.slice(start, index);
+  return filler.includes('//') || filler.includes('/*');
+}
+
+function lineAt(source: string, index: number): number {
+  let line = 1;
+  for (let i = 0; i < index; i += 1) {
+    const char = source.charAt(i);
+    if (char === '\n' || char === '\u2028' || char === '\u2029' || (char === '\r' && source.charAt(i + 1) !== '\n')) line += 1;
+  }
+  return line;
+}
+
+/** Errors for every TypeScript suppression/reference directive in `source`; empty when there is none. */
+export function findSuppressionDirectives(source: string): string[] {
+  const found: Array<{ index: number; message: string }> = [];
+  let suppressions = 0;
+  for (const match of source.matchAll(SUPPRESSION)) {
+    if (suppressions >= MAX_DIRECTIVE_ERRORS) break;
+    if (!startsComment(source, match.index)) continue;
+    suppressions += 1;
+    found.push({ index: match.index, message: `Không được dùng chỉ thị TypeScript "@ts-${(match[1] ?? '').toLowerCase()}"; hãy sửa lỗi kiểu thay vì tắt kiểm tra.` });
+  }
+  let references = 0;
+  for (const match of source.matchAll(TRIPLE_SLASH_TAG)) {
+    if (references >= MAX_DIRECTIVE_ERRORS) break;
+    references += 1;
+    found.push({ index: match.index, message: 'Không được dùng chỉ thị triple-slash (/// <reference ... />).' });
+  }
+  return found.sort((a, b) => a.index - b.index).slice(0, MAX_DIRECTIVE_ERRORS)
+    .map(({ index, message }) => `game.ts:${lineAt(source, index)}: ${message}`);
+}
+
 export interface ValidationResult { javascript?: string; errors: string[] }
 
 export class CodeValidator {
   validate(source: string): ValidationResult {
     if (Buffer.byteLength(source, 'utf8') > CODE_MAX_BYTES) return { errors: ['Chỉ cho phép một file game.ts, tối đa 24 KB.'] };
+    // Must run before ts.createProgram: once a Program exists, a directive has already hidden diagnostics from us.
+    const directives = findSuppressionDirectives(source);
+    if (directives.length > 0) return { errors: directives };
     const options: ts.CompilerOptions = {
       target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, strict: true, noLib: true,
       noUncheckedIndexedAccess: true, noImplicitReturns: true, noEmitOnError: true, removeComments: true,
