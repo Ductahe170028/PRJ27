@@ -212,4 +212,4 @@ Mở http://127.0.0.1:5173. Build xuất `packages/contracts/dist`, `apps/api/di
 - Advanced trên Groq có log token thực tế, chờ rate limit và chia request quá lớn. Xem [báo cáo tối ưu Groq Free và cách đo lại](docs/groq-free-phase3.md).
 - Advanced kiểm tra thêm hành vi bắn đạn trong Chromium: vị trí phóng, tự bay sau khi nhả nút, sát thương và cleanup ngoài màn hình. Lỗi được đưa về sửa tối đa 2 lần; xem [kiểm thử và giới hạn gameplay](docs/phase3.md#kiểm-thử). Lỗi JSON schema (`json_validate_failed`), source rỗng, JSON không hợp lệ và lỗi TypeScript được báo riêng. Repair nhận cùng API contract với lúc sinh code.
 - Kết quả kiểm tra và lượt Groq thật sau cải thiện cơ chế bắn: [báo cáo gameplay Phase 3](docs/phase3-gameplay.md).
-- Chưa làm Phase 4 chỉnh sửa game bằng prompt, Phase 5 lưu/chia sẻ, database, tài khoản/auth, Docker, billing/thanh toán hoặc publishing/hosting.
+- Chưa làm Phase 4 chỉnh sửa game bằng prompt, Phase 5 lưu/chia sẻ, database, tài khoản trong ứng dụng, Docker hoặc billing/thanh toán. Mẫu Nginx cho nhóm bạn bè nằm ở [deploy/README.md](deploy/README.md) và chưa được áp dụng lên máy chủ.

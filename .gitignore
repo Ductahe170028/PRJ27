@@ -11,3 +11,9 @@ coverage/
 *.tsbuildinfo
 *.log
 .DS_Store
+
+# Deploy secrets stay on the server (/etc/nginx/.htpasswd-gamecreator).
+.htpasswd
+**/.htpasswd*
+deploy/**/*.pem
+deploy/**/*.key
