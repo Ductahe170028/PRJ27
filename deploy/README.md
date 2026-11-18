@@ -55,7 +55,7 @@ Docker chỉ phục vụ Sandbox Runner của Advanced. Backend, frontend và Ng
 | Nginx | 1.24.0 | Bắt buộc | Điểm vào công khai duy nhất, Basic Auth, TLS, rate limit |
 | PM2 | 7.1.2 | Bắt buộc theo runbook này | Chạy backend, tự khởi động lại, tự chạy sau reboot. Repository **không có** file cấu hình PM2; mẫu nằm ở mục G |
 | `apache2-utils` | Bất kỳ | Bắt buộc | Lệnh `htpasswd` để tạo `/etc/nginx/.htpasswd-gamecreator` |
-| `certbot` | Bản apt của 24.04 | Bắt buộc khi bật HTTPS (`[CẦN DOMAIN]`) | Chứng chỉ Let's Encrypt |
+| `certbot` | Bản apt của 24.04 (2.9.0) đủ cho chứng chỉ **domain**. Chứng chỉ **IP** cần Certbot ≥ 5.4 (không có trong apt 24.04, xem I.5b) | Bắt buộc khi bật HTTPS (`[CẦN DOMAIN]`) | Chứng chỉ Let's Encrypt |
 | `curl`, `openssl`, `ss` | Có sẵn trên Ubuntu Server | Bắt buộc cho kiểm tra | Mục K |
 | Docker Engine | 29.10.0 (Docker official repo) | **Chỉ cho Sandbox** `[ADVANCED]` | `docker run` của `DockerSandbox`. Không dùng `docker.io` của Ubuntu |
 | `docker-ce-rootless-extras`, `uidmap`, `dbus-user-session` | Cùng repo Docker | **Chỉ nếu chọn Rootless Docker** `[ADVANCED]` | Mục F.3 |
@@ -83,7 +83,7 @@ Các thành phần đã cài, không cài lại. Cột "Lệnh kiểm tra" dùng
 | Source code | | | `[ĐÃ XONG]` | `git -C /home/ubuntu/PRJ27 status -sb` |
 | Không có gói `docker.io` | | Tránh hai Docker song song | `[XÁC MINH]` | `dpkg -l docker.io 2>/dev/null \| grep ^ii \|\| echo "không có docker.io"` |
 | `apache2-utils` | any | `htpasswd` | `[XÁC MINH]` | `command -v htpasswd` |
-| `certbot` | apt | TLS | `[XÁC MINH]` `[CẦN DOMAIN]` | `command -v certbot` |
+| `certbot` | apt 2.9.0 (chứng chỉ domain). Chứng chỉ IP cần ≥ 5.4 (I.5b) | TLS | `[XÁC MINH]` `[CẦN DOMAIN]` | `certbot --version` |
 | Cài nếu thiếu | | | | `sudo apt-get update && sudo apt-get install -y apache2-utils certbot` |
 
 Kiểm tra PM2 và Node nằm ở đâu (quan trọng khi `pm2 startup` hoặc khi chuyển user ở Giai đoạn 2):
@@ -429,8 +429,124 @@ sudo docker system df
 
 ### G.1 Chọn user
 
-- **Giai đoạn 1 (Advanced tắt):** chạy bằng user `ubuntu` đã có sẵn Node/PM2 và source. Backend không gọi Docker và không chạy code do AI sinh ra, nên không cần quyền Docker. Rủi ro còn lại: nếu `ubuntu` có sudo không mật khẩu, một lỗ hổng RCE trong backend sẽ thành root. Cách giảm rủi ro: user riêng không có sudo. Khuyến nghị nhưng không bắt buộc ở Giai đoạn 1; **bắt buộc** ở Giai đoạn 2 (mục F.3).
-- **Giai đoạn 2:** user riêng không có sudo, không thuộc nhóm `docker`, với quyền Docker theo phương án đã kiểm chứng. Cần xem lại vị trí source/Node (Node cài bằng nvm trong `/home/ubuntu` thì user khác không dùng được) và quyền đọc `apps/api/dist`, `node_modules`.
+**Rủi ro khi chạy backend bằng `ubuntu`.** User `ubuntu` trên AMI Ubuntu của AWS thường có sudo không cần mật khẩu (`[XÁC MINH]` bằng `sudo -l`). Backend là process nhận request từ Internet. Nếu có lỗ hổng thực thi mã trong backend hay trong một dependency của nó, kẻ tấn công chạy lệnh với quyền của `ubuntu`, và vì `sudo` không cần mật khẩu nên chạy được lệnh với quyền **root**. Khi đó họ đọc được `/etc/nginx/.htpasswd-gamecreator`, khóa riêng TLS trong `/etc/letsencrypt`, khóa API, và điều khiển cả máy. Việc chạy backend bằng `ubuntu` cũng cho nó đọc/ghi toàn bộ thư mục home (SSH key, source, lịch sử).
+
+- **Giai đoạn 1 (Advanced tắt):** khuyến nghị chạy bằng **user riêng không có sudo** (mục G.1b). Giữ `ubuntu` chỉ là phương án tạm, chấp nhận rủi ro nêu trên, nên dùng khi đang thử trong mạng riêng và **chưa mở 80/443 ra Internet**. Backend ở Giai đoạn 1 không gọi Docker và không chạy code do AI sinh ra, nên không cần quyền Docker.
+- **Giai đoạn 2:** user riêng không có sudo và không thuộc nhóm `docker` là **bắt buộc**, cùng quyền Docker theo phương án đã kiểm chứng (mục F.3, blocker B1).
+
+### G.1b Tạo user dịch vụ không có sudo `[CHƯA]` (khuyến nghị cho Giai đoạn 1)
+
+Chưa chạy thử trên EC2. Nguyên tắc: user dịch vụ chỉ **đọc** code và file môi trường, không **ghi**, không có sudo, không đọc được home của `ubuntu`, không vào nhóm `docker`. Mọi lệnh chạy bằng `ubuntu` (quản trị) với `sudo`.
+
+**Bước 0: kiểm tra Node.js và PM2 nằm ở đâu.** Đây là điều kiện tiên quyết:
+
+```bash
+readlink -f "$(command -v node)" "$(command -v pm2)"
+stat -c '%a %U' /home/ubuntu
+```
+
+- Nếu cả hai nằm ngoài `/home/ubuntu` (ví dụ dưới `/usr/bin`, `/usr/local/bin`, `/usr/lib/node_modules`) thì mọi user chạy được: tiếp tục.
+- Nếu nằm dưới `/home/ubuntu` (ví dụ `/home/ubuntu/.nvm/...`) thì user dịch vụ **không** chạy được. Đây là **blocker B8**: chưa có phương án đã kiểm chứng trong tài liệu này (cần cài Node/PM2 ở vị trí dùng chung hoặc cài riêng cho user dịch vụ; chưa chọn). **Không** giải quyết bằng cách mở quyền thư mục `/home/ubuntu`, thêm user dịch vụ vào nhóm của `ubuntu` hoặc vào nhóm `sudo`/`docker`.
+
+**Bước 1: tạo user.** Tài khoản thường (không phải `--system`), shell `nologin`, không mật khẩu (nên bị khóa), không nhóm đặc quyền:
+
+```bash
+sudo useradd --create-home --shell /usr/sbin/nologin gamecreator
+id gamecreator                      # chỉ nhóm gamecreator; không có sudo, docker
+sudo -l -U gamecreator              # mong đợi: "is not allowed to run sudo"
+```
+
+Chọn tài khoản thường để Giai đoạn 2 (Rootless Docker cần `/etc/subuid` và `/etc/subgid`) không phải tạo lại user. Việc đó chưa kiểm chứng.
+
+**Bước 2: đặt bản build ở nơi root sở hữu, user dịch vụ chỉ đọc.** Build ở `/home/ubuntu/PRJ27` như mục E (bằng `ubuntu`), rồi sao chép sang `/opt/gamecreator/app`. Không để user dịch vụ chạy trực tiếp trong `/home/ubuntu/PRJ27`:
+
+```bash
+cd /home/ubuntu/PRJ27
+sudo mkdir -p /opt/gamecreator/app
+sudo find /opt/gamecreator/app -mindepth 1 -delete
+tar --exclude=.git --exclude=.local-diagnostics --exclude=test-results \
+    --exclude=apps/api/.env --exclude=apps/web/.env -cf - . \
+  | sudo tar -C /opt/gamecreator/app --no-same-owner -xf -
+sudo chown -R root:root /opt/gamecreator
+sudo chmod -R go-w /opt/gamecreator
+git rev-parse --short HEAD | sudo tee /opt/gamecreator/REVISION >/dev/null
+du -sh /opt/gamecreator/app ; df -h /
+```
+
+`tar` giữ nguyên symlink workspace trong `node_modules`, nên `@game-creator/contracts` vẫn trỏ đúng trong cây mới. Các tệp `.env` bị loại khỏi bản sao có chủ đích. Cây sao chép gồm cả `node_modules` đầy đủ, nên xem kích thước ở dòng `du`/`df` (ổ đĩa 20 GB).
+
+**Bước 3: file môi trường, user dịch vụ chỉ đọc.** Đặt file ở `/etc/gamecreator`, chủ sở hữu root, nhóm `gamecreator`, quyền 640. Backend đọc được nhưng không sửa được và các user khác không đọc được:
+
+```bash
+sudo install -d -o root -g gamecreator -m 750 /etc/gamecreator
+sudo install -o root -g gamecreator -m 640 /home/ubuntu/PRJ27/apps/api/.env /etc/gamecreator/api.env
+sudo ln -sfn /etc/gamecreator/api.env /opt/gamecreator/app/apps/api/.env
+sudo -u gamecreator test -r /etc/gamecreator/api.env && echo "đọc được (đúng)"
+sudo -u gamecreator test -w /etc/gamecreator/api.env && echo "GHI ĐƯỢC (sai)" || echo "không ghi được (đúng)"
+```
+
+`dotenv` đọc `.env` theo thư mục làm việc (mục D), nên ecosystem dùng `cwd` là `apps/api` trong `/opt` và `.env` ở đó là symlink tới file này (`dotenv` đọc qua symlink bình thường). Sửa giá trị: `sudo nano /etc/gamecreator/api.env` (`ubuntu` không đọc trực tiếp được thư mục `/etc/gamecreator`; đó là chủ ý). Đừng giữ hai bản `.env` lệch nhau: sau khi chép xong, bản trong `/home/ubuntu/PRJ27/apps/api/.env` chỉ còn là bản sao, hãy xóa hoặc coi `/etc/gamecreator/api.env` là bản duy nhất. Lệnh `find ... -delete` ở bước 2 xóa cả symlink này mỗi lần cập nhật, nên **tạo lại symlink sau mỗi lần sao chép** (xem bên dưới).
+
+**Bước 4: file ecosystem do root sở hữu.** Tạo mẫu ở G.2, rồi:
+
+```bash
+sudo install -o root -g root -m 644 /home/ubuntu/gamecreator.ecosystem.config.cjs /etc/gamecreator/ecosystem.config.cjs
+sudo sed -i "s#/home/ubuntu/PRJ27/apps/api#/opt/gamecreator/app/apps/api#" /etc/gamecreator/ecosystem.config.cjs
+grep -n "cwd" /etc/gamecreator/ecosystem.config.cjs      # phải là /opt/gamecreator/app/apps/api
+```
+
+**Bước 5: chạy bằng user dịch vụ.** `sudo -u ... -H` chạy lệnh trực tiếp, không cần shell đăng nhập:
+
+```bash
+sudo -u gamecreator -H pm2 start /etc/gamecreator/ecosystem.config.cjs
+sudo -u gamecreator -H pm2 status
+sudo -u gamecreator -H pm2 save
+```
+
+Nếu trước đó backend đã chạy dưới PM2 của `ubuntu`, dừng nó trước (`pm2 delete gamecreator-api`, `pm2 save`, và `pm2 unstartup` nếu đã bật) để hai process không tranh cổng 3001.
+
+**Bước 6: tự chạy sau reboot** bằng user dịch vụ. PM2 in ra một lệnh `sudo` cần chạy nguyên văn:
+
+```bash
+pm2 startup systemd -u gamecreator --hp /home/gamecreator
+# chạy dòng "sudo env PATH=... pm2 startup ..." mà lệnh trên in ra
+sudo -u gamecreator -H pm2 save
+systemctl status pm2-gamecreator --no-pager
+```
+
+**Bước 7: xác nhận không có quyền quản trị.** `[XÁC MINH]` kết quả trên máy thật. Các lệnh dưới đây chỉ kiểm tra **quyền truy cập** (`test -r`, `stat`), không in nội dung file. Chạy sau khi các file bí mật đã được tạo: `.htpasswd` ở mục I.3, chứng chỉ ở mục I.5. File chưa tồn tại cũng làm `test -r` thất bại, nên phải tách hai trường hợp:
+
+```bash
+ps -eo user:20,pid,cmd | grep '[d]ist/server.js'                  # user phải là gamecreator, không phải root/ubuntu
+sudo -u gamecreator -H sh -c 'sudo -n true' 2>&1 | head -1         # phải bị từ chối
+# Kiểm tra một file: tồn tại (root đọc được) và user dịch vụ không đọc được.
+check() { f="$1"; sudo test -e "$f" || { echo "CHƯA TỒN TẠI, chưa kiểm được: $f"; return; }
+  sudo -u gamecreator test -r "$f" && echo "ĐỌC ĐƯỢC (sai): $f" || echo "không đọc được (đúng): $f"; }
+check /etc/nginx/.htpasswd-gamecreator
+check "/etc/letsencrypt/live/$DOMAIN/privkey.pem"                 # khóa riêng TLS; cần $DOMAIN như mục I.5
+# Khóa riêng SSH: liệt kê file private key thật (không phải .pub hay authorized_keys) rồi kiểm từng file.
+sudo find /home/ubuntu/.ssh /root/.ssh /etc/ssh -type f \
+  \( -name 'id_*' -o -name '*_key' -o -name '*.pem' \) ! -name '*.pub' 2>/dev/null \
+  | while read -r k; do check "$k"; done
+```
+
+`authorized_keys` chỉ chứa khóa **công khai** nên không dùng làm bằng chứng. Nếu `find` không in file nào, ghi nhận "không có private key để kiểm" thay vì kết luận là an toàn. `find` có thể in cảnh báo "Permission denied" cho thư mục không vào được; các dòng đó không phải kết quả.
+
+**Cập nhật khi dùng user riêng.** Sau `git pull`, `npm ci`, `npm run build` (mục L.1), chạy lại bước 2, tạo lại symlink `.env` (bước 3) rồi restart bằng user dịch vụ:
+
+```bash
+sudo ln -sfn /etc/gamecreator/api.env /opt/gamecreator/app/apps/api/.env
+sudo -u gamecreator -H pm2 restart gamecreator-api
+```
+
+**Hai daemon PM2 tách biệt, đừng trộn.** PM2 lưu trạng thái theo từng user (`~/.pm2` của user đó) và mỗi user có một daemon riêng. `pm2` gõ trần nói chuyện với daemon của user đang đăng nhập (`ubuntu`); `sudo -u gamecreator -H pm2 ...` nói chuyện với daemon của `gamecreator`. Restart nhầm daemon sẽ khởi động lại (hoặc báo không có) process của user kia, trong khi backend thật không đổi. Quy ước trong toàn bộ tài liệu:
+
+- **User dịch vụ `gamecreator` (G.1b):** mọi lệnh là `sudo -u gamecreator -H pm2 ...`. Log ở `/home/gamecreator/.pm2/logs/`. Unit systemd là `pm2-gamecreator`.
+- **Vẫn dùng `ubuntu` (chỉ khi chưa mở Internet, xem G.1):** mọi lệnh là `pm2 ...` trần. Log ở `/home/ubuntu/.pm2/logs/`. Unit là `pm2-ubuntu`.
+
+Các mục G.5, K.1, K.8, K.10, K.11, L.1, L.3, L.5, L.7 viết lệnh trần của `ubuntu` và ghi chú lệnh tương ứng của `gamecreator`. Chọn một và dùng nhất quán.
+
+**Phạm vi bảo vệ (không phải tuyệt đối).** Nếu backend bị chiếm quyền, kẻ tấn công vẫn có quyền của `gamecreator`: đọc `/etc/gamecreator/api.env` (khóa API; do đó nên dùng khóa có hạn mức chi phí), đọc code trong `/opt/gamecreator`, mở kết nối ra ngoài, và dùng lỗ hổng leo thang đặc quyền cục bộ nếu có. Họ **không** có sudo, không ghi đè được code/ecosystem/`.env`, và (nếu kiểm tra bước 7 đạt) không đọc được SSH key, `.htpasswd` và khóa TLS. Đây là cải thiện lớn so với `ubuntu` nhưng chưa được kiểm chứng trên EC2; điều kiện tiên quyết là blocker B8.
 
 ### G.2 Tạo file ecosystem (ngoài repository) `[CHƯA]`
 
@@ -447,7 +563,7 @@ module.exports = {
     instances: 1,                           // hạn mức, hàng đợi nằm trong bộ nhớ: chỉ 1 instance
     autorestart: true,
     kill_timeout: 10000,                    // > 8 s: server.ts cưỡng chế thoát sau 8 s
-    max_memory_restart: '1G',               // chốt chặn, chưa hiệu chỉnh theo đo đạc
+    max_memory_restart: '1G',               // TẠM THỜI: chưa đo trên EC2 8 GB, không phải mức tối ưu
     env: {
       NODE_ENV: 'production',
       HOST: '127.0.0.1',
@@ -461,6 +577,10 @@ EOF
 ```
 
 File này không chứa bí mật. Khóa API nằm trong `apps/api/.env` (mục D.1).
+
+**Về `max_memory_restart: '1G'`:** đây là giá trị **tạm thời** (`pm2 monit`/`pm2 describe` dưới đây chạy bằng đúng user đang chạy backend, xem G.1b), đặt như một chốt chặn chống rò rỉ bộ nhớ. Nó **chưa được đo trên EC2 8 GB RAM** và không được coi là mức tối ưu: chưa có số đo RSS của backend dưới tải thật. Khi RSS vượt ngưỡng, PM2 khởi động lại backend, làm đứt request đang chạy và mất hàng đợi (mục G.6). Cách hiệu chỉnh: sau khi chạy với tải thật nhiều ngày, theo dõi `pm2 monit` hoặc `pm2 describe gamecreator-api` (mức bộ nhớ), rồi đặt ngưỡng cao hơn mức dùng bình thường; xem lại khi bật Advanced.
+
+Mẫu này viết cho user `ubuntu` (đường dẫn `/home/ubuntu/...`). Nếu dùng user dịch vụ riêng (mục G.1b, khuyến nghị) thì đường dẫn, quyền file và lệnh `pm2` khác, theo G.1b.
 
 ### G.3 Khởi động và chạy sau reboot
 
@@ -486,9 +606,11 @@ Nếu Node cài qua nvm, lệnh `pm2 startup` in ra đường dẫn Node tương
 
 ### G.4 Cho Giai đoạn 2 với Rootless Docker `[ADVANCED]` `[CHƯA]`
 
-Process PM2 do systemd hệ thống khởi động không có `XDG_RUNTIME_DIR` và `DOCKER_HOST`. Nếu dùng rootless, thêm vào `env` của ecosystem (thay `<UID>` bằng `id -u` của user dịch vụ): `DOCKER_HOST: 'unix:///run/user/<UID>/docker.sock'`, `XDG_RUNTIME_DIR: '/run/user/<UID>'`, cùng các biến `SANDBOX_*`/`GAME_JOB_*` (mục D.3). Hai biến này nằm trong danh sách CLI được phép (`docker-sandbox.ts`). Daemon rootless phải chạy trước. Nếu backend khởi động trước daemon, sandbox báo chưa sẵn sàng và kiểm tra lại sau tối đa 60 s; nếu vẫn chưa, `pm2 restart gamecreator-api`. `[XÁC MINH]`
+Process PM2 do systemd hệ thống khởi động không có `XDG_RUNTIME_DIR` và `DOCKER_HOST`. Nếu dùng rootless, thêm vào `env` của ecosystem (thay `<UID>` bằng `id -u` của user dịch vụ): `DOCKER_HOST: 'unix:///run/user/<UID>/docker.sock'`, `XDG_RUNTIME_DIR: '/run/user/<UID>'`, cùng các biến `SANDBOX_*`/`GAME_JOB_*` (mục D.3). Hai biến này nằm trong danh sách CLI được phép (`docker-sandbox.ts`). Daemon rootless phải chạy trước. Nếu backend khởi động trước daemon, sandbox báo chưa sẵn sàng và kiểm tra lại sau tối đa 60 s; nếu vẫn chưa, restart bằng đúng daemon của user đang chạy backend (`pm2 restart gamecreator-api` cho `ubuntu`, `sudo -u gamecreator -H pm2 restart gamecreator-api` cho `gamecreator`). `[XÁC MINH]`
 
 ### G.5 Vận hành hằng ngày
+
+Các lệnh dưới đây dùng daemon của `ubuntu` (`pm2` trần). Dùng user `gamecreator` thì thêm `sudo -u gamecreator -H` trước mỗi lệnh (xem "Hai daemon PM2 tách biệt" ở G.1b):
 
 ```bash
 pm2 restart gamecreator-api            # fork mode: có gián đoạn ngắn (reload cũng vậy)
@@ -499,13 +621,13 @@ pm2 flush gamecreator-api              # xóa log PM2
 pm2 monit
 ```
 
-Log PM2 nằm ở `~/.pm2/logs/gamecreator-api-{out,error}.log`. Tùy chọn: `pm2 install pm2-logrotate` để tránh log phình.
+Log PM2 nằm ở `~/.pm2/logs/` **của user đang chạy backend**: `/home/ubuntu/.pm2/logs/gamecreator-api-{out,error}.log` khi chạy bằng `ubuntu`, `/home/gamecreator/.pm2/logs/` khi chạy bằng `gamecreator` (G.1b). `~` phụ thuộc user của shell, nên đừng dùng `~/.pm2` khi đang đăng nhập bằng user khác. Tùy chọn: `pm2 install pm2-logrotate` (chạy bằng đúng user đang chạy backend) để tránh log phình.
 
 ### G.6 Graceful shutdown
 
 `server.ts` bắt `SIGINT` và `SIGTERM` (PM2 gửi `SIGINT` rồi `SIGKILL` sau `kill_timeout`): dừng nhận job, hủy job đang chờ, cho job đang chạy 2 giây, hủy phần còn lại và dừng container, rồi đóng HTTP và `closeIdleConnections()`. Cưỡng chế thoát với mã 1 sau 8 giây. Hàng đợi nằm trong bộ nhớ nên **job đang chờ hoặc đang chạy mất khi khởi động lại**, client thấy stream kết thúc và phải gửi lại.
 
-Kiểm chứng: `pm2 restart gamecreator-api` rồi `pm2 logs` không thấy `SIGKILL`/timeout; `pm2 status` quay lại `online`.
+Kiểm chứng (bằng đúng daemon của user đang chạy backend): `pm2 restart gamecreator-api` rồi `pm2 logs` không thấy `SIGKILL`/timeout; `pm2 status` quay lại `online`.
 
 ### G.7 Không để backend nghe `0.0.0.0`
 
@@ -589,15 +711,15 @@ Việc làm được ở giai đoạn này:
 
 1. Backend + PM2 (mục G), build frontend và copy vào `/var/www/gamecreator` (mục H).
 2. Bỏ site mặc định của Nginx để cổng 80 không phục vụ trang chào của Nginx: `sudo rm -f /etc/nginx/sites-enabled/default && sudo nginx -t && sudo systemctl reload nginx`.
-3. Security Group: **đóng 80 và 443** cho tới khi có domain và chứng chỉ (mục J).
+3. Security Group: **đóng 80 và 443** cho tới khi có domain và chứng chỉ, và **kiểm tra rule SSH 22 chỉ cho IP quản trị** (cảnh báo ở mục J).
 4. Thử backend qua loopback: `curl -s http://127.0.0.1:3001/api/health`.
 5. Tùy chọn, xem giao diện mà không mở Internet `[CHƯA]`: trên EC2 chạy tạm `npm run preview:web` (`vite preview` nghe `127.0.0.1:5173`, proxy `/api` tới `127.0.0.1:3001`), từ máy bạn mở đường hầm SSH `ssh -L 5173:127.0.0.1:5173 ubuntu@13.238.144.236` rồi vào `http://localhost:5173`. Đây **không phải** production: tắt ngay sau khi thử (Ctrl+C), cổng 5173 không được mở trong Security Group.
 
-Có Elastic IP `13.238.144.236` nhưng **IP trần không đủ để cấp chứng chỉ theo hướng dẫn này**. Không có căn cứ trong repo về việc Let's Encrypt cấp chứng chỉ cho IP; cần domain. Nếu chưa mua domain, một dịch vụ DNS ký tự đại diện của bên thứ ba (ví dụ `13-238-144-236.sslip.io` trỏ về IP đó) có thể dùng để thử `[XÁC MINH]`: dịch vụ ngoài, chia sẻ giới hạn tần suất cấp chứng chỉ, chưa được thử trong dự án này.
+**Domain là phương án khuyến nghị** (mục I.5). Let's Encrypt hiện **có** cấp chứng chỉ cho địa chỉ IP, nhưng đó là chứng chỉ ngắn hạn và quy trình riêng. Quy trình mục I.5 (domain) **không** dùng được cho IP. Xem I.5b để biết khác biệt, yêu cầu và lý do tài liệu này chưa có lệnh cấp chứng chỉ IP. Nếu chưa mua domain, một dịch vụ DNS ký tự đại diện của bên thứ ba (ví dụ `13-238-144-236.sslip.io` trỏ về IP đó) là một **tên miền**, nên dùng được quy trình chứng chỉ domain ở I.5 `[XÁC MINH]`: dịch vụ ngoài, chia sẻ giới hạn tần suất cấp chứng chỉ, chưa được thử trong dự án này.
 
 ### I.5 Giai đoạn B: đã có domain và TLS `[CẦN DOMAIN]`
 
-Điều kiện: bản ghi DNS A của domain trỏ tới `13.238.144.236`; Security Group cho phép 80 và 443 từ Internet.
+Điều kiện: bản ghi DNS A của domain trỏ tới `13.238.144.236`; Security Group cho phép 80 và 443 từ Internet, **chỉ sau khi** đã kiểm tra rule SSH 22 theo cảnh báo ở mục J.
 
 ```bash
 export DOMAIN=ten-mien-cua-ban.example      # thay bằng domain thật
@@ -639,9 +761,47 @@ sudo certbot renew --dry-run
 systemctl list-timers | grep certbot
 ```
 
-`certbot reconfigure` có từ Certbot 2.3; bản apt của Ubuntu 24.04 mới hơn nhưng `[XÁC MINH]`. Nếu lệnh không có, cấp lại bằng `sudo certbot certonly --webroot -w /var/www/letsencrypt --cert-name "$DOMAIN" -d "$DOMAIN" --deploy-hook "systemctl reload nginx"`. Chỉ coi là xong khi `--dry-run` thành công.
+`certbot reconfigure` có từ Certbot 2.3; bản apt của Ubuntu 24.04 mới hơn nhưng `[XÁC MINH]`. Nếu lệnh không có, cấp lại bằng `sudo certbot certonly --webroot -w /var/www/letsencrypt --cert-name "$DOMAIN" -d "$DOMAIN" --deploy-hook "systemctl reload nginx"`.
+
+**Hai việc phải kiểm tra riêng, vì `--dry-run` không làm cả hai.**
+
+- **Quá trình gia hạn:** `certbot renew --dry-run` kiểm tra việc xin chứng chỉ từ máy chủ staging (thành công, không ghi đè chứng chỉ thật). Theo tài liệu Certbot, `--dry-run` **mặc định không chạy deploy-hook** (chỉ chạy pre-hook và post-hook). Một `--dry-run` thành công **không** chứng minh Nginx được reload sau khi gia hạn.
+- **Nginx reload sau gia hạn:** cờ `--run-deploy-hooks` (có từ Certbot 2.6.0, PR certbot #9355) chạy deploy-hook khi dry-run thành công, và chạy với **chứng chỉ đang dùng**, không phải chứng chỉ thử. Kiểm tra bản đang dùng có cờ này không: `sudo certbot --help renew | grep -q run-deploy-hooks && echo "có" || echo "không có"`. Nếu có, chạy:
+
+```bash
+sudo certbot renew --dry-run --run-deploy-hooks
+sudo grep -i reload /var/log/nginx/error.log | tail
+sudo systemctl status nginx --no-pager | head -5
+```
+
+`systemctl reload nginx` không in gì khi thành công, nên bằng chứng là Nginx vẫn `active` và log không có lỗi mới sau lệnh. Nếu bản Certbot không có cờ này, **không** chạy `systemctl reload nginx` bằng tay rồi coi là đã kiểm tra hook: hook chỉ được kiểm chứng ở lần gia hạn thật đầu tiên. Theo dõi lần đó (certbot log ở `/var/log/letsencrypt/letsencrypt.log` và log Nginx) trước khi coi bước gia hạn là xong.
 
 **4. Sau mỗi `git pull` có đổi `deploy/nginx/gamecreator.conf`**, copy lại và chạy lại `sed` ở bước 2 (bản trong `/etc/nginx` là bản sao đã sửa, không tự cập nhật).
+
+### I.5b Chứng chỉ domain và chứng chỉ IP `[CẦN DOMAIN]`
+
+Nguồn đã đối chiếu (kiểm tra lúc viết tài liệu): bài "6-day and IP Address Certificates are Generally Available" (Let's Encrypt, 15/01/2026), bài "Six-Day and IP Address Certificates Available in Certbot" (Let's Encrypt, 11/03/2026; cùng nội dung ở EFF), `CHANGELOG.md` của Certbot, và trang gói `certbot` của Ubuntu `noble`. Đây là thông tin có thể thay đổi: đối chiếu lại nguồn trước khi thực hiện.
+
+| | Chứng chỉ **domain** (khuyến nghị) | Chứng chỉ **IP** (Elastic IP `13.238.144.236`) |
+| --- | --- | --- |
+| Let's Encrypt | Chứng chỉ thông thường, hiện 90 ngày (Let's Encrypt đã công bố sẽ giảm dần về 45 ngày trong vài năm tới) | Chỉ cấp theo profile `shortlived`, hiệu lực **160 giờ** (hơn 6 ngày). Có sẵn cho mọi người từ 15/01/2026 |
+| Cách xác thực | HTTP-01, DNS-01... | Chỉ `http-01` hoặc `tls-alpn-01`. **Không** dùng DNS-01 |
+| Certbot cần | Bản apt của Ubuntu 24.04 (**2.9.0**) đủ, theo mục I.5 | `--preferred-profile shortlived` (Certbot ≥ 4.0). Cờ `--ip-address` có từ 5.3 cho `standalone`/`manual`; **webroot hỗ trợ IP từ Certbot 5.4** (5.4.0, 10/03/2026). Plugin `nginx`/`apache` chưa hỗ trợ IP |
+| Ubuntu 24.04 APT | Đủ | **Không đủ.** Gói `certbot` của `noble` là 2.9.0 (universe), thấp hơn 5.4 nên không có quy trình cấp IP bằng webroot. Không cấp được bằng gói apt này |
+| Cài vào Nginx | Sửa hai đường dẫn chứng chỉ (mục I.5) | Certbot chỉ **cấp**, chưa **cài** vào web server: phải tự sửa cấu hình Nginx đọc `/etc/letsencrypt/live/<tên>/fullchain.pem` và `privkey.pem`, và đặt `--deploy-hook` để Nginx nạp lại sau mỗi lần gia hạn |
+| Gia hạn | Timer của Certbot (mục I.5, bước 3) | Bắt buộc phải **tự động hoàn toàn** (Let's Encrypt chỉ khuyến nghị chứng chỉ ngắn hạn cho người đã tự động hóa gia hạn). Theo changelog Certbot, `certbot renew` kiểm tra ARI và với Let's Encrypt thường gia hạn ở khoảng 2/3 vòng đời chứng chỉ, nghĩa là cách vài ngày một lần với chứng chỉ 160 giờ |
+
+**Khuyến nghị: dùng domain** (thông thường hoặc tên miền DNS ký tự đại diện của bên thứ ba như đã nêu ở I.4) với quy trình I.5. Quy trình này dùng được Certbot 2.9.0 từ apt, chứng chỉ sống lâu hơn và không phụ thuộc vào tính năng mới.
+
+**Nếu muốn dùng trực tiếp Elastic IP**, các điều kiện sau phải đạt **trước khi** tin vào HTTPS trên IP:
+
+1. Certbot ≥ 5.4 cài theo tài liệu cài đặt chính thức của Certbot (không phải gói apt 24.04). Phương thức cài cụ thể **chưa được chọn và chưa được xác minh** trên EC2 này.
+2. Cấp thử bằng máy chủ staging của Let's Encrypt (`--staging`) trước khi cấp chứng chỉ thật, theo hướng dẫn của Let's Encrypt/EFF.
+3. Cấu hình Nginx hiện tại viết cho domain: `server_name` là domain và `proxy_set_header Host $server_name`. Dùng IP cần một thay đổi cấu hình có review và thử riêng. Cách thay `server_name` bằng IP bằng `sed` ở mục I.5 **chưa được thử**.
+4. Cổng 80 phải mở công khai để Let's Encrypt kiểm tra HTTP-01 (khối cổng 80 đã phục vụ `/var/www/letsencrypt`).
+5. Gia hạn tự động phải được **chứng minh** bằng: `certbot renew --dry-run` thành công, `--deploy-hook` làm Nginx nạp chứng chỉ mới, và quan sát ít nhất một lần gia hạn thật sau khi cấp (chứng chỉ chỉ sống hơn 6 ngày, nên một lần gia hạn hỏng làm HTTPS hỏng trong vài ngày).
+
+**Tài liệu này không có lệnh cấp chứng chỉ IP**, vì quy trình gia hạn tự động trên EC2 này chưa được xác minh (điều kiện 1 và 5 chưa có). Nếu không có domain mà vẫn cần HTTPS trên IP, đây là blocker B7 và phải xử lý như một thay đổi riêng, không làm theo trí nhớ hay theo ví dụ trên mạng.
 
 ### I.6 Kiểm tra, reload, restart
 
@@ -659,6 +819,8 @@ Kiểm tra API qua Nginx (mục K).
 ## J. Networking và AWS
 
 Tài liệu **không** thay đổi cấu hình AWS. Kiểm tra Security Group của instance (Elastic IP hiện tại: `13.238.144.236`) bằng AWS Console.
+
+> **CẢNH BÁO: kiểm tra SSH 22 TRƯỚC KHI mở website ra Internet.** Cổng 22 phải chỉ cho phép IP quản trị (`/32`). Kiểm tra bằng AWS Console, tab *Inbound rules* của **mọi** Security Group đang gắn vào instance (rule của các nhóm gắn vào cùng instance được cộng dồn, nên một rule `0.0.0.0/0` hoặc `::/0` ở nhóm phụ hoặc nhóm `launch-wizard` cũ vẫn mở SSH cho cả Internet). Rồi từ một máy **không** nằm trong IP quản trị chạy `nc -vz -w 5 13.238.144.236 22`: kết quả phải là timeout hoặc bị từ chối. Chỉ mở 80/443 sau khi bước này đạt. Nên có đường truy cập dự phòng khi IP quản trị đổi (ví dụ AWS Systems Manager Session Manager, `[XÁC MINH]` có được cấu hình hay chưa), vì thu hẹp SSH theo IP có thể tự khóa mình. Tài liệu không thay đổi rule nào.
 
 | Cổng | Rule inbound | Ghi chú |
 | --- | --- | --- |
@@ -684,6 +846,7 @@ Chạy sau khi triển khai Giai đoạn 1. Dùng `curl -u friends` để curl t
 ### K.1 Backend
 
 ```bash
+# pm2 trần = daemon của ubuntu. Dùng user gamecreator thì thay bằng: sudo -u gamecreator -H pm2 ...
 pm2 status                                       # gamecreator-api: online
 curl -s http://127.0.0.1:3001/api/health         # {"status":"ok","service":"ai-game-creator-api","mode":"multi-provider"}
 ss -ltnp | grep 3001                             # 127.0.0.1:3001
@@ -758,12 +921,27 @@ curl -s -u friends -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: ap
 
 ### K.7 Docker, Sandbox, Playwright `[ADVANCED]`
 
-Chỉ khi chuẩn bị bật Advanced. Mục F.2–F.9 là kiểm tra Docker, sandbox, Playwright-trong-container. Để kiểm thử đường **backend → hàng đợi → sandbox** mà không đổi gate production, chạy tạm một backend thứ hai ở **chế độ không production**, loopback, cổng khác, và gọi từ chính EC2 (Host `127.0.0.1:3002` thỏa `advancedAllowed`). Dùng khóa Groq thật nên tốn quota. `[CHƯA]`, chưa chạy thử:
+Chỉ khi chuẩn bị bật Advanced. Mục F.2–F.9 là kiểm tra Docker, sandbox, Playwright-trong-container. Để kiểm thử đường **backend → hàng đợi → sandbox** mà không đổi gate production, chạy tạm một backend thứ hai ở **chế độ không production**, loopback, cổng khác, và gọi từ chính EC2 (Host `127.0.0.1:3002` thỏa `advancedAllowed`). Dùng khóa Groq thật nên tốn quota. `[CHƯA]`, chưa chạy thử.
+
+**Quy tắc bắt buộc: chạy bằng đúng user, đúng daemon Docker, đúng image store và đúng file môi trường mà production sẽ dùng.** Hai daemon (rootful và rootless) có kho image riêng, nên image build ở daemon này không tồn tại ở daemon kia (`--pull=never` báo thiếu image). Chạy test K.7 bằng `ubuntu` với `sudo docker`, hoặc với nhóm `docker`, chỉ chứng minh được đường code, **không** chứng minh mô hình quyền sẽ dùng ở production, nên **không** được dùng làm căn cứ nghiệm thu cho phương án Rootless/user riêng.
+
+Điều kiện để chạy theo mô hình user riêng và Rootless Docker (F.3, G.1b, G.4), tất cả phải đạt trước:
+
+- Daemon rootless của `gamecreator` đang chạy và socket `/run/user/<UID>/docker.sock` tồn tại (cần `loginctl enable-linger gamecreator`).
+- Image `gamecreator-sandbox:pw1.60.0` đã được build **bằng chính daemon đó** (kiểm tra bằng `rdocker image ls gamecreator-sandbox`, hàm `rdocker` ở L.4).
+- `sandbox:verify` và `test:sandbox` (F.6, F.7) đã đạt bằng daemon đó.
+
+Backend tạm chạy bằng `gamecreator`, **từ thư mục `apps/api` trong `/opt`** (`dotenv` đọc `.env` theo thư mục làm việc, và user `gamecreator` không đọc được thư mục `ubuntu` đang đứng):
 
 ```bash
-cd /home/ubuntu/PRJ27/apps/api
-NODE_ENV=development ADVANCED_AI_ENABLED=true ADVANCED_DIAGNOSTICS=0 HOST=127.0.0.1 PORT=3002 node dist/server.js
+SUID=$(id -u gamecreator)
+cd /opt/gamecreator/app/apps/api
+sudo -u gamecreator -H env \
+  XDG_RUNTIME_DIR="/run/user/$SUID" DOCKER_HOST="unix:///run/user/$SUID/docker.sock" \
+  NODE_ENV=development ADVANCED_AI_ENABLED=true ADVANCED_DIAGNOSTICS=0 HOST=127.0.0.1 PORT=3002 \
+  node dist/server.js
 # ADVANCED_DIAGNOSTICS=0 để không ghi prompt/code vào .local-diagnostics
+# Xem G.4: XDG_RUNTIME_DIR và DOCKER_HOST nằm trong danh sách biến mà backend chuyển cho Docker CLI.
 ```
 
 Ở terminal khác:
@@ -775,17 +953,19 @@ curl -sN -H 'Content-Type: application/json' \
   http://127.0.0.1:3002/api/agent/generate        # luồng NDJSON
 ```
 
-Sau đó Ctrl+C backend tạm và kiểm tra `docker ps -a --filter label=gamecreator.sandbox=1` rỗng. Backend tạm phải chạy bằng đúng user và daemon Docker sẽ dùng thật.
+Sau đó Ctrl+C backend tạm và kiểm tra container sót bằng **cùng daemon** (`rdocker ps -a --filter label=gamecreator.sandbox=1`, phải rỗng; xem L.4). Ghi lại user (`ps -eo user:20,cmd | grep '[d]ist/server.js'`), daemon (`rdocker info --format '{{.SecurityOptions}}'` phải có `rootless`) và kết quả của lần chạy này vào bảng F.10.
 
 ### K.8 PM2 và reboot
 
 ```bash
 sudo reboot
-# đăng nhập lại sau ~1-2 phút
+# đăng nhập lại sau ~1-2 phút. pm2 trần = daemon của ubuntu.
 pm2 status                                       # gamecreator-api: online (không cần chạy lại lệnh thủ công)
 systemctl is-active nginx docker pm2-ubuntu
 curl -s http://127.0.0.1:3001/api/health
 ```
+
+Dùng user `gamecreator`: `sudo -u gamecreator -H pm2 status` và `systemctl is-active nginx docker pm2-gamecreator`. Hai lệnh này kiểm tra daemon khác với hai lệnh ở trên; chỉ chạy bộ lệnh của user đang chạy backend.
 
 ### K.9 Security Group từ bên ngoài
 
@@ -796,15 +976,18 @@ Từ máy **không** phải EC2 và không nằm trong dải SSH: `nc -vz -w 5 1
 ```bash
 sudo tail -n 20 /var/log/nginx/gamecreator.access.log
 sudo tail -n 20 /var/log/nginx/gamecreator.error.log
+# pm2 trần = daemon của ubuntu. Dùng gamecreator thì: sudo -u gamecreator -H pm2 logs gamecreator-api --lines 50 --nostream
 pm2 logs gamecreator-api --lines 50 --nostream
-sudo grep -ciE 'authorization|gsk_|AIza|password' /var/log/nginx/gamecreator.*.log ~/.pm2/logs/gamecreator-api-*.log   # mong đợi 0
+# Đường dẫn log theo user đang chạy backend (xem G.5). ~/.pm2 là của user shell, dễ trỏ nhầm.
+PM2_LOGS=/home/ubuntu/.pm2/logs                      # /home/gamecreator/.pm2/logs khi chạy bằng gamecreator
+sudo grep -ciE 'authorization|gsk_|AIza|password' /var/log/nginx/gamecreator.*.log "$PM2_LOGS"/gamecreator-api-*.log   # mong đợi 0
 ```
 
 ### K.11 Tài nguyên
 
 ```bash
 free -m ; swapon --show ; df -h / ; uptime
-pm2 monit                                        # q để thoát
+pm2 monit                                        # q để thoát. gamecreator: sudo -u gamecreator -H pm2 monit
 sudo docker system df                            # [ADVANCED]
 ```
 
@@ -814,6 +997,8 @@ sudo docker system df                            # [ADVANCED]
 
 ### L.1 Cập nhật và build lại (Giai đoạn 1)
 
+Phần `git`/`npm` luôn chạy trong bản làm việc `/home/ubuntu/PRJ27` bằng `ubuntu`. **Restart thì theo user đang chạy backend** (xem "Hai daemon PM2 tách biệt" ở G.1b): `pm2` trần là daemon của `ubuntu`.
+
 ```bash
 cd /home/ubuntu/PRJ27
 git rev-parse --short HEAD > ~/gamecreator.prev-rev
@@ -821,10 +1006,27 @@ git pull --ff-only
 npm ci
 npm run build
 # copy frontend (mục H), nếu deploy/nginx/gamecreator.conf đổi thì copy lại + sed (mục I.5)
-pm2 restart gamecreator-api
+pm2 restart gamecreator-api                      # daemon của ubuntu
 sudo nginx -t && sudo systemctl reload nginx
 curl -s http://127.0.0.1:3001/api/health
 ```
+
+**Dùng user dịch vụ `gamecreator`:** `pm2 restart` ở trên nói chuyện với daemon của `ubuntu`, không đụng process thật. Thay dòng đó bằng các bước ở mục "Cập nhật khi dùng user riêng" của G.1b, chạy sau `npm run build`:
+
+```bash
+cd /home/ubuntu/PRJ27
+sudo find /opt/gamecreator/app -mindepth 1 -delete          # xóa cả symlink .env, tạo lại ở dòng dưới
+tar --exclude=.git --exclude=.local-diagnostics --exclude=test-results \
+    --exclude=apps/api/.env --exclude=apps/web/.env -cf - . \
+  | sudo tar -C /opt/gamecreator/app --no-same-owner -xf -
+sudo chown -R root:root /opt/gamecreator
+sudo chmod -R go-w /opt/gamecreator
+git rev-parse --short HEAD | sudo tee /opt/gamecreator/REVISION >/dev/null
+sudo ln -sfn /etc/gamecreator/api.env /opt/gamecreator/app/apps/api/.env
+sudo -u gamecreator -H pm2 restart gamecreator-api           # daemon của gamecreator
+```
+
+Backend của `gamecreator` chạy từ `/opt/gamecreator/app`, nên thiếu bước sao chép này thì nó tiếp tục chạy bản cũ.
 
 ### L.2 Rebuild Sandbox image `[ADVANCED]`
 
@@ -841,6 +1043,8 @@ Dọn image/cache cũ khi ổ đĩa đầy: `docker image prune`, `docker builde
 
 ### L.3 Rollback
 
+`pm2 restart` trần nói chuyện với daemon của `ubuntu`. Dùng `gamecreator` thì thay bằng `sudo -u gamecreator -H pm2 restart gamecreator-api` và **sao chép lại `/opt/gamecreator/app`** (các lệnh `tar`/`chown`/`ln` ở L.1), vì process của `gamecreator` chạy từ đó chứ không chạy từ `/home/ubuntu/PRJ27`:
+
 ```bash
 cd /home/ubuntu/PRJ27
 PREV=$(cat ~/gamecreator.prev-rev)
@@ -848,7 +1052,7 @@ git checkout "$PREV"            # nhận trạng thái "detached HEAD"; quay l�
 npm ci && npm run build
 # frontend: khôi phục nhanh từ bản trước
 sudo rm -rf /var/www/gamecreator.bad && sudo mv /var/www/gamecreator /var/www/gamecreator.bad && sudo cp -a /var/www/gamecreator.prev /var/www/gamecreator
-pm2 restart gamecreator-api
+pm2 restart gamecreator-api     # daemon của ubuntu. gamecreator: xem đoạn trên
 ```
 
 Khôi phục `/var/www/gamecreator.prev` chỉ lùi được **một** bản. Muốn lùi xa hơn thì build lại từ commit cũ rồi copy lại (mục H). Với Advanced thì khôi phục cả image (L.2). Không dùng `git reset --hard` trên máy chủ nếu chưa biết bản nào đang chạy.
@@ -859,17 +1063,30 @@ Khôi phục `/var/www/gamecreator.prev` chỉ lùi được **một** bản. Mu
 free -m ; uptime ; top -bn1 | head -15
 ps -eo pid,user,%mem,%cpu,cmd --sort=-%mem | head
 sudo docker ps -a --filter label=gamecreator.sandbox=1     # phải rỗng khi không có job
-sudo docker rm -f $(sudo docker ps -aq --filter label=gamecreator.sandbox=1) 2>/dev/null
+# dọn: xargs -r (--no-run-if-empty) không chạy docker rm khi danh sách rỗng, nên không lỗi
+sudo docker ps -aq --filter label=gamecreator.sandbox=1 | xargs -r sudo docker rm -f
 ```
 
-Lệnh `docker rm -f` cuối chỉ dọn container có nhãn của sandbox. Backend cũng tự dọn container sót khi khởi động (Advanced bật).
+Chỉ dọn container có nhãn của sandbox. Backend cũng tự dọn container sót khi khởi động (Advanced bật).
+
+**Phải dọn đúng daemon.** `sudo docker` nói chuyện với daemon **rootful**. Daemon rootful và rootless là hai daemon riêng, mỗi cái có danh sách container và kho image riêng. Nếu backend dùng Rootless Docker của user `gamecreator` (mục F.3, G.4) thì lệnh trên **không thấy** container của nó. Dùng hàm sau, trỏ vào socket của daemon rootless (`[CHƯA]`, chưa chạy thử):
+
+```bash
+SUID=$(id -u gamecreator)
+rdocker() { sudo -u gamecreator -H env XDG_RUNTIME_DIR="/run/user/$SUID" DOCKER_HOST="unix:///run/user/$SUID/docker.sock" docker "$@"; }
+rdocker ps -a --filter label=gamecreator.sandbox=1          # phải rỗng khi không có job
+ids=$(rdocker ps -aq --filter label=gamecreator.sandbox=1)
+if [ -n "$ids" ]; then rdocker rm -f $ids; fi                # không chạy gì khi danh sách rỗng
+```
+
+Hàm `rdocker` dùng lại cho `docker image ls`, `docker info` ở các mục F, K.7 khi chạy với rootless. Muốn dùng nó ở phiên mới, khai báo lại hai dòng đầu.
 
 ### L.5 Out Of Memory
 
 ```bash
 sudo dmesg -T | grep -iE 'out of memory|killed process' | tail
 sudo journalctl -k --since "1 hour ago" | grep -iE 'oom|killed process' | tail
-pm2 status ; pm2 logs gamecreator-api --lines 100 --nostream
+pm2 status ; pm2 logs gamecreator-api --lines 100 --nostream   # daemon của ubuntu. gamecreator: sudo -u gamecreator -H pm2 ...
 ```
 
 - Một container sandbox bị OOM-killed (`SANDBOX_MEMORY_MB`) làm game đó nhận lỗi "Sandbox dừng game vì...", không phải lỗi hệ thống.
@@ -886,7 +1103,7 @@ Stop rồi Start: Elastic IP giữ nguyên; `nginx`, `docker` tự khởi độn
 | --- | --- | --- |
 | `nginx -t`: không tìm thấy file chứng chỉ | Chưa cấp chứng chỉ hoặc chưa sửa đường dẫn trong bản sao | Mục I.5. Không tạo chứng chỉ giả |
 | `nginx -t`: `address family not supported` | IPv6 tắt | Comment các dòng `listen [::]:...` |
-| `502 Bad Gateway` ở `/api/` | Backend chưa chạy hoặc không nghe `127.0.0.1:3001` | `pm2 status`, `ss -ltnp \| grep 3001`, `pm2 logs` |
+| `502 Bad Gateway` ở `/api/` | Backend chưa chạy hoặc không nghe `127.0.0.1:3001` | `pm2 status` (daemon của `ubuntu`; `gamecreator`: `sudo -u gamecreator -H pm2 status`), `ss -ltnp \| grep 3001`, `pm2 logs` |
 | `401` mãi dù mật khẩu đúng | File htpasswd sai quyền hoặc sai nhóm | `ls -l /etc/nginx/.htpasswd-gamecreator` (root:www-data, 640) |
 | `429` khi duyệt bình thường | Vượt `limit_req` hoặc `AI_REQUESTS_PER_MINUTE` | Chờ ~1 phút; nhiều người sau cùng một NAT dùng chung hạn mức |
 | Backend không khởi động, lỗi `... phải là số nguyên từ ... đến ...` | Giá trị biến `AI_*`/`GAME_JOB_*`/`SANDBOX_*` ngoài khoảng | Sửa theo bảng ở mục D |
@@ -938,18 +1155,21 @@ Quy trình (ở máy phát triển, rồi deploy): nâng Playwright, `npm instal
 | B1 | Chưa có giải pháp quyền Docker cho backend đã kiểm chứng | Chặn Giai đoạn 2 | Chọn và chạy thử Rootless Docker (hoặc wrapper có review) bằng đúng user và daemon; đạt F.6 và F.7 |
 | B2 | Sandbox chưa được kiểm thử trên Ubuntu EC2 | Chặn Giai đoạn 2 | Mục F.2–F.10 |
 | B3 | **Advanced bị khóa ở production bởi code.** `app.ts` tắt khi `NODE_ENV=production`; `advancedAllowed` (`routes.ts`) chỉ cho loopback với `Host`/`Origin` là localhost; qua Nginx thì `Host` là domain nên luôn bị từ chối | Dù sandbox đạt, **không thể dùng Advanced qua domain nếu không có một thay đổi code riêng** | Ngoài phạm vi tài liệu này. Không đổi `NODE_ENV` hay `Host` để vượt qua |
-| B4 | Chưa có domain/chứng chỉ (theo thông tin hiện có) | Chặn bật site Nginx và mở 80/443 | Mục I.5 |
+| B4 | Chưa có domain/chứng chỉ (theo thông tin hiện có) | Chặn bật site Nginx và mở 80/443 | Có domain: mục I.5 (khuyến nghị). Không có domain: B7 |
 | B5 | Chưa có `htpasswd`, ecosystem PM2 chưa được tạo/chạy thử | Chặn Giai đoạn 1 | Mục I.3, G |
 | B6 | Header bảo mật cho trang tĩnh còn thiếu | Rủi ro, không chặn | Thiết kế và thử riêng (mục I.2) |
+| B7 | **Chứng chỉ IP:** cần Certbot ≥ 5.4 (apt 24.04 chỉ có 2.9.0) và quy trình gia hạn tự động cho chứng chỉ 160 giờ chưa được xác minh trên EC2. Tài liệu không có lệnh cấp chứng chỉ IP | Chặn HTTPS trực tiếp trên Elastic IP (chỉ áp dụng nếu không dùng domain) | Dùng domain (I.5), hoặc xử lý I.5b như một thay đổi riêng có kiểm chứng gia hạn |
+| B8 | **User dịch vụ không sudo:** chưa biết Node/PM2 cài ở đâu. Nếu nằm dưới `/home/ubuntu` (nvm) thì user `gamecreator` không chạy được và chưa có phương án đã kiểm chứng. G.1b chưa chạy thử | Chặn việc chạy backend bằng user riêng (khuyến nghị cho Giai đoạn 1, bắt buộc cho Giai đoạn 2). Nếu chưa xong, chỉ chạy bằng `ubuntu` khi **chưa** mở Internet | `readlink -f "$(command -v node)" "$(command -v pm2)"` (G.1b bước 0), rồi chọn và kiểm chứng cách cài |
+| B9 | **Security Group SSH 22** chưa được xác minh chỉ cho IP quản trị | Chặn mở 80/443 ra Internet | Cảnh báo ở mục J; kiểm tra trên AWS Console, không do tài liệu này thay đổi |
 
 ## Thứ tự lệnh cần làm tiếp (Giai đoạn 1)
 
 1. Xác minh trạng thái hiện có: mục B (các lệnh kiểm tra), `git -C /home/ubuntu/PRJ27 status -sb`, `id -nG`, `sudo -l`.
 2. `cd /home/ubuntu/PRJ27 && npm ci && npm run build` (mục C.3, E).
 3. Tạo `apps/api/.env` (mục D.1) và file ecosystem (mục G.2).
-4. `pm2 start ...`, `pm2 save`, `pm2 startup` (mục G.3); kiểm tra K.1.
+4. Khuyến nghị: tạo user dịch vụ không sudo và chạy PM2 bằng user đó (mục G.1b, cần giải quyết B8 trước); nếu chưa, chỉ dùng `ubuntu` khi chưa mở Internet. `pm2 start ...`, `pm2 save`, `pm2 startup` (mục G.3 hoặc G.1b); kiểm tra K.1.
 5. Copy frontend vào `/var/www/gamecreator` (mục H).
 6. `apache2-utils` + `htpasswd` (mục I.3).
-7. Có domain: DNS → Security Group mở 80/443 → certbot → cài Nginx (mục I.5) → K.2 đến K.6.
+7. Kiểm tra Security Group: SSH 22 chỉ cho IP quản trị (cảnh báo ở mục J). Có domain: DNS → Security Group mở 80/443 → certbot → cài Nginx (mục I.5) → K.2 đến K.6.
 8. Reboot thử (K.8) và kiểm tra Security Group từ bên ngoài (K.9).
 9. Chỉ sau đó cân nhắc Giai đoạn 2: B1, B2, B3.
