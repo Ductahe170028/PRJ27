@@ -5,12 +5,33 @@ import { AIError } from '../providers/errors.js';
 import { runSmokeChecks } from './browser-smoke-checks.js';
 
 export interface TestResult { errors: string[] }
-export interface GameTester { test(javascript: string, plan: GamePlan, signal: AbortSignal, request?: string): Promise<TestResult> }
+export interface TesterReadiness { ready: boolean; message: string }
+export interface GameTester {
+  test(javascript: string, plan: GamePlan, signal: AbortSignal, request?: string): Promise<TestResult>;
+  /** Cheap, cached. A tester that cannot currently isolate code reports not ready. */
+  readiness?(): TesterReadiness;
+  /** Called once after the server starts listening. */
+  startup?(): Promise<void>;
+  /** Called on shutdown; must stop every browser/container it owns. */
+  dispose?(): Promise<void>;
+}
+
+export interface PlaywrightTesterOptions {
+  /** Chromium's own sandbox. Only a container that already isolates the
+   * process (non-root, no capabilities, no network, read-only root) may turn it
+   * off; the host process must keep it on. */
+  chromiumSandbox?: boolean;
+}
 
 /** A fresh Chromium process/profile, no credentials, no external network.
  * Only the browser executes generated code. Never Node vm/eval/import/require.
+ * On a host this is a development tester; production code runs it only inside
+ * the Docker sandbox (see sandbox/).
  */
 export class PlaywrightGameTester implements GameTester {
+  private readonly chromiumSandbox: boolean;
+  constructor(options: PlaywrightTesterOptions = {}) { this.chromiumSandbox = options.chromiumSandbox ?? true; }
+
   async test(javascript: string, plan: GamePlan, signal: AbortSignal, request = ''): Promise<TestResult> {
     if (signal.aborted) throw signal.reason;
     let runtime: string;
@@ -24,7 +45,7 @@ export class PlaywrightGameTester implements GameTester {
       for (const name of ['SYSTEMROOT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'PATH', 'HOME', 'USERPROFILE', 'LOCALAPPDATA']) {
         if (process.env[name]) env[name] = process.env[name]!;
       }
-      server = await chromium.launchServer({ headless: true, chromiumSandbox: true, timeout: 15_000, env,
+      server = await chromium.launchServer({ headless: true, chromiumSandbox: this.chromiumSandbox, timeout: 15_000, env,
         args: ['--js-flags=--max-old-space-size=128', '--disable-extensions'] });
     } catch {
       signal.throwIfAborted();

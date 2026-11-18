@@ -7,37 +7,72 @@ import { CodeGenerator, CodeRepairAgent, GamePlanner, readSource } from './agent
 import { narrowStateReads } from './state-narrowing.js';
 import type { ValidationResult } from './code-validator.js';
 import { IsolatedCodeValidator } from './isolated-validator.js';
-import { PlaywrightGameTester, type GameTester } from './game-tester.js';
+import type { GameTester, TesterReadiness } from './game-tester.js';
 import type { ProviderTelemetry } from '../providers/ai-provider.js';
 import { NullRunDiagnostics, openRunDiagnostics, type RecordedFailure, type RepairProgress, type RunDiagnostics, type RunSummary } from './run-diagnostics.js';
+import { JobQueue, type JobHandle, type RunningJob } from '../services/job-queue.js';
+
+/** Default when no tester is supplied: AI code is never run on the host by accident. */
+class FailClosedTester implements GameTester {
+  async test(): Promise<never> {
+    throw new AIError('tester_unavailable', 'Chưa cấu hình sandbox để kiểm tra game. Advanced không chạy code AI trên máy chủ.', 503);
+  }
+}
 
 export class AgentOrchestrator {
-  private active = false;
-  constructor(private readonly generation: GameGenerationService, private readonly tester: GameTester = new PlaywrightGameTester(),
+  /** Reserved jobs, found again by the request object that reserve() returned. */
+  private readonly jobs = new WeakMap<AgentRequest, JobHandle>();
+  constructor(private readonly generation: GameGenerationService, private readonly tester: GameTester = new FailClosedTester(),
     private readonly validator: { validate(source: string, signal: AbortSignal): ValidationResult | Promise<ValidationResult> } = new IsolatedCodeValidator(),
-    private readonly openRun: (request: AgentRequest) => Promise<RunDiagnostics> = openRunDiagnostics) {}
+    private readonly openRun: (request: AgentRequest) => Promise<RunDiagnostics> = openRunDiagnostics,
+    // Default: one job and no queue, the behaviour before the queue existed.
+    private readonly queue: JobQueue = new JobQueue({ concurrency: 1, maxQueue: 0, runTimeoutMs: 240_000 })) {}
 
-  // Reserve before starting the response. No queue and only one browser job.
-  reserve(request: AgentRequest): { request: AgentRequest; release: () => void } {
-    if (this.active) throw new AIError('rate_limit', 'Advanced đang xử lý một game. Hãy chờ hoàn tất.', 429, 10);
+  readiness(): TesterReadiness { return this.tester.readiness?.() ?? { ready: true, message: '' }; }
+  startup(): Promise<void> { return this.tester.startup?.() ?? Promise.resolve(); }
+
+  /** Stops admitting jobs, ends waiting and running ones, then stops the sandbox. */
+  async shutdown(graceMs = 0): Promise<void> {
+    await this.queue.shutdown(graceMs);
+    await this.tester.dispose?.();
+  }
+
+  // Reserve before starting the response: a full queue or an unavailable
+  // sandbox is a plain HTTP error, not a stream that fails afterwards.
+  reserve(request: AgentRequest, owner = 'local'): { request: AgentRequest; release: () => void } {
+    const readiness = this.readiness();
+    if (!readiness.ready) throw new AIError('tester_unavailable', readiness.message, 503);
     const { provider, model } = this.generation.registry.resolve(request.providerId, request.modelId);
     if (!model.capabilities.structuredOutput) throw new AIError('invalid_model', 'Model này không hỗ trợ đầu ra có cấu trúc cho Advanced. Hãy chọn model khác trong Settings.', 400);
-    this.active = true;
-    let released = false;
-    return {
-      request: { ...request, providerId: provider.id, modelId: model.id },
-      release: () => {
-        if (released) return;
-        released = true;
-        this.active = false;
-      },
-    };
+    const job = this.queue.admit(owner);
+    const resolved: AgentRequest = { ...request, providerId: provider.id, modelId: model.id };
+    this.jobs.set(resolved, job);
+    return { request: resolved, release: () => job.release() };
   }
 
   async run(request: AgentRequest, client: string, disconnect: AbortSignal, emit: (event: AgentEvent) => void): Promise<void> {
-    const deadline = new AbortController();
-    const timer = setTimeout(() => deadline.abort(), 240_000);
-    const signal = AbortSignal.any([disconnect, deadline.signal]);
+    const reserved = this.jobs.get(request);
+    const job = reserved ?? this.queue.admit(client);
+    try {
+      if (disconnect.aborted) return;
+      let running: RunningJob;
+      try {
+        running = await job.start(disconnect, (place) => emit({ type: 'status', stage: 'Planning', message: `Đang chờ đến lượt: vị trí ${place} trong hàng đợi Advanced.`, attempt: 0 }));
+      } catch (cause) {
+        if (disconnect.aborted) return;
+        const error = normalizeProviderError(cause);
+        emit({ type: 'failed', error: { code: error.code, message: error.message, ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}) } });
+        return;
+      }
+      await this.execute(request, client, disconnect, running.signal, emit);
+    } finally {
+      if (!reserved) job.release();
+    }
+  }
+
+  private async execute(request: AgentRequest, client: string, disconnect: AbortSignal, lifecycle: AbortSignal, emit: (event: AgentEvent) => void): Promise<void> {
+    // lifecycle aborts with an AIError when the job times out or the server stops.
+    const signal = AbortSignal.any([disconnect, lifecycle]);
     let diagnostics: RunDiagnostics = new NullRunDiagnostics();
     const diag = async (task: () => Promise<void>) => { try { await task(); } catch { /* Diagnostics never change the pipeline result. */ } };
     const box: RunSummary = { outcome: 'cancelled', repairs: 0 };
@@ -46,14 +81,13 @@ export class AgentOrchestrator {
       try { diagnostics = await this.openRun(request); }
       catch { diagnostics = new NullRunDiagnostics(); }
       if (diagnostics.directory) console.info(`[advanced] diagnostics ${diagnostics.directory}`);
-      await diagnosticSink.run(diagnostics, () => this.pipeline(request, client, signal, disconnect, deadline, emit, diagnostics, diag, box));
+      await diagnosticSink.run(diagnostics, () => this.pipeline(request, client, signal, disconnect, lifecycle, emit, diagnostics, diag, box));
     } finally {
       await diag(() => diagnostics.summary(box));
-      clearTimeout(timer);
     }
   }
 
-  private async pipeline(request: AgentRequest, client: string, signal: AbortSignal, disconnect: AbortSignal, deadline: AbortController, emit: (event: AgentEvent) => void, diagnostics: RunDiagnostics, diag: (task: () => Promise<void>) => Promise<void>, box: RunSummary): Promise<void> {
+  private async pipeline(request: AgentRequest, client: string, signal: AbortSignal, disconnect: AbortSignal, lifecycle: AbortSignal, emit: (event: AgentEvent) => void, diagnostics: RunDiagnostics, diag: (task: () => Promise<void>) => Promise<void>, box: RunSummary): Promise<void> {
     let attempt = 0;
     let activeStage: Extract<AgentEvent, { type: 'status' }>['stage'] = 'Planning';
     const status = (stage: Extract<AgentEvent, { type: 'status' }>['stage'], message: string) => { activeStage = stage; emit({ type: 'status', stage, message, attempt }); };
@@ -149,7 +183,7 @@ export class AgentOrchestrator {
         box.failedStage = activeStage;
         return;
       }
-      const error = deadline.signal.aborted ? new AIError('timeout', 'Advanced đã hết thời hạn 4 phút.', 504) : normalizeProviderError(cause);
+      const error = lifecycle.aborted && lifecycle.reason instanceof AIError ? lifecycle.reason : normalizeProviderError(cause);
       box.outcome = 'failed';
       box.failedStage = activeStage;
       box.errorCode = error.code;

@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { parse } from 'dotenv';
 import { AgentOrchestrator } from '../src/agent/orchestrator.js';
+import { PlaywrightGameTester } from '../src/agent/game-tester.js';
 import { GameGenerationService } from '../src/services/game-generation-service.js';
 import { createProviderRegistry } from '../src/providers/create-registry.js';
 import type { AgentEvent } from '@game-creator/contracts';
@@ -43,7 +44,8 @@ globalThis.fetch = async (input, init) => {
   console.log(JSON.stringify(record));
   return response;
 };
-const agent = new AgentOrchestrator(new GameGenerationService(createProviderRegistry(env)));
+// Local diagnostic only: host Chromium, never the production wiring.
+const agent = new AgentOrchestrator(new GameGenerationService(createProviderRegistry(env)), new PlaywrightGameTester());
 const flappy = process.argv.includes('--flappy');
 const prompt = flappy
   ? 'Tạo game Flappy Bird 2D. Nhấn Space hoặc click để chim bay lên, có trọng lực khi thả phím. Các cặp ống di chuyển liên tục từ phải sang trái. Vượt qua mỗi cặp ống được 1 điểm. Va chạm với ống hoặc biên màn hình thì thua. Đạt 10 điểm thì thắng. Có nút Restart.'

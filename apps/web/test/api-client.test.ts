@@ -43,7 +43,7 @@ describe('shared API error handling', () => {
     const pending = generateAdvanced('game', selection, signal(), vi.fn());
     timeout.abort(new DOMException('Timed out', 'TimeoutError'));
     await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
-    expect(AbortSignal.timeout).toHaveBeenCalledWith(255_000);
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(330_000);
   });
   it('cancels a response with the wrong streaming content type', async () => {
     const cancel = vi.fn();

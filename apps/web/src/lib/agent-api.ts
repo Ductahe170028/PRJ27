@@ -12,7 +12,8 @@ export async function generateAdvanced(prompt: string, selection: ProviderSelect
   const response = await fetchResponse('/api/agent/generate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, ...requestSelection(selection) }),
-  }, signal, 255_000);
+  // Up to 60 s in the server queue + 240 s running (GAME_JOB_* defaults, capped at 300 s together) + margin.
+  }, signal, 330_000);
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     throw responseError(body, response.status, `Advanced trả lỗi HTTP ${response.status}.`);

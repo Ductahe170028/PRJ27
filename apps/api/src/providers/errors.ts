@@ -1,6 +1,6 @@
 export type AIErrorCode = 'missing_key' | 'invalid_provider' | 'invalid_model'
   | 'rate_limit' | 'timeout' | 'provider_error' | 'invalid_game_spec' | 'cancelled'
-  | 'invalid_code' | 'agent_failed' | 'advanced_unavailable' | 'tester_unavailable';
+  | 'invalid_code' | 'agent_failed' | 'advanced_unavailable' | 'tester_unavailable' | 'shutting_down';
 
 export class AIError extends Error {
   constructor(

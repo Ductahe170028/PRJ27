@@ -1,5 +1,7 @@
 // Test-only server. Production entrypoint never imports this module or enables mocks.
 import { createApp } from '../src/app.js';
+import { AgentOrchestrator } from '../src/agent/orchestrator.js';
+import { PlaywrightGameTester } from '../src/agent/game-tester.js';
 import { GameGenerationService } from '../src/services/game-generation-service.js';
 import { RequestBudget } from '../src/services/request-budget.js';
 import { AIError } from '../src/providers/errors.js';
@@ -51,7 +53,9 @@ async function generate(input: AIRequest) {
 const generationService = new GameGenerationService(mockRegistry([
   mockProvider('gemini', generate), pacedGroq,
 ]), new RequestBudget({ requestsPerMinute: 1000, requestsPerDay: 10000 }));
-const server = createApp({ generationService }).listen(Number(process.env.PORT ?? 3101), '127.0.0.1');
+// E2E runs on a developer machine with the host Chromium; production wiring uses the Docker sandbox.
+const agent = new AgentOrchestrator(generationService, new PlaywrightGameTester());
+const server = createApp({ generationService, agent }).listen(Number(process.env.PORT ?? 3101), '127.0.0.1');
 const shutdown = () => server.close(() => process.exit(0));
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

@@ -10,6 +10,9 @@ import { RequestBudget } from './services/request-budget.js';
 import { AgentOrchestrator } from './agent/orchestrator.js';
 import { mountAgentRoutes } from './agent/routes.js';
 import { withResponseAbort } from './http/response-abort.js';
+import { clientKey } from './http/client-key.js';
+import { resolveTrustProxy } from './http/trust-proxy.js';
+import { createAgent } from './agent/create-agent.js';
 
 interface AppOptions {
   service?: GameService;
@@ -17,6 +20,8 @@ interface AppOptions {
   clientOrigins?: string[];
   agent?: AgentOrchestrator;
   advancedEnabled?: boolean;
+  /** Express `trust proxy`. Default: from TRUST_PROXY (loopback in production). */
+  trustProxy?: 'loopback' | false;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -30,6 +35,8 @@ export function createApp(options: AppOptions = {}) {
   const origins = options.clientOrigins ?? ['http://localhost:5173', 'http://127.0.0.1:5173'];
 
   app.disable('x-powered-by');
+  // Only the Nginx on this machine may set the client address (X-Forwarded-For).
+  app.set('trust proxy', options.trustProxy ?? resolveTrustProxy(process.env));
   app.use(cors({ origin: origins, methods: ['GET', 'POST'] }));
   app.use(express.json({ limit: '16kb' }));
   app.use((_request, response, next) => {
@@ -50,7 +57,7 @@ export function createApp(options: AppOptions = {}) {
     const parsed = ProviderRequestSchema.safeParse(request.body);
     if (!parsed.success) throw new AIError('invalid_model', 'Hãy chọn provider và model hợp lệ.', 400);
     await withResponseAbort(response, async (signal) => {
-      response.json(await generation.testConnection(parsed.data, request.ip ?? 'local', signal));
+      response.json(await generation.testConnection(parsed.data, clientKey(request.ip), signal));
     });
   });
 
@@ -74,12 +81,17 @@ export function createApp(options: AppOptions = {}) {
       throw new AIError('invalid_model', 'Cần chọn cả provider và model hợp lệ.', 400);
     }
     await withResponseAbort(response, async (signal) => {
-      const project = await generation.generate({ ...result.data, providerId }, request.ip ?? 'local', signal);
+      const project = await generation.generate({ ...result.data, providerId }, clientKey(request.ip), signal);
       response.status(201).json({ data: project });
     });
   });
 
-  mountAgentRoutes(app, options.agent ?? new AgentOrchestrator(generation), options.advancedEnabled ?? (process.env.ADVANCED_AI_ENABLED !== 'false' && process.env.NODE_ENV !== 'production'));
+  const advancedEnabled = options.advancedEnabled ?? (process.env.ADVANCED_AI_ENABLED !== 'false' && process.env.NODE_ENV !== 'production');
+  // The sandbox and queue are only built when Advanced can run at all.
+  const agent = options.agent ?? (advancedEnabled ? createAgent(generation, process.env) : new AgentOrchestrator(generation));
+  app.locals.agent = agent;
+  app.locals.advancedEnabled = advancedEnabled;
+  mountAgentRoutes(app, agent, advancedEnabled);
 
   app.use((_request, response) => {
     response.status(404).json({ error: { code: 'NOT_FOUND', message: 'API không tồn tại.' } });
