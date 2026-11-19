@@ -346,6 +346,9 @@ textarea:disabled {
   align-items:center;
   letter-spacing:.7px
 }
+.input-bottom.is-over {
+  color:#eda49c
+}
 .field-error {
   font-size:11px;
   color:#eda49c;
@@ -1234,6 +1237,10 @@ kbd {
 .provider-status li span:last-child{text-align:right;overflow-wrap:anywhere}
 .status-message p.error-code{margin-top:6px;color:#a7b4c4}
 .error-code code{font-family:ui-monospace,monospace;color:#edb1a9}
+.spec-issues{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px;max-height:180px;overflow:auto}
+.spec-issues li{display:grid;gap:2px;font-size:11px;line-height:1.45;color:#eda49c;overflow-wrap:anywhere}
+.spec-issues code{font-family:ui-monospace,monospace;color:#f4d2cd}
+.spec-issues .issue-code{color:#a7b4c4;font-family:ui-monospace,monospace;font-size:10px}
 /* Phase 3 controls reuse the existing panels and responsive workspace. */
 .generation-mode { display:flex; gap:12px; margin:0 0 24px; flex-wrap:wrap; }
 .generation-mode button { display:grid; gap:5px; text-align:left; background:#111b2a; color:#a7b8cc; border:1px solid #29384b; border-radius:12px; padding:14px 22px; cursor:pointer; flex:1; }

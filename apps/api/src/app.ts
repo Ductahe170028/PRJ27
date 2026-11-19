@@ -105,10 +105,11 @@ export function createApp(options: AppOptions = {}) {
     if (response.headersSent) { next(error); return; }
     if (error instanceof AIError) {
       if (error.retryAfterSeconds) response.setHeader('Retry-After', error.retryAfterSeconds);
+      const issues = error.details?.length ? error.details : error.issues;
       response.status(error.status).json({ error: {
         code: error.code, message: error.message,
         ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
-        ...(error.issues ? { issues: error.issues } : {}),
+        ...(issues?.length ? { issues } : {}),
       } });
     } else if (kind === 'entity.too.large') {
       response.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Dữ liệu gửi lên quá lớn.' } });

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { GameSpecSchema, type GameSpec } from '@game-creator/contracts';
 import { parseGameSpec, GameGenerationService } from '../src/services/game-generation-service.js';
 import { repairGamePlacement } from '../src/services/repair-game-placement.js';
+import { buildNavigation, collectibleCost } from '../src/services/game-geometry.js';
 import { createApp } from '../src/app.js';
 import { mockProvider, mockRegistry, sampleSpec } from './fixtures.js';
 
@@ -182,6 +183,130 @@ describe('reachability beyond bounds and local overlap', () => {
     expect(() => repairGamePlacement(game)).toThrow(expect.objectContaining(invalid));
     expect(game).toEqual(before);
   });
+});
+
+describe('stacked platform columns', () => {
+  const jumpHeight = 560 ** 2 / (2 * 1200);
+  function columnGame(overrides?: {
+    xs?: number[];
+    ys?: number[];
+    width?: number;
+    enemyX?: number;
+  }): GameSpec {
+    const game = sampleSpec();
+    const ys = overrides?.ys ?? [380, 310, 240];
+    const width = overrides?.width ?? 200;
+    const xs = overrides?.xs ?? ys.map(() => 480);
+    game.player = { x: 80, y: 460, size: 28, speed: 260, jumpSpeed: 560, health: 3 };
+    game.difficulty = { gravity: 1200, invulnerabilityMs: 500, enemySpeedMultiplier: 1 };
+    game.obstacles = [];
+    game.platforms = ys.map((y, index) => ({ x: xs[index] ?? 480, y, width, height: 20 }));
+    game.collectibles = game.platforms.map((platform) => ({
+      x: platform.x, y: platform.y - platform.height / 2 - 25, value: 1,
+    }));
+    game.enemies = [{ x: overrides?.enemyX ?? 860, y: 484, size: 28, speed: 60, axis: 'horizontal', range: 40, damage: 1 }];
+    game.win = { type: 'collect_all', scoreTarget: 3, surviveSeconds: 30 };
+    game.lose.timeLimitSeconds = 0;
+    return game;
+  }
+  function coinCosts(game: GameSpec): number[] {
+    const navigation = buildNavigation(game, true);
+    if (!navigation) return game.collectibles.map(() => Infinity);
+    return game.collectibles.map((coin) => collectibleCost(game, coin, navigation));
+  }
+
+  it('spreads a same-x column into a staircase and keeps every coin on a step', () => {
+    const game = columnGame();
+    const before = structuredClone(game);
+    expect(coinCosts(game).every((cost) => Number.isFinite(cost))).toBe(false);
+    const repaired = repairGamePlacement(game);
+    expect(game).toEqual(before);
+    expect(GameSpecSchema.safeParse(repaired).success).toBe(true);
+    expect(repaired.collectibles.map((coin) => coin.value)).toEqual([1, 1, 1]);
+    expect(repaired.platforms.map((platform) => platform.height)).toEqual([20, 20, 20]);
+    expect(repaired.platforms.map((platform) => platform.width)).toEqual([200, 200, 200]);
+    expect(repaired.platforms[0]!.y).toBeGreaterThan(380);
+    expect(repaired.platforms[0]!.y).toBeLessThanOrEqual(380 + 16);
+    expect(repaired.platforms[1]!.y).toBe(310);
+    expect(repaired.platforms[2]!.y).toBe(240);
+    const steps = [...repaired.platforms].sort((a, b) => b.y - a.y);
+    const reach = game.player.speed * game.player.jumpSpeed / game.difficulty.gravity;
+    for (let index = 1; index < steps.length; index += 1) {
+      const lower = steps[index - 1]!;
+      const upper = steps[index]!;
+      const rise = (lower.y - lower.height / 2) - (upper.y - upper.height / 2);
+      const gap = Math.abs(upper.x - lower.x) - (upper.width + lower.width) / 2;
+      expect(upper.x).not.toBe(lower.x);
+      expect(rise).toBeGreaterThan(0);
+      expect(rise).toBeLessThanOrEqual(jumpHeight - 12 + 1e-6);
+      expect(gap).toBeGreaterThanOrEqual(0);
+      expect(gap).toBeLessThanOrEqual(reach);
+      expect(lower.x - lower.width / 2).toBeGreaterThanOrEqual(0);
+      expect(upper.x + upper.width / 2).toBeLessThanOrEqual(960);
+    }
+    for (const [index, coin] of repaired.collectibles.entries()) {
+      const platform = repaired.platforms[index]!;
+      const top = platform.y - platform.height / 2;
+      expect(coin.y).toBeLessThanOrEqual(top);
+      expect(top - coin.y).toBeLessThanOrEqual(25);
+      expect(Math.abs(coin.x - platform.x)).toBeLessThanOrEqual(platform.width / 2);
+      expect(coin.y).not.toBe(475);
+    }
+    expect(coinCosts(repaired).every((cost) => Number.isFinite(cost))).toBe(true);
+    expect(repairGamePlacement(repaired)).toEqual(repaired);
+    expect(repairGamePlacement(structuredClone(before))).toEqual(repaired);
+  }, 20_000);
+
+  it('keeps an already reachable staircase where it is', () => {
+    const game = columnGame({ xs: [280, 480, 680], ys: [440, 370, 300] });
+    expect(coinCosts(game).every((cost) => Number.isFinite(cost))).toBe(true);
+    expect(repairGamePlacement(game)).toEqual(game);
+  });
+
+  it('rejects a column taller than the jump instead of inventing a path', () => {
+    const game = columnGame({ ys: [300, 220, 140] });
+    const before = structuredClone(game);
+    expect(coinCosts(game).every((cost) => Number.isFinite(cost))).toBe(false);
+    expect(() => repairGamePlacement(game)).toThrow(expect.objectContaining(invalid));
+    expect(() => repairGamePlacement(game)).toThrow(/giữ nguyên số lượng vật thể và mục tiêu/);
+    expect(game).toEqual(before);
+  });
+
+  it('rejects stacked steps that cannot sit side by side inside the screen', () => {
+    const game = columnGame({ width: 400 });
+    const before = structuredClone(game);
+    expect(() => repairGamePlacement(game)).toThrow(expect.objectContaining(invalid));
+    expect(game).toEqual(before);
+  });
+
+  it.each([100, 860])('keeps a repaired column inside the screen when it starts at x=%i', (x) => {
+    const game = columnGame({ xs: [x, x, x] });
+    const repaired = repairGamePlacement(game);
+    expect(GameSpecSchema.safeParse(repaired).success).toBe(true);
+    for (const platform of repaired.platforms) {
+      expect(platform.x - platform.width / 2).toBeGreaterThanOrEqual(0);
+      expect(platform.x + platform.width / 2).toBeLessThanOrEqual(960);
+      expect(platform.y - platform.height / 2).toBeGreaterThanOrEqual(70);
+      expect(platform.y + platform.height / 2).toBeLessThanOrEqual(500);
+    }
+    const xs = repaired.platforms.map((platform) => platform.x);
+    expect(new Set(xs).size).toBe(3);
+    expect(coinCosts(repaired).every((cost) => Number.isFinite(cost))).toBe(true);
+  }, 20_000);
+
+  it('leaves a floor enemy on the floor and off the stair landings', () => {
+    const game = columnGame({ enemyX: 480 });
+    const enemy = game.enemies[0]!;
+    const repaired = repairGamePlacement(game);
+    const moved = repaired.enemies[0]!;
+    expect(repaired.enemies).toHaveLength(1);
+    expect(moved.y).toBe(484);
+    expect(moved.y + moved.size / 2).toBeGreaterThanOrEqual(496);
+    expect({ size: moved.size, speed: moved.speed, axis: moved.axis, range: moved.range, damage: moved.damage })
+      .toEqual({ size: enemy.size, speed: enemy.speed, axis: enemy.axis, range: enemy.range, damage: enemy.damage });
+    expect(coinCosts(repaired).every((cost) => Number.isFinite(cost))).toBe(true);
+    for (const coin of repaired.collectibles) expect(coin.y).not.toBe(475);
+  }, 20_000);
 });
 
 describe('repair at the HTTP boundary', () => {

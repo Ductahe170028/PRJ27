@@ -2,6 +2,13 @@ export type AIErrorCode = 'missing_key' | 'invalid_provider' | 'invalid_model'
   | 'rate_limit' | 'timeout' | 'provider_error' | 'invalid_game_spec' | 'cancelled'
   | 'invalid_code' | 'agent_failed' | 'advanced_unavailable' | 'tester_unavailable' | 'shutting_down';
 
+/** One GameSpec field rejection. `path` uses Zod's dotted path; an empty path is the object root. */
+export interface SpecIssue {
+  path: string;
+  code: string;
+  message: string;
+}
+
 export class AIError extends Error {
   constructor(
     public readonly code: AIErrorCode,
@@ -9,6 +16,7 @@ export class AIError extends Error {
     public readonly status: number,
     public readonly retryAfterSeconds?: number,
     public readonly issues?: string[],
+    public readonly details?: SpecIssue[],
   ) { super(message); }
 }
 
@@ -26,8 +34,8 @@ export class RequestCapacityError extends AIError {
 }
 
 /** Structured output failed. failedGeneration is model text when Groq returned
- * one; schemaPath is a provider schema pointer. Neither is copied into logs of
- * the API key, and the raw upstream message is never forwarded. */
+ * one; schemaPath is a provider schema pointer. Neither is copied into the HTTP
+ * response or API-key logs. Standard diagnostics may store the redacted text. */
 export class StructuredOutputError extends AIError {
   readonly providerStatus?: number;
   constructor(message: string, readonly failedGeneration?: string, readonly schemaPath?: string, providerStatus?: number) {

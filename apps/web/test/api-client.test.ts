@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { generateGame, ApiRequestError } from '../src/lib/api';
+import { generateGame, ApiRequestError, describeError } from '../src/lib/api';
 import { generateAdvanced, getAgentConfig } from '../src/lib/agent-api';
 
 const selection = { providerId: 'groq', modelId: 'auto' };
@@ -22,6 +22,22 @@ describe('shared API error handling', () => {
     const options = (fetch.mock.calls as unknown as Array<[string, RequestInit]>)[0]![1];
     expect(JSON.parse(String(options.body))).toEqual({ prompt: 'game', providerId: 'groq' });
     expect(fetch).toHaveBeenCalledOnce();
+  });
+  it('keeps GameSpec issues with path, code and message', async () => {
+    const issues = [
+      { path: 'title', code: 'invalid_format', message: 'Invalid string' },
+      'collectibles.0',
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      error: {
+        code: 'invalid_game_spec',
+        message: 'Dữ liệu màn chơi không hợp lệ hoặc không thể chơi an toàn. Hãy đơn giản hóa mô tả rồi thử lại.',
+        issues,
+      },
+    }, { status: 422 })));
+    const error = await generateGame('game', selection, signal()).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({ code: 'invalid_game_spec', issues });
+    expect(describeError(error, 'fallback').issues).toEqual(issues);
   });
   it('bounds the Advanced configuration request with the shared timeout', async () => {
     const timeout = new AbortController();

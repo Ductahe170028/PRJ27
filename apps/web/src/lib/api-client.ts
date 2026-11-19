@@ -1,17 +1,28 @@
-import { AUTO_MODEL_ID, ApiErrorSchema, type ProviderSelection } from '@game-creator/contracts';
+import { AUTO_MODEL_ID, ApiErrorSchema, type GameSpecIssue, type ProviderSelection } from '@game-creator/contracts';
 
 export const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
+export type ApiIssue = string | GameSpecIssue;
+
 /** Backend error with its normalized code (e.g. rate_limit, missing_key). */
 export class ApiRequestError extends Error {
-  constructor(message: string, readonly code?: string, readonly retryAfterSeconds?: number) { super(message); }
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly retryAfterSeconds?: number,
+    readonly issues?: ApiIssue[],
+  ) { super(message); }
 }
 
 export function describeError(error: unknown, fallback: string) {
-  if (!(error instanceof Error)) return { message: fallback, code: '' };
+  if (!(error instanceof Error)) return { message: fallback, code: '', issues: [] as ApiIssue[] };
   const retry = error instanceof ApiRequestError && error.retryAfterSeconds
     ? ` Có thể thử lại sau khoảng ${error.retryAfterSeconds.toLocaleString('vi-VN')} giây.` : '';
-  return { message: `${error.message}${retry}`, code: error instanceof ApiRequestError ? error.code ?? '' : '' };
+  return {
+    message: `${error.message}${retry}`,
+    code: error instanceof ApiRequestError ? error.code ?? '' : '',
+    issues: error instanceof ApiRequestError ? error.issues ?? [] : [],
+  };
 }
 
 export function fetchResponse(path: string, options: RequestInit, signal: AbortSignal, timeoutMs = 60_000): Promise<Response> {
@@ -49,7 +60,9 @@ export function requestSelection(selection: ProviderSelection) {
 /** Treat backend/proxy errors as unknown until the shared contract validates. */
 export function responseError(body: unknown, status: number, fallback = `Backend trả về lỗi HTTP ${status}. Hãy kiểm tra server và thử lại.`): ApiRequestError {
   const parsed = ApiErrorSchema.safeParse(body);
-  return parsed.success
-    ? new ApiRequestError(parsed.data.error.message, parsed.data.error.code, parsed.data.error.retryAfterSeconds)
-    : new ApiRequestError(fallback);
+  if (!parsed.success) return new ApiRequestError(fallback);
+  const { message, code, retryAfterSeconds, issues } = parsed.data.error;
+  return issues
+    ? new ApiRequestError(message, code, retryAfterSeconds, issues)
+    : new ApiRequestError(message, code, retryAfterSeconds);
 }

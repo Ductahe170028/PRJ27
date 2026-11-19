@@ -57,6 +57,42 @@ export interface Navigation {
  * Enemy patrol envelopes can be treated as forbidden areas: accepted repair
  * routes need neither damage-taking nor guessing enemy timing.
  */
+/** One Arcade jump or fall, using the same step as {@link buildNavigation}.
+ * Returns the landing point when the body comes to rest on a surface.
+ */
+export function flightLanding(game: GameSpec, start: Point, targetX: number, jump: boolean): Point | undefined {
+  const h = half(game);
+  const surfaces: Rect[] = [...game.platforms, ...game.obstacles, { x: 480, y: 520, width: 960, height: 40 }];
+  const valid = (p: Point) => p.x >= h && p.x <= 960 - h && p.y >= 70 + h && p.y <= 500 - h
+    && !surfaces.some((block) => crosses(p, p, block, h));
+  const clear = (a: Point, b: Point) => valid(b) && !surfaces.some((block) => crosses(a, b, block, h));
+  const supported = (p: Point) => surfaces.some((r) => Math.abs(p.y + h - (r.y - r.height / 2)) < EPS
+    && p.x - h >= r.x - r.width / 2 - EPS && p.x + h <= r.x + r.width / 2 + EPS);
+  let p = start;
+  let vy = jump ? -game.player.jumpSpeed : 0;
+  for (let tick = 1; tick <= 150; tick += 1) {
+    vy = Math.min(1000, vy + game.difficulty.gravity / 60);
+    const next = {
+      x: p.x + Math.sign(targetX - p.x) * Math.min(Math.abs(targetX - p.x), game.player.speed / 60),
+      y: p.y + vy / 60,
+    };
+    let landing: number | undefined;
+    if (vy >= 0) for (const r of surfaces) {
+      const top = r.y - r.height / 2;
+      const landY = top - h;
+      if (Math.abs(p.y - landY) <= EPS) continue;
+      if (p.y + h <= top + EPS && next.y + h >= top && next.x + h > r.x - r.width / 2 && next.x - h < r.x + r.width / 2) {
+        landing = Math.min(landing ?? Infinity, landY);
+      }
+    }
+    if (landing !== undefined) next.y = landing;
+    if (!clear(p, next)) return undefined;
+    if (landing !== undefined) return supported(next) ? next : undefined;
+    p = next;
+  }
+  return undefined;
+}
+
 export function buildNavigation(game: GameSpec, avoidEnemies: boolean): Navigation | undefined {
   const h = half(game);
   const blocks: Rect[] = [...game.platforms, ...game.obstacles];
@@ -101,8 +137,11 @@ export function buildNavigation(game: GameSpec, avoidEnemies: boolean): Navigati
       let landing: number | undefined;
       if (vy >= 0) for (const r of surfaces) {
         const top = r.y - r.height / 2;
+        const landY = top - h;
+        // Stepping off the surface under the body is a fall, not a failed landing.
+        if (Math.abs(p.y - landY) <= EPS) continue;
         if (p.y + h <= top + EPS && next.y + h >= top && next.x + h > r.x - r.width / 2 && next.x - h < r.x + r.width / 2) {
-          landing = Math.min(landing ?? Infinity, top - h);
+          landing = Math.min(landing ?? Infinity, landY);
         }
       }
       if (landing !== undefined) next.y = landing;
@@ -149,6 +188,37 @@ export function buildNavigation(game: GameSpec, avoidEnemies: boolean): Navigati
     if (dx > game.player.speed * duration) continue;
     const flight = fly(a, b.x, true);
     if (flight && Math.abs(flight.end.x - b.x) < EPS && Math.abs(flight.end.y - b.y) < EPS) edges.push({ from, to, seconds: flight.seconds, points: flight.points });
+  }
+  // Jumping up is not enough: the way down is a step off the lip, then a fall.
+  // Starting the fall on the lip intersects that step's side, so the body first
+  // slides to just outside the solid and only then drops.
+  const byHeight = new Map<string, number[]>();
+  nodes.forEach((node, index) => {
+    const key = node.y.toFixed(3);
+    byHeight.set(key, [...(byHeight.get(key) ?? []), index]);
+  });
+  const levels = [...byHeight.values()].sort((a, b) => nodes[a[0]!]!.y - nodes[b[0]!]!.y);
+  for (const upper of levels) {
+    const ordered = [...upper].sort((a, b) => nodes[a]!.x - nodes[b]!.x);
+    const lips = [ordered[0]!, ordered[ordered.length - 1]!];
+    for (const lower of levels) {
+      if (nodes[lower[0]!]!.y <= nodes[upper[0]!]!.y + 4) continue;
+      for (const lip of new Set(lips)) {
+        if (simulatedSteps > 350_000) return undefined;
+        const origin = nodes[lip]!;
+        const direction = lip === ordered[0] ? -1 : 1;
+        const outside = { x: origin.x + direction * (game.player.size + 0.5), y: origin.y };
+        if (!valid(outside) || !clear(origin, outside)) continue;
+        const nearest = lower.reduce((best, index) => Math.abs(nodes[index]!.x - outside.x) < Math.abs(nodes[best]!.x - outside.x) ? index : best);
+        const flight = fly(outside, nodes[nearest]!.x, false);
+        if (!flight || Math.abs(flight.end.y - nodes[nearest]!.y) > EPS) continue;
+        const dest = lower.reduce((best, index) => Math.abs(nodes[index]!.x - flight.end.x) < Math.abs(nodes[best]!.x - flight.end.x) ? index : best);
+        if (Math.abs(nodes[dest]!.x - flight.end.x) > STEP + 1) continue;
+        const slide = Math.abs(outside.x - origin.x) / game.player.speed;
+        const walk = Math.abs(nodes[dest]!.x - flight.end.x) / game.player.speed;
+        edges.push({ from: lip, to: dest, seconds: slide + flight.seconds + walk, points: [origin, outside, ...flight.points, nodes[dest]!] });
+      }
+    }
   }
   const distances = (reverse: boolean) => {
     const costs = nodes.map(() => Infinity), visited = new Set<number>();

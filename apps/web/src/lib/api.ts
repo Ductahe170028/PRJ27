@@ -1,6 +1,7 @@
 import { GenerateGameResponseSchema, HealthResponseSchema, ProvidersResponseSchema, TestConnectionResponseSchema, type ProviderSelection } from '@game-creator/contracts';
 import { fetchJson, requestSelection } from './api-client';
 export { ApiRequestError, describeError } from './api-client';
+export type { ApiIssue } from './api-client';
 
 export async function checkHealth(signal: AbortSignal) {
   const result = HealthResponseSchema.safeParse(await fetchJson('/api/health', {}, signal));

@@ -114,6 +114,33 @@ test('shows loading, reports a network error, and can recover', async ({ page })
   await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
 });
 
+test('keeps a pasted prompt over 2000 characters and sends an in-limit prompt verbatim', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('Backend đã kết nối')).toBeVisible();
+  const pasted = 'A'.repeat(2496);
+  const box = page.getByLabel('Bạn muốn tạo game gì?');
+  expect(await box.evaluate((element) => (element as HTMLTextAreaElement).maxLength)).toBe(-1);
+  await box.fill(pasted);
+  await expect(box).toHaveValue(pasted);
+  await expect(page.locator('.input-bottom')).toContainText('2.496 / 2.000');
+  await expect(page.locator('#prompt-error')).toContainText('2.496');
+  await expect(page.getByRole('button', { name: 'Generate Game' })).toBeDisabled();
+  let sent = 0;
+  page.on('request', (request) => { if (request.url().includes('/api/games/generate')) sent += 1; });
+  await page.locator('.prompt-panel form').evaluate((form) => { (form as HTMLFormElement).requestSubmit(); });
+  expect(sent).toBe(0);
+  await expect(box).toHaveValue(pasted);
+
+  const valid = '  Một game platformer dưới ánh trăng  ';
+  const request = page.waitForRequest((item) => item.url().includes('/api/games/generate') && item.method() === 'POST');
+  await box.fill(valid);
+  await expect(page.locator('#prompt-error')).toBeEmpty();
+  await expect(page.getByRole('button', { name: 'Generate Game' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Generate Game' }).click();
+  expect((await request).postDataJSON()).toMatchObject({ prompt: valid });
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+});
+
 test('reports a failed health check and retries', async ({ page }) => {
   await page.route('**/api/health', (route) => route.abort('failed'));
   await page.goto('/');

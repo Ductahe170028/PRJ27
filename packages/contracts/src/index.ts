@@ -65,11 +65,20 @@ export const HealthResponseSchema = z.object({
   service: z.literal('ai-game-creator-api'),
   mode: z.literal('multi-provider'),
 }).strict();
+export const GameSpecIssueSchema = z.object({
+  path: z.string(),
+  code: z.string(),
+  message: z.string(),
+}).strict();
+
 export const ApiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
     retryAfterSeconds: z.number().int().positive().optional(),
+    // Placement and repair failures already publish path strings. Schema
+    // failures publish path, code and message. Both shapes stay readable.
+    issues: z.array(z.union([z.string(), GameSpecIssueSchema])).optional(),
   }),
 });
 
@@ -87,6 +96,7 @@ export const RuntimeInitSchema = z.object({
 }).strict();
 
 export type GenerateGameRequest = z.infer<typeof GenerateGameRequestSchema>;
+export type GameSpecIssue = z.infer<typeof GameSpecIssueSchema>;
 export type GameDefinition = z.infer<typeof GameDefinitionSchema>;
 export type GameProject = z.infer<typeof GameProjectSchema>;
 export type RuntimeEvent = z.infer<typeof RuntimeEventSchema>;

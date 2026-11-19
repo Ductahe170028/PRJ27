@@ -4,27 +4,120 @@ import {
   type GenerateGameRequest, type ProviderRequestSelection,
 } from '@game-creator/contracts';
 import { ProviderRegistry } from '../providers/provider-registry.js';
-import { AIError, TransientRateLimitError, normalizeProviderError } from '../providers/errors.js';
+import { AIError, type SpecIssue, TransientRateLimitError, normalizeProviderError } from '../providers/errors.js';
 import { RequestBudget } from './request-budget.js';
 import { GAME_SYSTEM_PROMPT, providerJsonSchema } from './system-prompt.js';
 import { normalizeGeneratedSpec } from './normalize-game-spec.js';
 import { repairGamePlacement } from './repair-game-placement.js';
 import type { AIRequest } from '../providers/ai-provider.js';
 import { waitForRateLimit } from '../providers/groq-rate-limit.js';
+import { redactDiagnostics } from '../agent/run-diagnostics.js';
+import { diagnosticSink } from '../providers/diagnostic-sink.js';
+import {
+  openStandardDiagnostics, type StandardDiagnostics, type StandardFinish, type StandardRequest, type StandardValidation,
+} from './standard-diagnostics.js';
 
-export function parseGameSpec(text: string) {
-  if (Buffer.byteLength(text, 'utf8') > GAME_SPEC_MAX_BYTES) throw new AIError('invalid_game_spec', 'GameSpec vượt quá giới hạn 32 KB.', 422);
+interface SpecCapture {
+  stage: 'provider' | 'parse' | 'normalize' | 'schema' | 'repair' | 'ok';
+  parsed?: unknown;
+  normalized?: unknown;
+  validationSuccess: boolean;
+  issues: SpecIssue[];
+}
+
+function toSpecIssues(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; code: string; message: string }>): SpecIssue[] {
+  return issues.map((issue) => ({
+    path: issue.path.map((part) => (typeof part === 'symbol' ? part.description ?? 'symbol' : String(part))).join('.'),
+    code: issue.code,
+    message: redactDiagnostics(issue.message),
+  }));
+}
+
+export function parseGameSpec(text: string, capture?: SpecCapture) {
+  if (Buffer.byteLength(text, 'utf8') > GAME_SPEC_MAX_BYTES) {
+    if (capture) capture.stage = 'parse';
+    throw new AIError('invalid_game_spec', 'GameSpec vượt quá giới hạn 32 KB.', 422);
+  }
   // A single fenced JSON block can be unwrapped safely; nothing is evaluated.
   const clean = text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
   let data: unknown;
-  try { data = JSON.parse(clean); } catch { throw new AIError('invalid_game_spec', 'Provider không trả về JSON hợp lệ. Hãy thử mô tả đơn giản hơn.', 422); }
+  try { data = JSON.parse(clean); } catch {
+    if (capture) capture.stage = 'parse';
+    throw new AIError('invalid_game_spec', 'Provider không trả về JSON hợp lệ. Hãy thử mô tả đơn giản hơn.', 422);
+  }
+  if (capture) {
+    capture.parsed = structuredClone(data);
+    capture.stage = 'normalize';
+  }
   const normalized = normalizeGeneratedSpec(data);
+  if (capture) {
+    capture.normalized = structuredClone(normalized);
+    capture.stage = 'schema';
+  }
   const parsed = GameSpecPlacementInputSchema.safeParse(normalized);
   if (!parsed.success) {
-    throw new AIError('invalid_game_spec', 'Dữ liệu màn chơi không hợp lệ hoặc không thể chơi an toàn. Hãy đơn giản hóa mô tả rồi thử lại.', 422, undefined,
-      parsed.error.issues.slice(0, 5).map((issue) => issue.path.map(String).join('.')));
+    const details = toSpecIssues(parsed.error.issues);
+    if (capture) {
+      capture.validationSuccess = false;
+      capture.issues = details;
+      capture.stage = 'schema';
+    }
+    throw new AIError(
+      'invalid_game_spec',
+      'Dữ liệu màn chơi không hợp lệ hoặc không thể chơi an toàn. Hãy đơn giản hóa mô tả rồi thử lại.',
+      422, undefined, details.map((issue) => issue.path), details,
+    );
   }
-  return repairGamePlacement(parsed.data);
+  if (capture) {
+    capture.validationSuccess = true;
+    capture.issues = [];
+    capture.stage = 'repair';
+  }
+  try {
+    const game = repairGamePlacement(parsed.data);
+    if (capture) capture.stage = 'ok';
+    return game;
+  } catch (error) {
+    if (capture) capture.stage = 'repair';
+    throw error;
+  }
+}
+
+function issuesFromError(error: unknown, capture: SpecCapture): SpecIssue[] {
+  if (capture.issues.length > 0) return capture.issues;
+  if (!(error instanceof AIError)) return [];
+  if (error.details?.length) return error.details;
+  return (error.issues ?? []).map((issuePath) => ({ path: issuePath, code: error.code, message: error.message }));
+}
+
+function validationRecord(capture: SpecCapture): StandardValidation {
+  if (capture.stage === 'provider' || capture.stage === 'parse' || capture.stage === 'normalize') return { status: 'not_reached' };
+  return { status: 'checked', schema: 'GameSpecPlacementInputSchema', success: capture.validationSuccess, issues: capture.issues };
+}
+
+function standardFinish(input: {
+  capture: SpecCapture;
+  outcome: 'completed' | 'failed';
+  stage: StandardFinish['stage'];
+  raw?: string;
+  error?: unknown;
+}): StandardFinish {
+  const issues = input.outcome === 'completed' ? [] : issuesFromError(input.error, input.capture);
+  const record: StandardFinish = {
+    stage: input.stage,
+    outcome: input.outcome,
+    parsed: input.capture.parsed ?? null,
+    normalized: input.capture.normalized ?? null,
+    validation: validationRecord(input.capture),
+    issues,
+  };
+  if (input.raw !== undefined) record.raw = input.raw;
+  if (input.error instanceof AIError) {
+    record.errorCode = input.error.code;
+    record.errorMessage = input.error.message;
+  } else if (input.error instanceof Error) record.errorMessage = input.error.message;
+  else if (input.outcome === 'failed') record.errorMessage = 'Không thể tạo game.';
+  return record;
 }
 
 export class GameGenerationService {
@@ -32,7 +125,17 @@ export class GameGenerationService {
     readonly registry: ProviderRegistry,
     private readonly budget = new RequestBudget(),
     private readonly timeoutMs = 45_000,
+    private readonly openDiagnostics: (input: StandardRequest) => Promise<StandardDiagnostics> = openStandardDiagnostics,
   ) {}
+
+  private async note(task: () => Promise<void>): Promise<void> {
+    try { await task(); } catch { /* Diagnostics must not change the generation result. */ }
+  }
+
+  private async beginDiagnostics(input: StandardRequest): Promise<StandardDiagnostics> {
+    try { return await this.openDiagnostics(input); }
+    catch { return { async note() {}, async raw() {}, async finish() {} }; }
+  }
 
   private async execute<T>(client: string, signal: AbortSignal, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
     if (signal.aborted) throw new AIError('cancelled', 'Yêu cầu đã bị hủy.', 499);
@@ -51,16 +154,34 @@ export class GameGenerationService {
 
   async generate(request: GenerateGameRequest & ProviderRequestSelection, client: string, signal: AbortSignal) {
     const { provider, model } = this.registry.resolve(request.providerId, request.modelId);
-    const text = await this.execute(client, signal, (abortSignal) => provider.generate({
-      prompt: request.prompt, model, signal: abortSignal,
-      systemPrompt: GAME_SYSTEM_PROMPT, jsonSchema: providerJsonSchema(),
-    }));
-    const game = parseGameSpec(text);
-    return AIGameProjectSchema.parse({
-      id: randomUUID(), title: game.title, prompt: request.prompt,
-      provider: provider.id, modelId: model.id, capabilities: model.capabilities,
-      createdAt: new Date().toISOString(), game,
-    });
+    const diag = await this.beginDiagnostics({ prompt: request.prompt, provider: provider.id, model: model.id });
+    const capture: SpecCapture = { stage: 'provider', validationSuccess: false, issues: [] };
+    let sawOutput = false;
+    try {
+      const text = await diagnosticSink.run(diag, () => this.execute(client, signal, (abortSignal) => provider.generate({
+        prompt: request.prompt, model, signal: abortSignal,
+        systemPrompt: GAME_SYSTEM_PROMPT, jsonSchema: providerJsonSchema(),
+      })));
+      sawOutput = true;
+      await this.note(() => diag.raw(text));
+      try {
+        const game = parseGameSpec(text, capture);
+        const project = AIGameProjectSchema.parse({
+          id: randomUUID(), title: game.title, prompt: request.prompt,
+          provider: provider.id, modelId: model.id, capabilities: model.capabilities,
+          createdAt: new Date().toISOString(), game,
+        });
+        await this.note(() => diag.finish(standardFinish({ capture, outcome: 'completed', stage: 'response', raw: text })));
+        return project;
+      } catch (error) {
+        const stage = capture.stage === 'ok' ? 'response' : capture.stage;
+        await this.note(() => diag.finish(standardFinish({ capture, outcome: 'failed', stage, raw: text, error })));
+        throw error;
+      }
+    } catch (error) {
+      if (!sawOutput) await this.note(() => diag.finish(standardFinish({ capture, outcome: 'failed', stage: 'provider', error })));
+      throw error;
+    }
   }
 
   async testConnection(selection: ProviderRequestSelection, client: string, signal: AbortSignal) {

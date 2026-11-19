@@ -271,6 +271,11 @@ describe('AI HTTP and generation service', () => {
     const response = await request(app).post('/api/games/generate').send(input).expect(422);
     expect(response.body.error.code).toBe('invalid_game_spec');
     expect(response.body.error.issues.length).toBeGreaterThan(0);
+    for (const issue of response.body.error.issues) {
+      expect(Object.keys(issue).sort()).toEqual(['code', 'message', 'path']);
+      expect(issue.message).toEqual(expect.any(String));
+      expect(issue.message).not.toContain('secret output');
+    }
     expect(JSON.stringify(response.body)).not.toContain('secret output');
     expect(provider.generate).toHaveBeenCalledOnce();
   });

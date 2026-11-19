@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 export const GAME_SPEC_MAX_BYTES = 32_768;
 const integer = (min: number, max: number) => z.number().int().min(min).max(max);
-// Display labels only. No markup, style strings, URLs, expressions or code fields.
-const label = z.string().min(1).max(80).regex(/^[\p{L}\p{M}\p{N} .,!?"'():\-]+$/u);
+// Display labels only. Letters, marks, numbers, dash punctuation (hyphen, en dash,
+// em dash) and simple title punctuation. No markup, style strings, URLs or code.
+const label = z.string().min(1).max(80).regex(/^[\p{L}\p{M}\p{N}\p{Pd} .,!?"'():]+$/u);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const position = { x: integer(16, 944), y: integer(80, 484) };
 const rectangle = z.object({

@@ -3,8 +3,9 @@ import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleAlert, Code2,
   Gamepad2, Layers2, LoaderCircle, MonitorPlay, RefreshCw, Sparkles, Terminal,
 } from 'lucide-react';
-import { GenerateGameRequestSchema, PROMPT_MAX_LENGTH, type GameProject } from '@game-creator/contracts';
-import { checkHealth, describeError, generateGame } from './lib/api';
+import { PROMPT_MAX_LENGTH, type GameProject } from '@game-creator/contracts';
+import { checkHealth, describeError, generateGame, type ApiIssue } from './lib/api';
+import { promptLimitWarning, promptToSend } from './lib/prompt-draft';
 import { EmptyPreview } from './components/EmptyPreview';
 import { GamePreview } from './components/GamePreview';
 import { ProviderSettings, useProviderSettings } from './components/ProviderSettings';
@@ -31,6 +32,7 @@ export function App() {
   const [health, setHealth] = useState<Health>('checking');
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
+  const [specIssues, setSpecIssues] = useState<ApiIssue[]>([]);
   const [fieldError, setFieldError] = useState('');
   const [healthError, setHealthError] = useState('');
   const generationRequest = useRef<AbortController | null>(null);
@@ -64,9 +66,9 @@ export function App() {
   async function handleGenerate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || !settings.available || settings.testing) return;
-    const input = GenerateGameRequestSchema.safeParse({ prompt });
-    if (!input.success) {
-      setFieldError(input.error.issues[0]?.message ?? 'Hãy nhập mô tả game.');
+    const outgoing = promptToSend(prompt);
+    if (outgoing === null) {
+      setFieldError(promptLimitWarning(prompt) || 'Hãy nhập mô tả game.');
       return;
     }
     generationRequest.current?.abort();
@@ -75,10 +77,11 @@ export function App() {
     setFieldError('');
     setError('');
     setErrorCode('');
+    setSpecIssues([]);
     setProject(null);
     setPhase('generating');
     try {
-      const result = await generateGame(input.data.prompt, settings.selection, controller.signal);
+      const result = await generateGame(outgoing, settings.selection, controller.signal);
       if (controller.signal.aborted) return;
       healthRequest.current?.abort();
       setHealth('online');
@@ -90,6 +93,7 @@ export function App() {
       const described = describeError(cause, 'Không thể tạo game. Hãy thử lại.');
       setError(described.message);
       setErrorCode(described.code);
+      setSpecIssues(described.issues);
       setPhase('error');
     }
   }
@@ -98,9 +102,11 @@ export function App() {
   const onRuntimeError = useCallback((message: string) => {
     setError(message);
     setErrorCode('');
+    setSpecIssues([]);
     setProject(null);
     setPhase('error');
   }, []);
+  const limitWarning = promptLimitWarning(prompt);
   const completedSteps = phase === 'playing' ? 3 : phase === 'booting' ? 2 : phase === 'generating' ? 1 : 0;
 
   return <div className="app-shell">
@@ -146,22 +152,21 @@ export function App() {
             <p className="panel-description">Mọi thế giới đều bắt đầu từ một ý tưởng.</p>
             <form onSubmit={(event) => void handleGenerate(event)}>
               <label htmlFor="prompt" className="field-label">Bạn muốn tạo game gì?</label>
-              <div className={`prompt-input-wrap ${fieldError ? 'has-error' : ''}`}>
+              <div className={`prompt-input-wrap ${limitWarning || fieldError ? 'has-error' : ''}`}>
                 <textarea
                   id="prompt"
                   name="prompt"
                   value={prompt}
                   onChange={(event) => { setPrompt(event.target.value); setFieldError(''); }}
                   placeholder="Ví dụ: Một game platformer 2D, nơi phi hành gia nhỏ khám phá thành phố dưới ánh trăng, nhảy qua các nền tảng…"
-                  maxLength={PROMPT_MAX_LENGTH}
                   disabled={busy}
-                  aria-invalid={Boolean(fieldError)}
+                  aria-invalid={Boolean(limitWarning || fieldError)}
                   aria-describedby="prompt-hint prompt-error"
                 />
-                <div className="input-bottom"><span><Terminal size={12}/> GAME PROMPT</span><span>{prompt.length.toLocaleString('vi-VN')} / 2.000</span></div>
+                <div className={`input-bottom${limitWarning ? ' is-over' : ''}`}><span><Terminal size={12}/> GAME PROMPT</span><span>{prompt.length.toLocaleString('vi-VN')} / {PROMPT_MAX_LENGTH.toLocaleString('vi-VN')}</span></div>
               </div>
-              <p id="prompt-error" className="field-error" role={fieldError ? 'alert' : undefined}>{fieldError}</p>
-              <button className="generate-button" type="submit" disabled={busy || !prompt.trim() || !settings.available || settings.testing}>
+              <p id="prompt-error" className="field-error" role={limitWarning || fieldError ? 'alert' : undefined}>{limitWarning || fieldError}</p>
+              <button className="generate-button" type="submit" disabled={busy || !prompt.trim() || Boolean(limitWarning) || !settings.available || settings.testing}>
                 {busy ? <LoaderCircle className="spin" size={18}/> : <Sparkles size={18}/>}
                 <span>{busy ? 'Đang tạo game…' : 'Generate Game'}</span>
                 {!busy && <ArrowUpRight size={18}/>}
@@ -174,7 +179,23 @@ export function App() {
             <div className="status-heading"><Terminal size={14}/><h2>Trạng thái</h2><span className="status-tiny-label">{phase === 'playing' ? 'COMPLETE' : busy ? 'RUNNING' : phase === 'error' ? 'ERROR' : 'READY'}</span></div>
             <div className="status-message" role={phase === 'error' ? 'alert' : 'status'} aria-live="polite" aria-atomic="true">
               <div className="status-symbol">{busy ? <LoaderCircle size={18} className="spin"/> : phase === 'playing' ? <Check size={18}/> : phase === 'error' ? <CircleAlert size={18}/> : <span className="small-dot"/>}</div>
-              <div><h3>{phaseCopy[phase].title}</h3><p>{phase === 'error' ? error : phaseCopy[phase].description}</p>{phase === 'error' && errorCode && <p className="error-code">Mã lỗi: <code>{errorCode}</code></p>}</div>
+              <div>
+                <h3>{phaseCopy[phase].title}</h3>
+                <p>{phase === 'error' ? error : phaseCopy[phase].description}</p>
+                {phase === 'error' && errorCode && <p className="error-code">Mã lỗi: <code>{errorCode}</code></p>}
+                {phase === 'error' && specIssues.length > 0 && <ul className="spec-issues" aria-label="Chi tiết GameSpec">
+                  {specIssues.map((issue, index) => {
+                    const field = typeof issue === 'string' ? issue || 'GameSpec' : issue.path || 'GameSpec';
+                    const code = typeof issue === 'string' ? '' : issue.code;
+                    const message = typeof issue === 'string' ? '' : issue.message;
+                    return <li key={`${field}-${index}`}>
+                      <code>{field}</code>
+                      {code ? <span className="issue-code">{code}</span> : null}
+                      {message ? <span>{message}</span> : null}
+                    </li>;
+                  })}
+                </ul>}
+              </div>
             </div>
             <div className="generation-steps" aria-label="Tiến trình">
               {['Mô tả', settings.isDemo ? 'Demo API' : 'AI + Kiểm tra', 'Preview'].map((label, index) => <div key={label} className={index < completedSteps ? 'step-complete' : ''}>

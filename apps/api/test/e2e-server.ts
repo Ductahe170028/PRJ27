@@ -47,6 +47,7 @@ async function generate(input: AIRequest) {
   if (input.prompt.includes('[jump]')) game.collectibles = [{ x: 840, y: 484, value: 10 }];
   if (input.prompt.includes('[repair]')) game.collectibles.push({ x: -8, y: game.collectibles[0]!.y, value: 25 });
   if (input.prompt.includes('[unrepairable]')) game.collectibles.push({ x: 900, y: 100, value: 25 });
+  if (input.prompt.includes('[invalid-spec]')) game.title = 'Bad <title>';
   // Provider output must pass the production service's validation/repair path.
   return JSON.stringify(game);
 }

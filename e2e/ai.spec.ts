@@ -223,3 +223,21 @@ test('unrepairable placement shows a specific error without a partial game or re
   await expect(page.locator('iframe')).toHaveCount(0);
   expect(requests).toBe(1);
 });
+
+test('shows the GameSpec field that failed validation', async ({ page }) => {
+  await page.goto('/');
+  await choose(page, 'groq');
+  await page.getByLabel('Bạn muốn tạo game gì?').fill('platformer [invalid-spec]');
+  const response = page.waitForResponse((item) => item.url().includes('/api/games/generate'));
+  await page.getByRole('button', { name: 'Generate Game' }).click();
+  const body = await (await response).json();
+  expect(body.error.code).toBe('invalid_game_spec');
+  const title = body.error.issues.find((issue: { path?: string }) => issue.path === 'title');
+  expect(title).toMatchObject({ path: 'title', code: expect.any(String), message: expect.any(String) });
+  const list = page.getByRole('list', { name: 'Chi tiết GameSpec' });
+  await expect(list).toContainText('title');
+  await expect(list).toContainText(title.code);
+  await expect(list).toContainText(title.message);
+  await expect(page.getByText(/Dữ liệu màn chơi không hợp lệ/)).toBeVisible();
+  await expect(page.locator('iframe')).toHaveCount(0);
+});
