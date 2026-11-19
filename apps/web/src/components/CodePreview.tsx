@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { createCodeDocument, type CodeProject } from '@game-creator/contracts';
+import { randomUuid } from '../lib/uuid';
 
 export function CodePreview({ project, onStarted, onError }: { project: CodeProject; onStarted: () => void; onError: (message: string) => void }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const id = useMemo(() => crypto.randomUUID(), [project.id]);
+  const id = useMemo(() => randomUuid(), [project.id]);
   const doc = useMemo(() => createCodeDocument(project.javascript, new URL(`${import.meta.env.BASE_URL}runtime/advanced.js`, window.location.origin).href, id), [project.javascript, id]);
   useEffect(() => {
     let lastHeartbeat = Date.now(), started = false, failed = false;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { RuntimeEventSchema, type GameProject } from '@game-creator/contracts';
 import { createPreviewDocument } from '../lib/preview-document';
+import { randomUuid } from '../lib/uuid';
 
 interface GamePreviewProps {
   project: GameProject;
@@ -10,7 +11,7 @@ interface GamePreviewProps {
 
 export function GamePreview({ project, onStarted, onError }: GamePreviewProps) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const sessionId = useMemo(() => crypto.randomUUID(), [project.id]);
+  const sessionId = useMemo(() => randomUuid(), [project.id]);
   const document = useMemo(() => createPreviewDocument(sessionId), [sessionId]);
 
   useEffect(() => {
