@@ -1,8 +1,15 @@
 import { GameSpecSchema, type GameSpec } from '@game-creator/contracts';
 import { AIError } from '../providers/errors.js';
-import { buildNavigation, collectibleCost, flightLanding, overlapsRect, patrolRect, withinWorld, type Point, type Rect, type Navigation } from './game-geometry.js';
+import {
+  buildNavigation, buildPhysicalGraph, collectibleCost, createAnalysisCache, flightLanding, hazardAnalysis, overlapsRect,
+  patrolRect, touchesCoin, withinWorld, type AnalysisCache, type Navigation, type PhysicalGraph, type Point, type Rect,
+} from './game-geometry.js';
+import { checkObjectiveRoute, type RouteResult } from './objective-route.js';
+import { TICKS_PER_SECOND } from './platformer-physics.js';
 
 const MAX_MOVE = 160;
+/** Hazard analyses spent on sliding floor enemies in one repair. */
+const SLIDE_CHECKS = 16;
 const COIN_SIZE = 20;
 // Documented rest in the system prompt: coin center is 25px above a surface top.
 const COIN_REST = 25;
@@ -232,8 +239,8 @@ function snapColumnCoins(game: GameSpec, indices: number[], coinIndexes: number[
   }
 }
 
-function columnProven(game: GameSpec, indices: number[], coinIndexes: number[]): boolean {
-  const nav = buildNavigation(game, false);
+function columnProven(game: GameSpec, indices: number[], coinIndexes: number[], cache: AnalysisCache): boolean {
+  const nav = buildNavigation(game, false, cache);
   if (!nav || !schemaChain(game, indices)) return false;
   const onStep = (coin: Point) => indices.some((index) => {
     const platform = game.platforms[index]!;
@@ -255,7 +262,7 @@ function coverage(game: GameSpec, navigation: Navigation | undefined): number {
     || candidates(coin, navigation).length > 0).length;
 }
 
-function placeColumn(game: GameSpec, indices: number[], coinIndexes: number[]): boolean {
+function placeColumn(game: GameSpec, indices: number[], coinIndexes: number[], cache: AnalysisCache): boolean {
   const plan = planColumn(game, indices);
   if (!plan) return false;
   const originals = game.platforms.map((platform) => ({ ...platform }));
@@ -273,7 +280,7 @@ function placeColumn(game: GameSpec, indices: number[], coinIndexes: number[]): 
       snapColumnCoins(game, indices, coinIndexes, originals);
       // A top step can stay unreachable when every coin is already on a proved
       // step or within 160px of one. The coin pass finishes that shorter move.
-      if (columnProven(game, indices, coinIndexes) || coverage(game, buildNavigation(game, false)) === game.collectibles.length) return true;
+      if (columnProven(game, indices, coinIndexes, cache) || coverage(game, buildNavigation(game, false, cache)) === game.collectibles.length) return true;
       restore();
     }
   }
@@ -332,8 +339,8 @@ function rideCoins(game: GameSpec, index: number, original: Rect, coinIndexes: n
  * A candidate is kept only when a simulated jump lands on it and navigation
  * then gives every coin on it a finite cost. Anything else is rolled back.
  */
-function seatBesideReached(game: GameSpec, index: number): boolean {
-  const nav = buildNavigation(game, false);
+function seatBesideReached(game: GameSpec, index: number, cache: AnalysisCache): boolean {
+  const nav = buildNavigation(game, false, cache);
   const owned = coinsOnPlatforms(game, [index]);
   if (!nav || owned.length === 0) return false;
   if (surfaceReached(game, game.platforms[index]!, nav)
@@ -386,7 +393,7 @@ function seatBesideReached(game: GameSpec, index: number): boolean {
     const rise = surfaceTop(candidate.anchor) - surfaceTop(block);
     if (rise <= 4 || rise > limits.height + 1e-6 || !jumpReaches(game, candidate.anchor, index)) continue;
     if (++checks > 24) break;
-    const proved = buildNavigation(game, false);
+    const proved = buildNavigation(game, false, cache);
     const coinsReachable = proved !== undefined && surfaceReached(game, block, proved)
       && owned.every((coin) => Number.isFinite(collectibleCost(game, game.collectibles[coin]!, proved)));
     if (!coinsReachable || !GameSpecSchema.safeParse(game).success) continue;
@@ -396,9 +403,9 @@ function seatBesideReached(game: GameSpec, index: number): boolean {
   return false;
 }
 
-function reflowBlockedPlatforms(game: GameSpec): void {
+function reflowBlockedPlatforms(game: GameSpec, cache: AnalysisCache): void {
   if (game.genre !== 'platformer' || game.platforms.length === 0) return;
-  const nav = buildNavigation(game, false);
+  const nav = buildNavigation(game, false, cache);
   if (!nav) return;
   const reached: number[] = [];
   const blocked: number[] = [];
@@ -413,20 +420,20 @@ function reflowBlockedPlatforms(game: GameSpec): void {
     const every = game.platforms.map((_, index) => index);
     const coins = coinsOnPlatforms(game, every);
     if (coins.length === 0) return;
-    placeColumn(game, every, coins);
+    placeColumn(game, every, coins, cache);
     return;
   }
   const pending = blocked
     .filter((index) => coinsOnPlatforms(game, [index]).some((coin) => !Number.isFinite(collectibleCost(game, game.collectibles[coin]!, nav))))
     .sort((a, b) => surfaceTop(game.platforms[b]!) - surfaceTop(game.platforms[a]!) || a - b);
-  for (const index of pending) seatBesideReached(game, index);
+  for (const index of pending) seatBesideReached(game, index, cache);
 }
 
-function reflowStackedPlatforms(game: GameSpec): void {
+function reflowStackedPlatforms(game: GameSpec, cache: AnalysisCache): void {
   if (game.genre !== 'platformer' || game.platforms.length < 2) return;
   const columns = stackedColumns(game);
   if (columns.length === 0) return;
-  const nav = buildNavigation(game, false);
+  const nav = buildNavigation(game, false, cache);
   if (!nav) return;
   const jobs = columns.flatMap((group) => {
     const coins = coinsOnPlatforms(game, group);
@@ -447,8 +454,8 @@ function reflowStackedPlatforms(game: GameSpec): void {
     fail(`collectibles.${coinIndex}`, `Xu ${coinIndex + 1} không thể tiếp cận an toàn, không có vị trí thay thế trong ${MAX_MOVE}px.`);
   };
   for (const job of jobs) {
-    if (placeColumn(game, job.group, job.coins)) continue;
-    const navNow = buildNavigation(game, false);
+    if (placeColumn(game, job.group, job.coins, cache)) continue;
+    const navNow = buildNavigation(game, false, cache);
     const bad = job.coins.find((coinIndex) => !navNow
       || !Number.isFinite(collectibleCost(game, game.collectibles[coinIndex]!, navNow)));
     // A coin that already has a finite cost is not the failure, even if it is
@@ -457,30 +464,129 @@ function reflowStackedPlatforms(game: GameSpec): void {
   }
   // One column is already proved inside placeColumn. A second column can block the first.
   if (jobs.length < 2) return;
-  const proved = buildNavigation(game, false);
+  const proved = buildNavigation(game, false, cache);
   const solved = proved !== undefined && jobs.every((job) => job.group.every((index) => surfaceReached(game, game.platforms[index]!, proved))
     && job.coins.every((index) => Number.isFinite(collectibleCost(game, game.collectibles[index]!, proved))));
   if (!solved) reject(jobs[0]?.coins[0] ?? 0);
 }
 
+const OFFSCREEN = 'Vật thể vượt khỏi màn chơi.';
+
+function physicalCoins(game: GameSpec, cache: AnalysisCache): Set<number> {
+  const nav = buildNavigation(game, false, cache);
+  return new Set(nav ? game.collectibles.flatMap((coin, index) => (Number.isFinite(collectibleCost(game, coin, nav)) ? [index] : [])) : []);
+}
+
+function reachedPlatforms(game: GameSpec, cache: AnalysisCache): Set<number> {
+  const nav = buildNavigation(game, false, cache);
+  return new Set(nav ? game.platforms.flatMap((platform, index) => (surfaceReached(game, platform, nav) ? [index] : [])) : []);
+}
+
+/** Candidate: move a platform that sticks out of the screen just inside it,
+ * keeping width and height. Coins on it move by the same offset. The move is
+ * kept only if no other platform or coin loses physical reachability, so a
+ * clamp that builds a ceiling or blocks a jump is rolled back. */
+function clampOffscreen(game: GameSpec, indices: number[], cache: AnalysisCache): void {
+  for (const index of indices) {
+    const original = { ...game.platforms[index]! };
+    const bounds = yBounds(original.height);
+    const block = {
+      ...original,
+      x: Math.max(Math.max(10, Math.ceil(original.width / 2)), Math.min(Math.min(950, Math.floor(960 - original.width / 2)), original.x)),
+      y: Math.max(bounds.min, Math.min(bounds.max, original.y)),
+    };
+    const owned = coinsOnPlatforms(game, [index]);
+    const coinsBefore = physicalCoins(game, cache);
+    const platformsBefore = reachedPlatforms(game, cache);
+    const savedCoins = game.collectibles.map((coin) => ({ ...coin }));
+    const restore = () => {
+      game.platforms[index] = { ...original };
+      game.collectibles.forEach((coin, coinIndex) => Object.assign(coin, savedCoins[coinIndex]));
+    };
+    if (insidePlayfield(block) && !placementClashes(game, index, block)) {
+      game.platforms[index] = block;
+      for (const coinIndex of owned) {
+        const coin = game.collectibles[coinIndex]!;
+        const span = block.width / 2 - COIN_SIZE / 2;
+        coin.x = Math.max(16, Math.min(944, Math.max(block.x - span, Math.min(block.x + span, coin.x + block.x - original.x))));
+        coin.y = Math.max(80, Math.min(484, coin.y + block.y - original.y));
+      }
+      const coinsAfter = physicalCoins(game, cache);
+      const platformsAfter = reachedPlatforms(game, cache);
+      const harmed = [...coinsBefore].some((coin) => !owned.includes(coin) && !coinsAfter.has(coin))
+        || [...platformsBefore].some((other) => other !== index && !platformsAfter.has(other));
+      if (!harmed) continue;
+      restore();
+    }
+    // Otherwise seat it beside a reached step (also proved by a simulated jump).
+    if (!seatBesideReached(game, index, cache) || !insidePlayfield(game.platforms[index]!)) restore();
+  }
+}
+
+/** Physical moves only, no enemies: used to tell a hazard block from a layout block. */
+function physicalRoute(game: GameSpec, graph: PhysicalGraph): RouteResult {
+  return checkObjectiveRoute({
+    nodeCount: graph.nodes.length, spawn: graph.spawnNode, spawnSafe: true,
+    edges: graph.edges.map((edge) => ({
+      from: edge.from, to: edge.to, ticks: edge.ticks, timed: false,
+      coins: game.collectibles.flatMap((coin, index) => (edge.points.some((p) => touchesCoin(game, p, coin)) ? [index] : [])),
+    })),
+    nodeCoins: graph.nodes.map((node) => game.collectibles.flatMap((coin, index) => (touchesCoin(game, node, coin) ? [index] : []))),
+    coinValues: game.collectibles.map((coin) => coin.value), win: game.win, timeLimitSeconds: 0,
+    startupSeconds: graph.startupTicks / TICKS_PER_SECOND, ticksPerSecond: TICKS_PER_SECOND,
+  });
+}
+
+/** Zero-damage route for the objective, deadline included. */
+function zeroDamageRoute(game: GameSpec, cache: AnalysisCache): RouteResult | undefined {
+  const graph = buildPhysicalGraph(game, cache);
+  if (!graph) return undefined;
+  const analysis = hazardAnalysis(game, graph, cache);
+  return checkObjectiveRoute({
+    nodeCount: graph.nodes.length, spawn: graph.spawnNode, spawnSafe: analysis.spawnSafe,
+    edges: analysis.edges,
+    nodeCoins: analysis.nodeCoins.map((list, node) => (analysis.safe[node] ? list : [])),
+    coinValues: game.collectibles.map((coin) => coin.value), win: game.win,
+    timeLimitSeconds: game.win.type === 'survive' ? 0 : game.lose.timeLimitSeconds,
+    startupSeconds: graph.startupTicks / TICKS_PER_SECOND, ticksPerSecond: TICKS_PER_SECOND,
+  });
+}
+
 /** Transactional repair. Coin and enemy centers still move at most 160px,
- * except coins that ride along when their own platform is respaced.
+ * except coins that ride along when their own platform is moved.
  * Only a true vertical column is spread as a staircase. A zigzag keeps every
  * platform navigation can already stand on, and seats the unreachable steps
- * beside those anchors. Counts, sizes, values, physics and goals never change.
- * Unproven layouts fail closed with 422.
+ * beside those anchors. A platform outside the screen is clamped inside it.
+ * Counts, sizes, values, physics and goals never change. The input is never
+ * mutated. Unproven layouts fail closed with 422.
+ *
+ * Platformer acceptance: the physical graph (no enemies) plus the enemy hazard
+ * analysis give zero-damage moves; objective-route.ts then needs one route for
+ * the objective (and its deadline) over those moves.
  */
 export function repairGamePlacement(input: GameSpec): GameSpec {
   const game = structuredClone(input);
+  const cache = createAnalysisCache();
   const structural = GameSpecSchema.safeParse(game);
+  const offscreen: number[] = [];
   if (!structural.success) {
-    const other = structural.error.issues.find((issue) => !['collectibles', 'enemies'].includes(String(issue.path[0])));
-    if (other) fail(other.path.map(String).join('.'), other.message);
+    for (const issue of structural.error.issues) {
+      const [head, index] = issue.path;
+      if (head === 'collectibles' || head === 'enemies') continue;
+      // A platform outside the screen is a placement problem the clamp candidate may fix.
+      if (head === 'platforms' && typeof index === 'number' && issue.message === OFFSCREEN) { offscreen.push(index); continue; }
+      fail(issue.path.map(String).join('.'), issue.message);
+    }
   }
-  reflowStackedPlatforms(game);
-  reflowBlockedPlatforms(game);
+  if (offscreen.length > 0) {
+    clampOffscreen(game, [...new Set(offscreen)].sort((a, b) => a - b), cache);
+    const still = game.platforms.findIndex((platform) => !insidePlayfield(platform));
+    if (still >= 0) fail(`platforms.${still}`, OFFSCREEN);
+  }
+  reflowStackedPlatforms(game, cache);
+  reflowBlockedPlatforms(game, cache);
   const blocks = [...game.platforms, ...game.obstacles];
-  const base = buildNavigation(game, false);
+  const base = buildNavigation(game, false, cache);
   if (!base) fail('player', 'Không tìm được đường đi an toàn từ điểm xuất phát.');
 
   const onFloor = (enemy: GameSpec['enemies'][number]) => game.genre === 'platformer'
@@ -505,45 +611,60 @@ export function repairGamePlacement(input: GameSpec): GameSpec {
     game.enemies[i] = { ...enemy, ...position };
   }
 
-  // Avoid complete patrol envelopes, so a route never depends on taking damage
-  // or on a lucky enemy phase. Reversible routes also prevent one-way coin traps.
-  // A floor patrol can still seal the only jump. Slide those enemies in x, at
-  // most 160px, until the safe route reaches as many coins as possible.
-  let safe = buildNavigation(game, true);
-  const safeScore = (navigation: Navigation | undefined) => navigation
-    ? game.collectibles.filter((coin) => Number.isFinite(collectibleCost(game, coin, navigation))).length
-    : -1;
-  if (game.genre === 'platformer' && safeScore(safe) < game.collectibles.length) {
-    for (let index = 0; index < game.enemies.length; index += 1) {
-      const enemy = game.enemies[index]!;
-      if (!onFloor(enemy)) continue;
-      const origin = enemy.x;
-      let bestX = origin;
-      let best = safeScore(safe);
-      for (let x = origin - MAX_MOVE; x <= origin + MAX_MOVE; x += 16) {
-        if (x === origin) continue;
-        const moved = { ...enemy, x };
-        const overlaps = game.enemies.some((other, otherIndex) => otherIndex !== index
-          && overlapsRect(patrolRect(moved, game.difficulty.enemySpeedMultiplier), patrolRect(other, game.difficulty.enemySpeedMultiplier)));
-        if (!enemyValid(moved) || overlaps) continue;
-        game.enemies[index] = moved;
-        const score = safeScore(buildNavigation(game, true));
-        if (score > best) {
-          best = score;
-          bestX = x;
-          if (best === game.collectibles.length) break;
+  // Platformer: enemies are moving hazards, never walls. A floor enemy is slid
+  // (at most 160px; range, speed and axis kept) only when the hazard analysis
+  // shows the objective route is blocked by enemies while the layout itself
+  // allows it.
+  if (game.genre === 'platformer') {
+    const graph = buildPhysicalGraph(game, cache);
+    const routeScore = () => {
+      const route = zeroDamageRoute(game, cache);
+      if (!route) return -1;
+      return (route.ok ? game.collectibles.length + 1 : 0) + route.reachable.filter(Boolean).length;
+    };
+    const physical = graph ? physicalRoute(game, graph) : undefined;
+    let best = routeScore();
+    const physicalScore = physical ? (physical.ok ? game.collectibles.length + 1 : 0) + physical.reachable.filter(Boolean).length : -1;
+    if (best < physicalScore) {
+      // Nearest positions first, so the first one that restores the route is
+      // also the smallest move. Every check is a full hazard analysis; past the
+      // budget no more slides are tried and the final route check decides.
+      let checks = 0;
+      for (let index = 0; index < game.enemies.length && best < physicalScore; index += 1) {
+        const enemy = game.enemies[index]!;
+        if (!onFloor(enemy)) continue;
+        const origin = enemy.x;
+        let bestX = origin;
+        const xs = Array.from({ length: 2 * MAX_MOVE / 16 }, (_, k) => origin + (k % 2 === 0 ? 1 : -1) * 16 * (Math.floor(k / 2) + 1));
+        for (const x of xs) {
+          if (checks >= SLIDE_CHECKS) break;
+          const moved = { ...enemy, x };
+          const overlaps = game.enemies.some((other, otherIndex) => otherIndex !== index
+            && overlapsRect(patrolRect(moved, game.difficulty.enemySpeedMultiplier), patrolRect(other, game.difficulty.enemySpeedMultiplier)));
+          if (!enemyValid(moved) || overlaps) continue;
+          game.enemies[index] = moved;
+          checks += 1;
+          const score = routeScore();
+          if (score > best) { best = score; bestX = x; }
+          if (best >= physicalScore) break;
         }
+        game.enemies[index] = { ...enemy, x: bestX };
       }
-      game.enemies[index] = { ...enemy, x: bestX };
-      if (best === game.collectibles.length) break;
     }
-    safe = buildNavigation(game, true);
   }
+  const safe = buildNavigation(game, true, cache);
   if (!safe) fail('enemies', 'Kẻ địch chặn đường an toàn từ điểm xuất phát.');
+  // The schema's own coarse rule (a platformer coin sits above a support it can
+  // reach) is evaluated by the schema itself, for this coin only.
+  const schemaAccepts = (coin: GameSpec['collectibles'][number], index: number) => {
+    const parsed = GameSpecSchema.safeParse({ ...game, collectibles: game.collectibles.map((other, j) => (j === index ? coin : other)) });
+    return parsed.success || !parsed.error.issues.some((issue) => issue.path[0] === 'collectibles' && issue.path[1] === index);
+  };
   const coinValid = (coin: GameSpec['collectibles'][number], index: number) => itemPosition(coin)
     && !blocks.some((block) => overlapsRect(coinBody(coin), block))
     && !game.collectibles.some((other, j) => j < index && overlapsRect(coinBody(coin), coinBody(other), 2))
-    && Number.isFinite(collectibleCost(game, coin, safe));
+    && Number.isFinite(collectibleCost(game, coin, safe))
+    && schemaAccepts(coin, index);
   for (let i = 0; i < game.collectibles.length; i += 1) {
     const coin = game.collectibles[i]!;
     if (coinValid(coin, i)) continue;
@@ -553,16 +674,23 @@ export function repairGamePlacement(input: GameSpec): GameSpec {
     game.collectibles[i] = { ...coin, ...position };
   }
 
-  const deadline = game.lose.timeLimitSeconds;
-  if (deadline > 0 && game.win.type !== 'survive') {
-    const routes = game.collectibles.map((coin) => ({ value: coin.value, seconds: collectibleCost(game, coin, safe) + 0.5 }));
-    if (game.win.type === 'reach_score') routes.sort((a, b) => a.seconds / a.value - b.seconds / b.value);
-    let seconds = safe.startupSeconds, score = 0;
-    for (const route of routes) {
-      seconds += route.seconds; score += route.value;
-      if (game.win.type === 'reach_score' && score >= game.win.scoreTarget) break;
+  if (game.genre === 'platformer') {
+    // One route for the objective over zero-damage moves, deadline included.
+    const route = zeroDamageRoute(game, cache);
+    if (!route) fail('player', 'Không tìm được đường đi an toàn từ điểm xuất phát.');
+    if (!route.ok) fail(route.failure!.path, route.failure!.message);
+  } else {
+    const deadline = game.lose.timeLimitSeconds;
+    if (deadline > 0 && game.win.type !== 'survive') {
+      const routes = game.collectibles.map((coin) => ({ value: coin.value, seconds: collectibleCost(game, coin, safe) + 0.5 }));
+      if (game.win.type === 'reach_score') routes.sort((a, b) => a.seconds / a.value - b.seconds / b.value);
+      let seconds = safe.startupSeconds, score = 0;
+      for (const route of routes) {
+        seconds += route.seconds; score += route.value;
+        if (game.win.type === 'reach_score' && score >= game.win.scoreTarget) break;
+      }
+      if (seconds > deadline) fail('lose.timeLimitSeconds', 'Không xác nhận được đường đi hoàn thành mục tiêu trong thời hạn đã yêu cầu.');
     }
-    if (seconds > deadline) fail('lose.timeLimitSeconds', 'Không xác nhận được đường đi hoàn thành mục tiêu trong thời hạn đã yêu cầu.');
   }
   const checked = GameSpecSchema.safeParse(game);
   if (!checked.success) {

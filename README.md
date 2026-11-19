@@ -106,8 +106,11 @@ apps/api/
       game-generation-service.ts  Gọi AI, timeout, parse/validate, metadata
       system-prompt.ts            Quy tắc game và schema provider
       normalize-game-spec.ts      Kẹp số nguyên theo các giới hạn đã có
-      repair-game-placement.ts    Sửa tọa độ xu/địch, giữ số lượng và mục tiêu
-      game-geometry.ts            Kiểm tra đường đi, va chạm và vùng tuần tra
+      repair-game-placement.ts    Sửa tọa độ xu/địch/platform, giữ số lượng và mục tiêu
+      game-geometry.ts            Đồ thị di chuyển vật lý (không enemy), va chạm, top-down
+      platformer-physics.ts       Mô phỏng nhảy/rơi theo tick như Phaser Arcade
+      enemy-hazard.ts             Enemy platformer là chướng ngại di động, route không nhận sát thương
+      objective-route.ts          Thứ tự hoàn thành objective trên đồ thị có hướng, cận trên thời gian
       request-budget.ts           Rate/concurrency/daily limit trong RAM
       game-service.ts             Giữ service demo Phase 1
   test/                           Unit/API/SDK mocks và E2E mock server

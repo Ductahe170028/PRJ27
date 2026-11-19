@@ -1,0 +1,81 @@
+{
+  "runId": "synthetic-drop",
+  "provenance": "synthetic",
+  "source": "hand-written",
+  "note": "Walk off a high platform and land on a lower one.",
+  "spec": {
+    "version": "1.0",
+    "title": "Drop",
+    "genre": "platformer",
+    "width": 960,
+    "height": 540,
+    "theme": {
+      "background": "#101b30",
+      "platform": "#32475f",
+      "player": "#c5f277",
+      "enemy": "#f27b91",
+      "collectible": "#ffd46b",
+      "accent": "#75c9cc"
+    },
+    "player": {
+      "x": 300,
+      "y": 276,
+      "size": 28,
+      "speed": 260,
+      "jumpSpeed": 560,
+      "health": 3
+    },
+    "platforms": [
+      {
+        "x": 300,
+        "y": 300,
+        "width": 200,
+        "height": 20
+      },
+      {
+        "x": 700,
+        "y": 400,
+        "width": 400,
+        "height": 20
+      }
+    ],
+    "obstacles": [],
+    "enemies": [
+      {
+        "x": 60,
+        "y": 484,
+        "size": 28,
+        "speed": 60,
+        "axis": "horizontal",
+        "range": 0,
+        "damage": 1
+      }
+    ],
+    "collectibles": [
+      {
+        "x": 620,
+        "y": 365,
+        "value": 10
+      }
+    ],
+    "controls": {
+      "movement": "both",
+      "jump": "both",
+      "restart": "r"
+    },
+    "win": {
+      "type": "collect_all",
+      "scoreTarget": 10,
+      "surviveSeconds": 30
+    },
+    "lose": {
+      "healthDepleted": true,
+      "timeLimitSeconds": 0
+    },
+    "difficulty": {
+      "gravity": 1200,
+      "invulnerabilityMs": 1000,
+      "enemySpeedMultiplier": 1
+    }
+  }
+}

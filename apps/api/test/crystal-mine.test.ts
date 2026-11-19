@@ -1,72 +1,52 @@
 import { describe, expect, it } from 'vitest';
 import { GameSpecSchema, type GameSpec } from '@game-creator/contracts';
-import { buildNavigation, collectibleCost, overlapsRect } from '../src/services/game-geometry.js';
+import { buildNavigation, buildPhysicalGraph, collectibleCost, overlapsRect } from '../src/services/game-geometry.js';
+import { analyzeHazards } from '../src/services/enemy-hazard.js';
 import { repairGamePlacement } from '../src/services/repair-game-placement.js';
+import { parseGameSpec } from '../src/services/game-generation-service.js';
 import { GAME_SYSTEM_PROMPT, describeSchema, providerJsonSchema } from '../src/services/system-prompt.js';
 import { sampleSpec } from './fixtures.js';
+import { fixtureSpec, standardFixture } from './standard-fixtures.js';
 
-// standard-20261119-170732-b769 provider-output.txt. Groq rejected this body
-// with json_validate_failed before GameSpec parsing.
-const wrappedGeneration = '{"root":{"version":"1.0","title":"CRYSTAL MINE – Mỏ Pha Lê","genre":"platformer","width":960,"height":540},"theme":{"background":"#001122","platform":"#334455","player":"#FFCC00","enemy":"#CC3333","collectible":"#00CCFF","accent":"#FF9900"},"player":{"x":80,"y":460,"size":28,"speed":260,"jumpSpeed":560,"health":3},"platforms":[{"x":200,"y":420,"width":200,"height":20},{"x":500,"y":350,"width":150,"height":20},{"x":700,"y":280,"width":180,"height":20},{"x":400,"y":210,"width":160,"height":20},{"x":800,"y":140,"width":140,"height":20}],"obstacles":[],"enemies":[{"x":300,"y":484,"size":28,"speed":80,"axis":"horizontal","range":120,"damage":1},{"x":650,"y":484,"size":28,"speed":80,"axis":"horizontal","range":120,"damage":1}],"collectibles":[{"x":250,"y":475,"value":1},{"x":550,"y":325,"value":1},{"x":750,"y":255,"value":1},{"x":450,"y":185,"value":1},{"x":850,"y":115,"value":1},{"x":350,"y":475,"value":1}],"controls":{"movement":"both","jump":"both","restart":"r"},"win":{"type":"collect_all","scoreTarget":10,"surviveSeconds":30},"lose":{"healthDepleted":true,"timeLimitSeconds":0},"difficulty":{"gravity":1200,"invulnerabilityMs":1000,"enemySpeedMultiplier":1.0}}';
+// Recorded Groq runs, copied from .local-diagnostics into test/fixtures/standard.
+// b769: provider-output.txt; Groq rejected it with json_validate_failed.
+const wrappedGeneration = JSON.stringify(standardFixture('b769').spec);
+// c36f: Xu 2 is collectibles[1]. 2ef2: earlier Crystal Mine. dca2: platforms
+// 0-2 are a reachable zigzag; 3 and 4 fold back above them.
+const latestMine = fixtureSpec('c36f');
+const earlierMine = fixtureSpec('2ef2');
+const foldedMine = fixtureSpec('dca2');
 
-// standard-20261119-170748-c36f parsed.json. Xu 2 is collectibles[1].
-const latestMine = {
-  version: '1.0', title: 'CRYSTAL MINE – Mỏ Pha Lê', genre: 'platformer', width: 960, height: 540,
-  theme: { background: '#111111', platform: '#444444', player: '#00FFAA', enemy: '#FF4444', collectible: '#FFCC00', accent: '#888888' },
-  player: { x: 80, y: 460, size: 28, speed: 260, jumpSpeed: 560, health: 3 },
-  platforms: [
-    { x: 120, y: 400, width: 200, height: 20 },
-    { x: 320, y: 340, width: 180, height: 20 },
-    { x: 520, y: 280, width: 160, height: 20 },
-    { x: 680, y: 220, width: 140, height: 20 },
-    { x: 840, y: 160, width: 120, height: 20 },
-  ],
-  obstacles: [],
-  enemies: [
-    { x: 200, y: 484, size: 28, speed: 80, axis: 'horizontal', range: 120, damage: 1 },
-    { x: 600, y: 484, size: 28, speed: 80, axis: 'horizontal', range: 120, damage: 1 },
-  ],
-  collectibles: [
-    { x: 140, y: 475, value: 1 },
-    { x: 340, y: 315, value: 1 },
-    { x: 540, y: 255, value: 1 },
-    { x: 740, y: 195, value: 1 },
-    { x: 940, y: 135, value: 1 },
-    { x: 860, y: 135, value: 1 },
-  ],
-  controls: { movement: 'both', jump: 'both', restart: 'r' },
-  win: { type: 'collect_all', scoreTarget: 6, surviveSeconds: 30 },
-  lose: { healthDepleted: true, timeLimitSeconds: 0 },
-  difficulty: { gravity: 1200, invulnerabilityMs: 500, enemySpeedMultiplier: 1 },
-} as GameSpec;
+const coinCosts = (game: GameSpec, avoidEnemies: boolean) => {
+  const navigation = buildNavigation(game, avoidEnemies);
+  return game.collectibles.map((coin) => (navigation ? collectibleCost(game, coin, navigation) : Infinity));
+};
+const displacement = (before: GameSpec, after: GameSpec) => {
+  const sum = (a: Array<{ x: number; y: number }>, b: Array<{ x: number; y: number }>) =>
+    a.reduce((total, item, index) => total + Math.hypot(item.x - b[index]!.x, item.y - b[index]!.y), 0);
+  return sum(after.platforms, before.platforms) + sum(after.enemies, before.enemies) + sum(after.collectibles, before.collectibles);
+};
+const withoutPositions = (game: GameSpec) => ({
+  ...game,
+  platforms: game.platforms.map(({ width, height }) => ({ width, height })),
+  enemies: game.enemies.map(({ x: _x, y: _y, ...rest }) => rest),
+  collectibles: game.collectibles.map(({ value }) => value),
+});
 
-// standard-20261119-170723-2ef2. The step under the ceiling can be reached and
-// left; the top step cannot.
-const earlierMine = {
-  ...latestMine,
-  theme: { background: '#111111', platform: '#4A4A4A', player: '#FFD700', enemy: '#FF4500', collectible: '#00FFFF', accent: '#FF69B4' },
-  platforms: [
-    { x: 200, y: 400, width: 200, height: 20 },
-    { x: 400, y: 320, width: 180, height: 20 },
-    { x: 600, y: 260, width: 160, height: 20 },
-    { x: 750, y: 190, width: 140, height: 20 },
-    { x: 880, y: 120, width: 120, height: 20 },
-  ],
-  enemies: [
-    { x: 350, y: 484, size: 28, speed: 80, axis: 'horizontal', range: 120, damage: 1 },
-    { x: 650, y: 484, size: 28, speed: 80, axis: 'horizontal', range: 120, damage: 1 },
-  ],
-  collectibles: [
-    { x: 220, y: 475, value: 1 },
-    { x: 420, y: 295, value: 1 },
-    { x: 620, y: 235, value: 1 },
-    { x: 770, y: 165, value: 1 },
-    { x: 890, y: 95, value: 1 },
-    { x: 150, y: 475, value: 1 },
-  ],
-  win: { type: 'collect_all', scoreTarget: 10, surviveSeconds: 30 },
-  difficulty: { gravity: 1200, invulnerabilityMs: 1000, enemySpeedMultiplier: 1 },
-} as GameSpec;
+describe('Standard fixtures', () => {
+  it('are recorded Groq runs or marked synthetic', () => {
+    for (const name of ['c36f', 'dca2', '2ef2', 'eb2a', '8db8', 'b769']) {
+      const fixture = standardFixture(name);
+      expect(fixture.provenance).toBe('live_groq');
+      expect(fixture.runId).toMatch(/^standard-20261119-\d{6}-[0-9a-f]{4}$/);
+    }
+    // Groq returned json_validate_failed for b769, so its exchange has no usage.
+    expect(standardFixture('b769').provenanceNote).toMatch(/no usage/);
+    for (const name of ['landing', 'out-of-reach', 'underside', 'drop', '2ef2-ceiling']) {
+      expect(standardFixture(name).provenance).toBe('synthetic');
+    }
+  });
+});
 
 describe('Crystal Mine structured output', () => {
   it('rejects the wrapped generation and does not teach the model a root key', () => {
@@ -87,71 +67,53 @@ describe('Crystal Mine structured output', () => {
   });
 });
 
-// standard-20261119-174831-dca2 parsed.json. Platforms 0-2 are a reachable
-// zigzag; 3 and 4 fold back above them and share only a side overlap.
-const foldedMine = {
-  ...latestMine,
-  theme: { background: '#111111', platform: '#444444', player: '#00FFAA', enemy: '#FF4444', collectible: '#FFD700', accent: '#FFAA00' },
-  platforms: [
-    { x: 200, y: 420, width: 200, height: 20 },
-    { x: 450, y: 350, width: 180, height: 20 },
-    { x: 700, y: 280, width: 160, height: 20 },
-    { x: 350, y: 210, width: 220, height: 20 },
-    { x: 600, y: 140, width: 200, height: 20 },
-  ],
-  enemies: [
-    { x: 300, y: 484, size: 28, speed: 80, axis: 'horizontal', range: 120, damage: 1 },
-    { x: 800, y: 484, size: 28, speed: 80, axis: 'horizontal', range: 120, damage: 1 },
-  ],
-  collectibles: [
-    { x: 100, y: 475, value: 1 },
-    { x: 250, y: 395, value: 1 },
-    { x: 470, y: 325, value: 1 },
-    { x: 680, y: 255, value: 1 },
-    { x: 420, y: 185, value: 1 },
-    { x: 650, y: 115, value: 1 },
-  ],
-  difficulty: { gravity: 1200, invulnerabilityMs: 1000, enemySpeedMultiplier: 1 },
-} as GameSpec;
-
 describe('Crystal Mine placement', () => {
-  it('repairs the latest unreachable Xu 2 without dropping coins or the goal', () => {
+  it('c36f: repairs Xu 2 without moving a platform, with less displacement than before', () => {
     const before = structuredClone(latestMine);
     const repaired = repairGamePlacement(structuredClone(latestMine));
     expect(latestMine).toEqual(before);
-    expect(repaired.collectibles).toHaveLength(before.collectibles.length);
-    expect(repaired.collectibles.map((coin) => coin.value)).toEqual(before.collectibles.map((coin) => coin.value));
-    expect(repaired.win).toEqual(before.win);
-    expect(repaired.enemies.map(({ x: _x, ...enemy }) => enemy)).toEqual(before.enemies.map(({ x: _x, ...enemy }) => enemy));
-    const safe = buildNavigation(repaired, true);
-    expect(safe).toBeDefined();
-    expect(repaired.collectibles.every((coin) => Number.isFinite(collectibleCost(repaired, coin, safe!)))).toBe(true);
+    expect(withoutPositions(repaired)).toEqual(withoutPositions(before));
+    // The underside of a step is a ceiling the jump bumps (Phaser), so the
+    // original stair is physically complete. Only enemy 0 leaves the spawn
+    // area and coin 4 sits on platform 4 instead of past its edge.
+    expect(repaired.platforms).toEqual(before.platforms);
+    // At accd838 the same repair moved 926px in total (+24..+104px per platform).
+    expect(displacement(before, repaired)).toBeLessThanOrEqual(926);
+    expect(Math.round(displacement(before, repaired))).toBe(104);
+    expect(coinCosts(repaired, true).every(Number.isFinite)).toBe(true);
     expect(repairGamePlacement(structuredClone(latestMine))).toEqual(repaired);
   }, 20_000);
 
-  it('reaches the step that can be left by dropping and still rejects the step above the jump', () => {
-    const navigation = buildNavigation(earlierMine, false);
-    expect(navigation).toBeDefined();
-    expect(Number.isFinite(collectibleCost(earlierMine, earlierMine.collectibles[3]!, navigation!))).toBe(true);
-    expect(collectibleCost(earlierMine, earlierMine.collectibles[4]!, navigation!)).toBe(Infinity);
-  });
+  it('2ef2: the top step is reachable by bumping the world top (E2E: standard-physics world top)', () => {
+    // Behaviour change, proved in Phaser by e2e/standard-physics.spec.ts with the
+    // same platforms: the jump from platform 3 is clamped at y=70 (vy=0) and
+    // lands on platform 4. The old simulator rejected any flight touching y=70.
+    const physical = coinCosts(earlierMine, false);
+    expect(Number.isFinite(physical[3]!)).toBe(true);
+    expect(Number.isFinite(physical[4]!)).toBe(true);
+    const repaired = repairGamePlacement(structuredClone(earlierMine));
+    expect(repaired).toEqual(GameSpecSchema.parse(earlierMine)); // nothing had to move
+    expect(coinCosts(repaired, true).every(Number.isFinite)).toBe(true);
+  }, 20_000);
 
-  it('keeps the reachable zigzag and reseats only the folded steps', () => {
+  it('2ef2: the old Xu 2 failure came from patrols treated as walls, not from physics', () => {
+    const graph = buildPhysicalGraph(earlierMine)!;
+    expect(Number.isFinite(coinCosts(earlierMine, false)[1]!)).toBe(true);
+    const analysis = analyzeHazards(earlierMine, graph);
+    expect(analysis.spawnSafe).toBe(true);
+    expect(Number.isFinite(coinCosts(earlierMine, true)[1]!)).toBe(true);
+  }, 20_000);
+
+  it('dca2: keeps the reachable zigzag and Xu 2, and loses no reachable coin', () => {
     const before = structuredClone(foldedMine);
-    const navigation = buildNavigation(foldedMine, true);
-    expect(navigation).toBeDefined();
-    expect(Number.isFinite(collectibleCost(foldedMine, foldedMine.collectibles[1]!, navigation!))).toBe(true);
+    const reachableBefore = coinCosts(foldedMine, true).map(Number.isFinite);
+    expect(reachableBefore).toEqual([true, true, true, true, false, false]);
     const repaired = repairGamePlacement(structuredClone(foldedMine));
     expect(foldedMine).toEqual(before);
     expect(repaired.platforms.slice(0, 3)).toEqual(before.platforms.slice(0, 3));
-    expect(repaired.platforms.map(({ width, height }) => ({ width, height })))
-      .toEqual(before.platforms.map(({ width, height }) => ({ width, height })));
     expect(repaired.collectibles[1]).toEqual(before.collectibles[1]);
-    expect(repaired.collectibles).toHaveLength(before.collectibles.length);
-    expect(repaired.win).toEqual(before.win);
-    const safe = buildNavigation(repaired, true);
-    expect(safe).toBeDefined();
-    expect(repaired.collectibles.every((coin) => Number.isFinite(collectibleCost(repaired, coin, safe!)))).toBe(true);
+    expect(withoutPositions(repaired)).toEqual(withoutPositions(before));
+    expect(coinCosts(repaired, true).every(Number.isFinite)).toBe(true);
     for (const platform of repaired.platforms) {
       expect(platform.x - platform.width / 2).toBeGreaterThanOrEqual(0);
       expect(platform.x + platform.width / 2).toBeLessThanOrEqual(960);
@@ -163,8 +125,57 @@ describe('Crystal Mine placement', () => {
         expect(overlapsRect(repaired.platforms[i]!, repaired.platforms[j]!)).toBe(false);
       }
     }
+    // At accd838 this repair moved 445px in total.
+    expect(displacement(before, repaired)).toBeLessThanOrEqual(445);
     expect(repairGamePlacement(structuredClone(foldedMine))).toEqual(repaired);
   }, 20_000);
+
+  describe('eb2a: platform 4 at x=950 (right edge 1010) and coin 4 at x=950', () => {
+    const mine = fixtureSpec('eb2a');
+
+    it('(a) physical, no enemies: every coin is reachable', () => {
+      expect(coinCosts({ ...mine, enemies: [] } as unknown as GameSpec, false).every(Number.isFinite)).toBe(true);
+      expect(coinCosts(mine, false).every(Number.isFinite)).toBe(true);
+    });
+
+    it('(b) hazard: floor coins 0 and 5 inside the patrols are taken by timing, without damage', () => {
+      const analysis = analyzeHazards(mine, buildPhysicalGraph(mine)!);
+      expect(analysis.spawnSafe).toBe(true);
+      expect(analysis.edges.some((edge) => edge.timed && edge.coins.includes(0))).toBe(true);
+      expect(analysis.edges.some((edge) => edge.timed && edge.coins.includes(5))).toBe(true);
+      expect(coinCosts(mine, true).every(Number.isFinite)).toBe(true);
+    }, 20_000);
+
+    it('(c) repair: only platform 4 is clamped inside the screen and coin 4 rides along', () => {
+      const before = structuredClone(mine);
+      // The only real problems: platform 4 sticks out of the screen and coin 4 is past x=944.
+      expect(GameSpecSchema.safeParse(mine).error?.issues.map((issue) => issue.path.join('.'))).toEqual(['collectibles.4.x', 'platforms.4']);
+      const repaired = repairGamePlacement(mine);
+      expect(mine).toEqual(before);
+      expect(repaired.platforms[4]).toEqual({ ...before.platforms[4], x: 900 });
+      expect(repaired.platforms.slice(0, 4)).toEqual(before.platforms.slice(0, 4));
+      expect(repaired.collectibles[4]).toEqual({ ...before.collectibles[4], x: 900 });
+      expect(repaired.collectibles.filter((_, index) => index !== 4)).toEqual(before.collectibles.filter((_, index) => index !== 4));
+      expect(repaired.enemies).toEqual(before.enemies);
+      expect(withoutPositions(repaired)).toEqual(withoutPositions(before));
+      expect(repaired.win).toEqual(before.win);
+      expect(repairGamePlacement(structuredClone(before))).toEqual(repaired);
+    }, 20_000);
+  });
+
+  it('8db8: top-down output is unchanged', () => {
+    const game = fixtureSpec('8db8');
+    // At accd838 repair returned this spec unchanged.
+    expect(parseGameSpec(JSON.stringify(game))).toEqual(GameSpecSchema.parse(game));
+  });
+
+  it('every fixture repairs well inside the time budget', () => {
+    for (const name of ['c36f', 'dca2', '2ef2', 'eb2a', '8db8']) {
+      const started = performance.now();
+      repairGamePlacement(fixtureSpec(name));
+      expect(performance.now() - started).toBeLessThan(5_000);
+    }
+  }, 60_000);
 
   it('rolls back a folded step that cannot be seated and names that coin', () => {
     const game = sampleSpec();

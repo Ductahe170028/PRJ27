@@ -1,4 +1,7 @@
 // Test-only server. Production entrypoint never imports this module or enables mocks.
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/app.js';
 import { AgentOrchestrator } from '../src/agent/orchestrator.js';
 import { PlaywrightGameTester } from '../src/agent/game-tester.js';
@@ -32,9 +35,24 @@ const pacedGroq = {
   prepare: async (input: AIRequest) => input.prompt.includes('[agent-wait]') ? rateLimiter.acquire(input) : () => {},
 };
 
+// `[fixture:<name>]` returns a recorded or synthetic GameSpec from
+// test/fixtures/standard as the provider output. It still goes through the
+// production parse, schema and repair path.
+const fixtureDir = fileURLToPath(new URL('./fixtures/standard/', import.meta.url));
+function standardFixture(prompt: string): string | undefined {
+  const name = /\[fixture:([a-z0-9-]+)\]/.exec(prompt)?.[1];
+  if (!name) return undefined;
+  const files = readdirSync(fixtureDir).filter((file) => file === `${name}.json` || file.endsWith(`-${name}.json`));
+  if (files.length !== 1) throw new Error(`Fixture ${name} matches ${files.length} files`);
+  const fixture = JSON.parse(readFileSync(join(fixtureDir, files[0]!), 'utf8')) as { spec: unknown };
+  return JSON.stringify(fixture.spec);
+}
+
 async function generate(input: AIRequest) {
   const properties = input.jsonSchema.properties as Record<string, unknown> | undefined;
   if (properties?.source || properties?.setup || properties?.update || properties?.mechanics) return agentFixture(input);
+  const fixture = standardFixture(input.prompt);
+  if (fixture) return fixture;
   if (input.prompt.includes('[quota]')) throw new AIError('rate_limit', 'Provider đã hết quota. Hãy thử lại sau.', 429, 60);
   const game = sampleSpec(input.prompt.includes('top-down') ? 'top-down' : 'platformer');
   if (input.prompt.includes('[survive]')) {
