@@ -1,6 +1,6 @@
 import type { GameSpec } from '@game-creator/contracts';
 import {
-  FLOOR, TICKS_PER_SECOND, bodySupported, bodyValid, edgesOf, simulateFlight, sweepClear,
+  FLOOR, TICKS_PER_SECOND, bodySupported, bodyValid, edgesOf, horizontalFuzz, simulateFlight, sweepClear,
   type FlightBody, type FlightWorld, type Point, type Rect, type SimulationBudget,
 } from './platformer-physics.js';
 import { analyzeHazards, zeroDamageNavigation, type HazardAnalysis } from './enemy-hazard.js';
@@ -11,6 +11,19 @@ const STEP = 16;
 const EPS = 0.00001;
 export const NODE_BUDGET = 350;
 export const SIMULATION_BUDGET = 350_000;
+/** Human tolerance for jumps: a jump edge is kept only if starting anywhere in
+ * a run of at least this many px around its node (same surface, same target
+ * x) still lands the whole body on the same target surface. Physics alone
+ * accepts a jump that works from one exact x; a player cannot stand there.
+ * Calibrated on the played fixtures: 16px drops the 2ef2 jump from platform 3
+ * to platform 4 (world-top bump, shown playable by E2E); 12px keeps every
+ * played layout unchanged. 12px is also the floor 2 * speed / 60 = 8.7px
+ * rounded up to the 4px sampling grid. */
+export const JUMP_START_TOLERANCE_PX = 12;
+/** Sampling step for {@link JUMP_START_TOLERANCE_PX}. */
+export const JUMP_SAMPLE_STEP_PX = 4;
+/** Separate simulation budget for the tolerance samples of one graph. */
+export const TOLERANCE_BUDGET = 350_000;
 const half = (game: GameSpec) => game.player.size / 2;
 
 export function flightBody(game: GameSpec): FlightBody {
@@ -71,17 +84,23 @@ export interface PhysicalGraph {
   spawnNode: number;
   spawnPath: Point[];
   startupTicks: number;
-  stats: { nodes: number; edges: number; simulatedSteps: number };
+  stats: {
+    nodes: number; edges: number; simulatedSteps: number;
+    /** Tolerance samples: simulated steps, jump edges dropped, budget hit. */
+    toleranceSteps: number; jumpsBelowTolerance: number; toleranceBudgetExceeded: boolean;
+  };
 }
 
 /** Per-repair memo. Created by the caller and passed down, never module state. */
 export interface AnalysisCache {
   graphs: Map<string, PhysicalGraph | null>;
   hazards: Map<string, HazardAnalysis>;
+  /** Work actually done (cache misses), for budgets and diagnostics. */
+  counts: { graphBuilds: number; hazardRuns: number };
 }
 
 export function createAnalysisCache(): AnalysisCache {
-  return { graphs: new Map(), hazards: new Map() };
+  return { graphs: new Map(), hazards: new Map(), counts: { graphBuilds: 0, hazardRuns: 0 } };
 }
 
 function graphKey(game: GameSpec): string {
@@ -102,15 +121,21 @@ function walkPoints(a: Point, b: Point, speed: number): Point[] {
 
 /** Bounded, conservative physical planner for the trusted renderer's static
  * geometry. An edge exists only when a simulated move really ends there. */
-export function buildPhysicalGraph(game: GameSpec, cache?: AnalysisCache): PhysicalGraph | undefined {
+export interface GraphOptions {
+  /** Defaults to JUMP_START_TOLERANCE_PX. Tests use 0 to see physics alone. */
+  jumpTolerancePx?: number;
+}
+
+export function buildPhysicalGraph(game: GameSpec, cache?: AnalysisCache, options: GraphOptions = {}): PhysicalGraph | undefined {
+  if (options.jumpTolerancePx !== undefined) return computePhysicalGraph(game, options.jumpTolerancePx);
   const key = cache ? graphKey(game) : '';
   if (cache?.graphs.has(key)) return cache.graphs.get(key) ?? undefined;
-  const graph = computePhysicalGraph(game);
-  cache?.graphs.set(key, graph ?? null);
+  const graph = computePhysicalGraph(game, JUMP_START_TOLERANCE_PX);
+  if (cache) { cache.counts.graphBuilds += 1; cache.graphs.set(key, graph ?? null); }
   return graph;
 }
 
-function computePhysicalGraph(game: GameSpec): PhysicalGraph | undefined {
+function computePhysicalGraph(game: GameSpec, jumpTolerancePx: number): PhysicalGraph | undefined {
   const h = half(game);
   const blocks: Rect[] = [...game.platforms, ...game.obstacles];
   const surfaces = [...blocks, FLOOR];
@@ -120,6 +145,8 @@ function computePhysicalGraph(game: GameSpec): PhysicalGraph | undefined {
   const clear = (a: Point, b: Point) => sweepClear(world, a, b, h);
   const supported = (p: Point) => bodySupported(world, p, h);
   const budget: SimulationBudget = { used: 0, limit: SIMULATION_BUDGET };
+  const toleranceBudget: SimulationBudget = { used: 0, limit: TOLERANCE_BUDGET };
+  let jumpsBelowTolerance = 0;
   const spawn = { x: game.player.x, y: game.player.y };
   if (!valid(spawn)) return undefined;
   const initial = supported(spawn)
@@ -143,6 +170,48 @@ function computePhysicalGraph(game: GameSpec): PhysicalGraph | undefined {
   // Reject layouts exceeding the work budget rather than making an optimistic
   // claim of reachability or blocking the API event loop on pathological input.
   if (nodes.length > NODE_BUDGET) return undefined;
+  // Surface that carries the whole body of a standing point.
+  const surfaceOf = (p: Point) => surfaces.findIndex((r) => Math.abs(p.y + h - (r.y - r.height / 2)) < EPS
+    && p.x - h >= r.x - r.width / 2 - EPS && p.x + h <= r.x + r.width / 2 + EPS);
+  const nodeSupport = nodes.map(surfaceOf);
+  const landings = new Map<string, number>();
+  /** Surface where a jump from (x, y) toward targetX comes to rest, or -1. */
+  const landingSurface = (x: number, y: number, targetX: number): number => {
+    const id = `${x},${y},${targetX}`;
+    const known = landings.get(id);
+    if (known !== undefined) return known;
+    if (toleranceBudget.used > toleranceBudget.limit) return -1;
+    const flight = simulateFlight(world, body, { x, y }, targetX, 'jump', toleranceBudget);
+    const surface = flight ? surfaceOf(flight.end) : -1;
+    landings.set(id, surface);
+    return surface;
+  };
+  /** Starts every JUMP_SAMPLE_STEP_PX around the node on its own surface; the
+   * successes must form one run through the node at least the tolerance wide.
+   * A start is standable as in Phaser: the body rests on the surface while it
+   * still overlaps it, also past the edge. The overlap must exceed one step of
+   * horizontal movement, so a real player can stop there. Landings still need
+   * the whole body on the target surface. */
+  const fuzz = horizontalFuzz(body);
+  const restsOn = (p: Point, surface: number) => {
+    const r = surfaces[surface]!;
+    return Math.abs(p.y + h - (r.y - r.height / 2)) < EPS
+      && Math.min(p.x + h, r.x + r.width / 2) - Math.max(p.x - h, r.x - r.width / 2) > fuzz;
+  };
+  const jumpTolerated = (from: number, to: number): boolean => {
+    const a = nodes[from]!, b = nodes[to]!;
+    const own = nodeSupport[from]!, target = nodeSupport[to]!;
+    if (own < 0 || target < 0) return false;
+    const works = (offset: number) => {
+      const start = { x: a.x + offset, y: a.y };
+      return valid(start) && restsOn(start, own) && landingSurface(start.x, start.y, b.x) === target;
+    };
+    const needed = jumpTolerancePx;
+    let right = 0, left = 0;
+    while ((right + left) * JUMP_SAMPLE_STEP_PX < needed && right * JUMP_SAMPLE_STEP_PX < needed && works((right + 1) * JUMP_SAMPLE_STEP_PX)) right += 1;
+    while ((right + left) * JUMP_SAMPLE_STEP_PX < needed && left * JUMP_SAMPLE_STEP_PX < needed && works(-(left + 1) * JUMP_SAMPLE_STEP_PX)) left += 1;
+    return (right + left) * JUMP_SAMPLE_STEP_PX >= needed;
+  };
   const edges: PhysicalEdge[] = [];
   const jumpHeight = game.player.jumpSpeed ** 2 / (2 * game.difficulty.gravity);
   for (let from = 0; from < nodes.length; from += 1) for (let to = 0; to < nodes.length; to += 1) {
@@ -165,7 +234,8 @@ function computePhysicalGraph(game: GameSpec): PhysicalGraph | undefined {
     if (dx > game.player.speed * duration) continue;
     const flight = simulateFlight(world, body, a, b.x, 'jump', budget);
     if (flight && Math.abs(flight.end.x - b.x) < EPS && Math.abs(flight.end.y - b.y) < EPS) {
-      edges.push({ from, to, kind: 'jump', ticks: flight.ticks, points: flight.points });
+      if (jumpTolerated(from, to)) edges.push({ from, to, kind: 'jump', ticks: flight.ticks, points: flight.points });
+      else jumpsBelowTolerance += 1;
     }
   }
   // The way down is walking off a lip. Every surface has its own two lips; the
@@ -200,7 +270,10 @@ function computePhysicalGraph(game: GameSpec): PhysicalGraph | undefined {
   edges.forEach((edge, index) => out[edge.from]!.push(index));
   return {
     nodes, edges, out, spawnNode: 0, spawnPath: initial.points, startupTicks: initial.ticks,
-    stats: { nodes: nodes.length, edges: edges.length, simulatedSteps: budget.used },
+    stats: {
+      nodes: nodes.length, edges: edges.length, simulatedSteps: budget.used,
+      toleranceSteps: toleranceBudget.used, jumpsBelowTolerance, toleranceBudgetExceeded: toleranceBudget.used > toleranceBudget.limit,
+    },
   };
 }
 
@@ -247,7 +320,7 @@ export function hazardAnalysis(game: GameSpec, graph: PhysicalGraph, cache?: Ana
   const hit = cache?.hazards.get(key);
   if (hit) return hit;
   const analysis = analyzeHazards(game, graph);
-  cache?.hazards.set(key, analysis);
+  if (cache) { cache.counts.hazardRuns += 1; cache.hazards.set(key, analysis); }
   return analysis;
 }
 

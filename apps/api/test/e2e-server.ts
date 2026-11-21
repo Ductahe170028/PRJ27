@@ -1,5 +1,6 @@
 // Test-only server. Production entrypoint never imports this module or enables mocks.
 import { readFileSync, readdirSync } from 'node:fs';
+import express from 'express';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/app.js';
@@ -74,7 +75,16 @@ const generationService = new GameGenerationService(mockRegistry([
 ]), new RequestBudget({ requestsPerMinute: 1000, requestsPerDay: 10000 }));
 // E2E runs on a developer machine with the host Chromium; production wiring uses the Docker sandbox.
 const agent = new AgentOrchestrator(generationService, new PlaywrightGameTester());
-const server = createApp({ generationService, agent }).listen(Number(process.env.PORT ?? 3101), '127.0.0.1');
+// Label every response, so a stray request to this server is never mistaken for
+// the real API. The /api/health body cannot carry it: HealthResponseSchema is
+// strict and the web client rejects any extra field.
+const root = express();
+root.use((_request, response, next) => { response.setHeader('X-Server-Mode', 'mock'); next(); });
+root.use(createApp({ generationService, agent }));
+const port = Number(process.env.PORT ?? 3101);
+const server = root.listen(port, '127.0.0.1', () => {
+  console.warn(`\n=== MOCK SERVER – không gọi AI thật (http://127.0.0.1:${port}, header X-Server-Mode: mock) ===\n`);
+});
 const shutdown = () => server.close(() => process.exit(0));
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

@@ -94,7 +94,8 @@ describe('System prompt', () => {
     expect(lines.some((line) => line.startsWith('difficulty: ') && line.includes('enemySpeedMultiplier=number 0.5..2'))).toBe(true);
     expect(GAME_SYSTEM_PROMPT).not.toContain('"additionalProperties"');
     // Groq free tier allows 8K tokens/minute including the output budget.
-    expect(GAME_SYSTEM_PROMPT.length).toBeLessThan(4_500);
+    // 4_249 chars before the platform-bounds rules (1C), 4_589 after (+8%).
+    expect(GAME_SYSTEM_PROMPT.length).toBeLessThan(4_900);
   });
 });
 

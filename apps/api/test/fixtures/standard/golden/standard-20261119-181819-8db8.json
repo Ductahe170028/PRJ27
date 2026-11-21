@@ -1,0 +1,121 @@
+{
+  "runId": "standard-20261119-181819-8db8",
+  "medianMs": 6,
+  "runs": 5,
+  "outcome": "ok",
+  "output": {
+    "version": "1.0",
+    "title": "Quái Tìm Người",
+    "genre": "top-down",
+    "width": 960,
+    "height": 540,
+    "theme": {
+      "background": "#111111",
+      "platform": "#333333",
+      "player": "#00FF00",
+      "enemy": "#FF0000",
+      "collectible": "#FFFF00",
+      "accent": "#FFFFFF"
+    },
+    "player": {
+      "x": 100,
+      "y": 280,
+      "size": 28,
+      "speed": 200,
+      "jumpSpeed": 500,
+      "health": 3
+    },
+    "platforms": [],
+    "obstacles": [
+      {
+        "x": 200,
+        "y": 150,
+        "width": 200,
+        "height": 30
+      },
+      {
+        "x": 600,
+        "y": 150,
+        "width": 200,
+        "height": 30
+      },
+      {
+        "x": 200,
+        "y": 350,
+        "width": 200,
+        "height": 30
+      },
+      {
+        "x": 600,
+        "y": 350,
+        "width": 200,
+        "height": 30
+      }
+    ],
+    "enemies": [
+      {
+        "x": 300,
+        "y": 200,
+        "size": 28,
+        "speed": 120,
+        "axis": "horizontal",
+        "range": 60,
+        "damage": 1
+      },
+      {
+        "x": 500,
+        "y": 200,
+        "size": 28,
+        "speed": 120,
+        "axis": "horizontal",
+        "range": 60,
+        "damage": 1
+      },
+      {
+        "x": 400,
+        "y": 400,
+        "size": 28,
+        "speed": 120,
+        "axis": "horizontal",
+        "range": 60,
+        "damage": 1
+      }
+    ],
+    "collectibles": [
+      {
+        "x": 480,
+        "y": 270,
+        "value": 1
+      },
+      {
+        "x": 520,
+        "y": 270,
+        "value": 1
+      },
+      {
+        "x": 500,
+        "y": 310,
+        "value": 1
+      }
+    ],
+    "controls": {
+      "movement": "both",
+      "jump": "both",
+      "restart": "r"
+    },
+    "win": {
+      "type": "collect_all",
+      "scoreTarget": 3,
+      "surviveSeconds": 30
+    },
+    "lose": {
+      "healthDepleted": true,
+      "timeLimitSeconds": 0
+    },
+    "difficulty": {
+      "gravity": 1200,
+      "invulnerabilityMs": 1000,
+      "enemySpeedMultiplier": 1
+    }
+  }
+}

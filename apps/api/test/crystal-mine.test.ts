@@ -78,8 +78,10 @@ describe('Crystal Mine placement', () => {
     // area and coin 4 sits on platform 4 instead of past its edge.
     expect(repaired.platforms).toEqual(before.platforms);
     // At accd838 the same repair moved 926px in total (+24..+104px per platform).
+    // 1A: 104px. 1B: 107px, enemy 0 keeps 3px more from spawn because its
+    // patrol really reaches two steps past its range (enemyEnvelope).
     expect(displacement(before, repaired)).toBeLessThanOrEqual(926);
-    expect(Math.round(displacement(before, repaired))).toBe(104);
+    expect(Math.round(displacement(before, repaired))).toBe(107);
     expect(coinCosts(repaired, true).every(Number.isFinite)).toBe(true);
     expect(repairGamePlacement(structuredClone(latestMine))).toEqual(repaired);
   }, 20_000);

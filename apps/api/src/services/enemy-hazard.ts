@@ -29,6 +29,10 @@ export const HAZARD_STATE_BUDGET = 200_000;
 export const HAZARD_TRAVEL_CAP = 300;
 /** Phase uncertainty added by every turn, in ticks. */
 export const TURN_UNCERTAINTY = 2;
+/** Human tolerance for timed moves: a move past an enemy is kept only if it
+ * can start on at least this many consecutive ticks (0.2 s). A window of one
+ * or two frames is correct physics but not something a player can hit. */
+export const HAZARD_MIN_WINDOW_TICKS = 12;
 /** Coins tracked per danger region; others are not credited there (conservative). */
 const REGION_COIN_BITS = 5;
 const WORLD_BOTTOM = 540; // platformer world bounds: (0,70)-(960,540)
@@ -160,6 +164,12 @@ export function enemyTracks(game: GameSpec): EnemyTrack[] {
   });
 }
 
+/** Envelope of one enemy as the hazard analysis sees it (turn overshoot of up
+ * to two steps plus uncertainty). Used for platformer enemy placement checks. */
+export function enemyEnvelope(game: GameSpec, enemy: GameSpec['enemies'][number]): Rect {
+  return enemyTracks({ ...game, enemies: [enemy] })[0]!.envelope;
+}
+
 function inEnvelope(track: EnemyTrack, half: number, p: Point): boolean {
   return Math.abs(p.x - track.envelope.x) < half + track.envelope.width / 2 - EPS
     && Math.abs(p.y - track.envelope.y) < half + track.envelope.height / 2 - EPS;
@@ -223,11 +233,29 @@ function leadHits(lead: Lead, half: number, p: Point, tick: number): boolean {
     && along + half > lead.low[phase]! - halfAlong + EPS && along - half < lead.high[phase]! + halfAlong - EPS;
 }
 
-function maxCyclicGap(origins: number[], horizon: number): number {
+/** Largest wait until the next usable start phase, on a cycle of `period`
+ * ticks. Phases never tried (beyond the horizon) count as unusable. */
+function maxCyclicGap(origins: number[], period: number): number {
   const sorted = [...origins].sort((a, b) => a - b);
-  let gap = sorted[0]! + horizon - sorted[sorted.length - 1]!;
+  let gap = sorted[0]! + period - sorted[sorted.length - 1]!;
   for (let i = 1; i < sorted.length; i += 1) gap = Math.max(gap, sorted[i]! - sorted[i - 1]!);
   return gap;
+}
+
+/** Start phases inside runs of at least `minimum` consecutive ticks. Runs wrap
+ * around the cycle only when every phase of it was tried. */
+export function windowedOrigins(origins: Iterable<number>, horizon: number, period: number, minimum: number): number[] {
+  const sorted = [...new Set(origins)].sort((a, b) => a - b);
+  const runs: number[][] = [];
+  for (const origin of sorted) {
+    const run = runs[runs.length - 1];
+    if (run && origin === run[run.length - 1]! + 1) run.push(origin);
+    else runs.push([origin]);
+  }
+  if (runs.length > 1 && horizon >= period && runs[0]![0] === 0 && runs[runs.length - 1]![runs[runs.length - 1]!.length - 1] === period - 1) {
+    runs[0] = [...runs.pop()!, ...runs[0]!];
+  }
+  return runs.filter((run) => run.length >= minimum).flat().sort((a, b) => a - b);
 }
 
 /** Longest stay away from safe points for one move against this enemy: enough
@@ -237,7 +265,13 @@ function travelCapFor(track: EnemyTrack, speed: number): number {
   return Math.min(HAZARD_TRAVEL_CAP, Math.max(TICKS_PER_SECOND, Math.ceil(1.5 * span / (speed / TICKS_PER_SECOND)) + TICKS_PER_SECOND));
 }
 
-export function analyzeHazards(game: GameSpec, graph: PhysicalGraph): HazardAnalysis {
+export interface HazardOptions {
+  /** Defaults to HAZARD_MIN_WINDOW_TICKS. Tests use 1 to see physics alone. */
+  minWindowTicks?: number;
+}
+
+export function analyzeHazards(game: GameSpec, graph: PhysicalGraph, options: HazardOptions = {}): HazardAnalysis {
+  const minWindowTicks = options.minWindowTicks ?? HAZARD_MIN_WINDOW_TICKS;
   const half = game.player.size / 2;
   const tracks = enemyTracks(game);
   const { nodes, edges, out } = graph;
@@ -312,14 +346,14 @@ export function analyzeHazards(game: GameSpec, graph: PhysicalGraph): HazardAnal
     const stateNode: number[] = [], stateMask: number[] = [];
     const stateOrigins: number[][] = [];
     const buckets: number[][] = Array.from({ length: end + 1 }, () => []);
-    const records = new Map<number, { source: number; to: number; mask: number; origins: Set<number>; travel: number }>();
+    // Per start phase, the longest travel recorded from it.
+    const records = new Map<number, { source: number; to: number; mask: number; origins: Map<number, number> }>();
     let overBudget = false;
     const record = (source: number, to: number, mask: number, origin: number, arrival: number) => {
       const id = (source * nodes.length + to) * masks + mask;
       let entry = records.get(id);
-      if (!entry) { entry = { source, to, mask, origins: new Set<number>(), travel: 0 }; records.set(id, entry); }
-      entry.origins.add(origin);
-      if (arrival - origin > entry.travel) entry.travel = arrival - origin;
+      if (!entry) { entry = { source, to, mask, origins: new Map<number, number>() }; records.set(id, entry); }
+      entry.origins.set(origin, Math.max(entry.origins.get(origin) ?? 0, arrival - origin));
     };
     const exitLists = nodes.map((_, node) => (safe[node] ? exitsOf(node) : []));
     const allowedEdge = edges.map((_, index) => allowed(index));
@@ -379,11 +413,15 @@ export function analyzeHazards(game: GameSpec, graph: PhysicalGraph): HazardAnal
       continue;
     }
     for (const entry of [...records.values()].sort((a, b) => a.source - b.source || a.to - b.to || a.mask - b.mask)) {
-      // Waiting at the source is safe forever; the next usable phase comes
-      // within the largest gap between found phases (one period at most).
-      const wait = maxCyclicGap([...entry.origins], horizon);
+      // Only start windows a player can hit count. Waiting at the source is
+      // safe forever; the next usable phase comes within the largest gap
+      // between those phases, measured on the whole period.
+      const usable = windowedOrigins(entry.origins.keys(), horizon, track.period, minWindowTicks);
+      if (usable.length === 0) continue;
+      const wait = maxCyclicGap(usable, track.period);
+      const travel = Math.max(...usable.map((origin) => entry.origins.get(origin)!));
       const edge: MacroEdge = {
-        from: entry.source, to: entry.to, ticks: wait + entry.travel, timed: true,
+        from: entry.source, to: entry.to, ticks: wait + travel, timed: true,
         coins: regionCoins.filter((_, bit) => (entry.mask & (1 << bit)) !== 0),
       };
       const id = `${edge.from}:${edge.to}:${edge.coins.join(',')}`;

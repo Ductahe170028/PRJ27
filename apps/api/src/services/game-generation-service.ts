@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   AIGameProjectSchema, GAME_SPEC_MAX_BYTES, GameSpecPlacementInputSchema,
-  type GenerateGameRequest, type ProviderRequestSelection,
+  type GameSpec, type GenerateGameRequest, type ProviderRequestSelection,
 } from '@game-creator/contracts';
 import { ProviderRegistry } from '../providers/provider-registry.js';
 import { AIError, type SpecIssue, TransientRateLimitError, normalizeProviderError } from '../providers/errors.js';
@@ -9,6 +9,8 @@ import { RequestBudget } from './request-budget.js';
 import { GAME_SYSTEM_PROMPT, providerJsonSchema } from './system-prompt.js';
 import { normalizeGeneratedSpec } from './normalize-game-spec.js';
 import { repairGamePlacement } from './repair-game-placement.js';
+import { GENERIC_SPEC_MESSAGE, withReason } from './failure-reason.js';
+import { repairInWorker, type RepairRunner } from './isolated-repair.js';
 import type { AIRequest } from '../providers/ai-provider.js';
 import { waitForRateLimit } from '../providers/groq-rate-limit.js';
 import { redactDiagnostics } from '../agent/run-diagnostics.js';
@@ -33,7 +35,9 @@ function toSpecIssues(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; 
   }));
 }
 
-export function parseGameSpec(text: string, capture?: SpecCapture) {
+/** JSON parse, normalize and the placement-input schema. Leaves the capture at
+ * stage 'repair'; the caller runs repair (in a worker for HTTP requests). */
+export function parseGameSpecInput(text: string, capture?: SpecCapture): GameSpec {
   if (Buffer.byteLength(text, 'utf8') > GAME_SPEC_MAX_BYTES) {
     if (capture) capture.stage = 'parse';
     throw new AIError('invalid_game_spec', 'GameSpec vượt quá giới hạn 32 KB.', 422);
@@ -64,7 +68,7 @@ export function parseGameSpec(text: string, capture?: SpecCapture) {
     }
     throw new AIError(
       'invalid_game_spec',
-      'Dữ liệu màn chơi không hợp lệ hoặc không thể chơi an toàn. Hãy đơn giản hóa mô tả rồi thử lại.',
+      withReason(GENERIC_SPEC_MESSAGE, details[0]?.path),
       422, undefined, details.map((issue) => issue.path), details,
     );
   }
@@ -73,14 +77,15 @@ export function parseGameSpec(text: string, capture?: SpecCapture) {
     capture.issues = [];
     capture.stage = 'repair';
   }
-  try {
-    const game = repairGamePlacement(parsed.data);
-    if (capture) capture.stage = 'ok';
-    return game;
-  } catch (error) {
-    if (capture) capture.stage = 'repair';
-    throw error;
-  }
+  return parsed.data;
+}
+
+/** Synchronous parse + repair, same result as the HTTP path without a worker. */
+export function parseGameSpec(text: string, capture?: SpecCapture): GameSpec {
+  const input = parseGameSpecInput(text, capture);
+  const game = repairGamePlacement(input);
+  if (capture) capture.stage = 'ok';
+  return game;
 }
 
 function issuesFromError(error: unknown, capture: SpecCapture): SpecIssue[] {
@@ -126,6 +131,7 @@ export class GameGenerationService {
     private readonly budget = new RequestBudget(),
     private readonly timeoutMs = 45_000,
     private readonly openDiagnostics: (input: StandardRequest) => Promise<StandardDiagnostics> = openStandardDiagnostics,
+    private readonly repair: RepairRunner = repairInWorker,
   ) {}
 
   private async note(task: () => Promise<void>): Promise<void> {
@@ -165,7 +171,11 @@ export class GameGenerationService {
       sawOutput = true;
       await this.note(() => diag.raw(text));
       try {
-        const game = parseGameSpec(text, capture);
+        const input = parseGameSpecInput(text, capture);
+        // Repair runs off the event loop, with a hard timeout; a client
+        // disconnect terminates it.
+        const game = await this.repair(input, signal);
+        capture.stage = 'ok';
         const project = AIGameProjectSchema.parse({
           id: randomUUID(), title: game.title, prompt: request.prompt,
           provider: provider.id, modelId: model.id, capabilities: model.capabilities,

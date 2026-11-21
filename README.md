@@ -106,7 +106,9 @@ apps/api/
       game-generation-service.ts  Gọi AI, timeout, parse/validate, metadata
       system-prompt.ts            Quy tắc game và schema provider
       normalize-game-spec.ts      Kẹp số nguyên theo các giới hạn đã có
-      repair-game-placement.ts    Sửa tọa độ xu/địch/platform, giữ số lượng và mục tiêu
+      repair-game-placement.ts    Sửa tọa độ xu/địch/platform, giữ số lượng và mục tiêu; platform/obstacle ngoài miền được đưa vào miền đứng được trước khi schema chặt chạy
+      isolated-repair.ts          Chạy repair trong worker_threads (5 s, hủy theo client), lỗi AIError giữ nguyên
+      failure-reason.ts           Bảng whitelist path → một lý do ngắn cho người dùng (không lộ chuỗi Zod/prompt)
       game-geometry.ts            Đồ thị di chuyển vật lý (không enemy), va chạm, top-down
       platformer-physics.ts       Mô phỏng nhảy/rơi theo tick như Phaser Arcade
       enemy-hazard.ts             Enemy platformer là chướng ngại di động, route không nhận sát thương

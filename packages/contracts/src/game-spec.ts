@@ -47,10 +47,14 @@ export const GameSpecShape = z.object({
   }).strict(),
 }).strict();
 
-// Server repair may move item centers back into bounds. Every other field,
-// array limit and unknown-property check stays strict before any repair runs.
+// Server repair may move item centers and blocks back into bounds. Every other
+// field, array limit and unknown-property check stays strict before any repair
+// runs. Block width/height keep their limits; x/y only reject absurd values.
 const repairPosition = { x: z.number().int(), y: z.number().int() };
+const repairBlockPosition = { x: integer(-100_000, 100_000), y: integer(-100_000, 100_000) };
 export const GameSpecPlacementInputSchema = GameSpecShape.extend({
+  platforms: z.array(rectangle.extend(repairBlockPosition).strict()).max(14),
+  obstacles: z.array(rectangle.extend(repairBlockPosition).strict()).max(12),
   enemies: z.array(GameSpecShape.shape.enemies.element.extend(repairPosition)).min(1).max(8),
   collectibles: z.array(GameSpecShape.shape.collectibles.element.extend(repairPosition)).min(1).max(24),
 });

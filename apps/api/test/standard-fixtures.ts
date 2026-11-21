@@ -10,6 +10,8 @@ export interface StandardFixture {
   provenance: 'live_groq' | 'e2e_mock' | 'synthetic';
   source: string;
   provenanceNote?: string;
+  /** The user prompt of the recorded run (request.json). */
+  prompt?: string;
   note?: string;
   spec: unknown;
 }
