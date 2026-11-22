@@ -75,6 +75,18 @@ test('the engine adds its own notice when the model forgot to list an unsupporte
   await expect(items).toContainText(['Chưa hỗ trợ: bảo vệ căn cứ. Màn chơi chỉ có sống sót hoặc hạ quái.', 'Chưa hỗ trợ: giới hạn đạn và nạp đạn. Đạn không giới hạn, có hồi chiêu.']);
 });
 
+test('escorting someone and a prompt with no enemies get their own fixed sentences, never the prompt text', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'hộ tống công chúa, không có quái nhưng hạ 50 quái');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  const items = notices(page).getByRole('listitem');
+  await expect(items).toHaveText([
+    'Chưa hỗ trợ: màn không có quái. Màn chơi luôn có quái xuất hiện.',
+    'Chưa hỗ trợ: bảo vệ hoặc hộ tống nhân vật khác. Game chỉ có một người chơi.',
+  ]);
+});
+
 test('an invalid choice by the model shows a specific reason and no game', async ({ page }) => {
   await page.goto('/');
   await useMockProvider(page);

@@ -1,7 +1,7 @@
 // Opt-in diagnostic: real Groq requests through the shooter service (brief ->
 // compiler -> bot gate). Never run by `npm test` or E2E.
 //
-//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc]
+//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3]
 //
 // The key is read from apps/api/.env (git-ignored) exactly like the server does,
 // and is never printed or written anywhere. Requests go one after the other and
@@ -25,7 +25,20 @@ const rounds = Number(arg('rounds') ?? 2);
 const only = arg('only');
 const limit = (name: string, fallback: number) => Number(env[name] || fallback);
 
-const PROMPTS: ReadonlyArray<[string, string]> = [
+// --set=stage3 runs the short prompts of the Stage 3 check instead of the default set.
+const STAGE3_PROMPTS: ReadonlyArray<[string, string]> = [
+  ['a', 'zombie thành phố 60 giây'],
+  ['b', 'alien lab, hạ 40 con'],
+  ['c', 'rừng tối, súng bắn nhanh'],
+  ['d', 'bệnh viện, zombie chậm, 90 giây'],
+  ['e', 'bảo vệ căn cứ'],
+  ['f', 'boss cuối và hồi máu'],
+  ['g', 'tên lửa nổ lan'],
+  ['h', 'three enemy types, 120 seconds, military base'],
+  ['i', 'không có quái nhưng hạ 50 quái'],
+  ['j', 'hạ 200 con quái trâu'],
+];
+const DEFAULT_PROMPTS: ReadonlyArray<[string, string]> = [
   ['a', 'Tạo game bắn zombie sinh tồn trong thành phố, sống sót 60 giây.'],
   ['b', 'Quái ngoài hành tinh tấn công phòng thí nghiệm, tôi phải hạ 40 con.'],
   ['c', 'Khu rừng đầy quái vật, tôi dùng súng bắn nhanh.'],
@@ -37,6 +50,7 @@ const PROMPTS: ReadonlyArray<[string, string]> = [
   ['i', 'zombie'],
   ['j', 'Không có quái nhưng phải hạ 50 quái.'],
 ];
+const PROMPTS = arg('set') === 'stage3' ? STAGE3_PROMPTS : DEFAULT_PROMPTS;
 
 const captured: { record: StandardFinish | undefined } = { record: undefined };
 const lastRecord = () => captured.record; // read through a function: it is set inside a callback

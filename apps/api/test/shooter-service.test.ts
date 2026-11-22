@@ -58,7 +58,7 @@ describe('the shooter service', () => {
     expect(project.level).toEqual(expected.level);
     expect(finished).toHaveLength(1);
     expect(finished[0]).toMatchObject({ outcome: 'completed', stage: 'response', validation: { schema: 'ShooterBriefSchema', success: true } });
-    expect(finished[0]!.report).toMatchObject({ wins: expect.any(Number), hpLeftAvg: expect.any(Number), thinSteps: expect.any(Number), thickenSteps: expect.any(Number), map: 'pillars', variant: expect.any(Number) });
+    expect(finished[0]!.report).toMatchObject({ wins: expect.any(Number), hpLeftAvg: expect.any(Number), thinSteps: expect.any(Number), killReductions: expect.any(Number), map: 'pillars', variant: expect.any(Number) });
   }, 60_000);
 
   it('gives the provider the shooter prompt, the brief schema and a 700-token budget', async () => {

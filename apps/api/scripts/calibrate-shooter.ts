@@ -8,7 +8,8 @@
 // x weapon (3) x health (3) x 3 seeds = 2700 games per phase. "Before the gate"
 // is the bot on the level exactly as compiled; "after the gate" is the level the
 // service would hand out (compile + gate), played on seeds the gate did not use.
-// Never run by `npm test`. It runs in parallel child processes, one shard each.
+// PowerShell swallows flags passed through npm: run `npx tsx scripts/calibrate-shooter.ts --write`
+// directly from apps/api. Never run by `npm test`. It runs in parallel child processes, one shard each.
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
@@ -34,7 +35,7 @@ interface Combo { intensity: number; mix: string; map: string; weapon: string; h
 interface Row {
   combo: Combo;
   preWon: boolean; preHp: number;
-  postOk: boolean; postWon: boolean; postHp: number; thin: number; thicken: number; error?: string;
+  postOk: boolean; postWon: boolean; postHp: number; thin: number; reduced: boolean; error?: string;
 }
 
 function* grid(): Generator<{ combo: Combo; brief: ShooterBrief }> {
@@ -56,12 +57,12 @@ function runShard(index: number, shards: number, preOnly: boolean): Row[] {
     if (n++ % shards !== index) continue;
     const compiled = compileShooter(brief, combo.seed);
     const pre = playLevel(compiled.level, botInput);
-    const row: Row = { combo, preWon: pre.status === 'won', preHp: pre.hpLeft, postOk: false, postWon: false, postHp: 0, thin: 0, thicken: 0 };
+    const row: Row = { combo, preWon: pre.status === 'won', preHp: pre.hpLeft, postOk: false, postWon: false, postHp: 0, thin: 0, reduced: false };
     if (!preOnly) {
       try {
         const job = compileAndGate({ brief, seed: combo.seed });
         const post = playLevel({ ...job.level, seed: job.level.seed + 11 }, botInput);
-        Object.assign(row, { postOk: true, postWon: post.status === 'won', postHp: post.hpLeft, thin: job.report.thinSteps, thicken: job.report.thickenSteps });
+        Object.assign(row, { postOk: true, postWon: post.status === 'won', postHp: post.hpLeft, thin: job.report.thinSteps, reduced: job.report.killReductions > 0 });
       } catch (error) {
         row.error = error instanceof Error ? error.message : String(error);
       }
@@ -77,7 +78,7 @@ const avg = (values: number[]) => (values.length === 0 ? 0 : values.reduce((a, b
 function report(rows: Row[], preOnly: boolean): string {
   const lines: string[] = [];
   lines.push(`INTENSITY_RATE = [${INTENSITY_RATE.join(', ')}]`, `goal: ${JSON.stringify(GOAL)}`, '');
-  lines.push(`| intensity | games | bot wins before gate | hp left before | ${preOnly ? '' : 'compiled after gate | bot wins after gate | hp left after | thinned | thickened |'}`.trimEnd());
+  lines.push(`| intensity | games | bot wins before gate | hp left before | ${preOnly ? '' : 'compiled after gate | bot wins after gate | hp left after | thinned | goal reduced |'}`.trimEnd());
   lines.push(`|---|---|---|---|${preOnly ? '' : '---|---|---|---|---|'}`);
   for (const intensity of [1, 2, 3, 4, 5]) {
     const set = rows.filter((row) => row.combo.intensity === intensity);
@@ -85,7 +86,7 @@ function report(rows: Row[], preOnly: boolean): string {
     const cells = [intensity, set.length, `${pct(set.filter((r) => r.preWon).length, set.length).toFixed(1)}%`, avg(set.map((r) => r.preHp)).toFixed(3)];
     if (!preOnly) {
       cells.push(`${pct(ok.length, set.length).toFixed(1)}%`, `${pct(ok.filter((r) => r.postWon).length, ok.length).toFixed(1)}%`, avg(ok.map((r) => r.postHp)).toFixed(3),
-        set.filter((r) => r.thin > 0).length, set.filter((r) => r.thicken > 0).length);
+        set.filter((r) => r.thin > 0).length, set.filter((r) => r.reduced).length);
     }
     lines.push(`| ${cells.join(' | ')} |`);
   }
@@ -131,7 +132,8 @@ if (shardArg) {
       `Ngày chạy: ${date}. Kết quả của \`npm run shooter:calibrate -w @game-creator/api -- --write\` (${rows.length} ván mỗi pha, ${shards} tiến trình song song, ${((Date.now() - started) / 1000).toFixed(0)} s).`, '',
       'Lưới: intensity 1-5 x mix quái (runner, brute, swarmer, cả ba) x map (5) x weapon (3) x health (3) x 3 seed; mục tiêu sống sót 60 s.',
       '"Trước cổng" là bot chơi level đúng như compiler dựng; "sau cổng" là level service sẽ trả (compile + cổng), chơi trên seed mà cổng chưa dùng.', '',
-      'Ngưỡng đặt ra cho trước cổng: thắng intensity 1 ≥ 95%, 2 ≥ 90%, 3 ≥ 80%, 4 ≥ 55%, 5 ≥ 35%; sau cổng: 100% tổ hợp compile được.', '',
+      'Ngưỡng đặt ra cho trước cổng: thắng intensity 1 ≥ 95%, 2 ≥ 90%, 3 ≥ 80%, 4 ≥ 55%, 5 ≥ 35%; sau cổng: ≥ 99% tổ hợp compile được và bot thắng ≥ 55% trên seed chưa dùng, ở mọi intensity.',
+      'Cổng chỉ làm màn DỄ HƠN (giảm mật độ quái); mục tiêu `kill` quá nặng thì được giảm có thông báo (cột "goal reduced").', '',
       '```', text, '```', '',
       'Chạy lại: `npm run shooter:calibrate -w @game-creator/api` (thêm `-- --write` để ghi lại tệp này, `-- --pre-only` để chỉ đo trước cổng khi chỉnh `INTENSITY_RATE`). Không chạy trong `npm test`.', '',
     ].join('\n'));
