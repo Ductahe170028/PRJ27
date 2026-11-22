@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BRUTE_CLEARANCE, BULLET_RADIUS, ENEMY_TYPES, FIELD, INVULNERABLE_MS, MAX_BULLETS, MAX_ENEMIES_ALIVE, PLAYER_RADIUS,
+  IDLE, botInput, playLevel as play, BRUTE_CLEARANCE, BULLET_RADIUS, ENEMY_TYPES, FIELD, INVULNERABLE_MS, MAX_BULLETS, MAX_ENEMIES_ALIVE, PLAYER_RADIUS,
   RuntimeInitSchema, SHOOTER_LEVELS, SHOOTER_LEVEL_NAMES, SPAWN_STAGGER_MS, ShooterLevelSchema, createSim, elapsedSeconds,
   freeSpaceConnected, msToTicks, pointRectDistance, shooterLevel, snapshotHash, step, totalScheduledEnemies,
   type ShooterInput, type ShooterLevel, type ShooterState,
 } from '@game-creator/contracts';
-import { IDLE, botInput, play } from './shooter-bot.js';
 
 // A quiet field: the player in the middle, one far spawn point, and a single
 // enemy scheduled so late that nothing happens unless a test makes it.

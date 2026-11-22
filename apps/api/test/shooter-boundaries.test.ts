@@ -36,6 +36,16 @@ const FORBIDDEN: Array<[string, RegExp]> = [
   ['setTimeout', /\bsetTimeout\b/],
   ['setInterval', /\bsetInterval\b/],
   ['requestAnimationFrame', /\brequestAnimationFrame\b/],
+  // Not bit-for-bit the same on every engine: only + - * / and square roots are allowed.
+  ['Math.hypot', /\bMath\s*\.\s*hypot\b/],
+  ['Math.sin', /\bMath\s*\.\s*sin\b/],
+  ['Math.cos', /\bMath\s*\.\s*cos\b/],
+  ['Math.tan', /\bMath\s*\.\s*tan\b/],
+  ['Math.atan', /\bMath\s*\.\s*atan(?!2)\b/],
+  ['Math.pow', /\bMath\s*\.\s*pow\b/],
+  ['Math.exp', /\bMath\s*\.\s*exp\b/],
+  ['Math.log', /\bMath\s*\.\s*log\b/],
+  ['the ** operator', /\*\*/],
 ];
 
 /** Everything wrong with one file's source; empty when it is clean. */
@@ -75,11 +85,26 @@ describe('shooter core stays pure', () => {
       ['const t = performance.now();', 'uses performance.now'],
       ['setTimeout(() => {}, 1);', 'uses setTimeout'],
       ['const p = new Phaser.Game();', 'uses phaser'],
+      ['const d = Math.hypot(a, b);', 'uses Math.hypot'],
+      ['const d = Math.sin(a) + Math.cos(a) + Math.tan(a);', 'uses Math.sin'],
+      ['const a = Math.atan(1);', 'uses Math.atan'],
+      ['const v = Math.pow(2, 3) + Math.exp(1) + Math.log(2);', 'uses Math.pow'],
+      ['const v = 2 ** 8;', 'uses the ** operator'],
     ];
     for (const [source, message] of bad) expect(violations('x.ts', source).join('|'), source).toContain(message);
+    // the allowed math is not flagged (atan2 is limited by the count test above)
+    expect(violations('x.ts', 'const a = Math.atan2(1, 2); const r = Math.sqrt(4) * 2 + Math.max(1, 2);')).toEqual([]);
     // comments and strings are not code
     expect(violations('x.ts', '// uses Math.random and window\n/* document, Phaser */\nconst s = "Date.now()";')).toEqual([]);
     expect(violations('x.ts', "import { z } from 'zod';\nimport { a } from './geometry.js';\nexport * from './sim.js';")).toEqual([]);
+  });
+
+  it('Math.atan2 appears exactly once, in sim.ts (the aim angle that is only drawn)', () => {
+    const uses = files.flatMap((file) => {
+      const found = code(readFileSync(join(directory, file), 'utf8')).match(/\bMath\s*\.\s*atan2\b/g) ?? [];
+      return found.map(() => file);
+    });
+    expect(uses).toEqual(['sim.ts']);
   });
 
   it('the package index exposes the shooter module', () => {

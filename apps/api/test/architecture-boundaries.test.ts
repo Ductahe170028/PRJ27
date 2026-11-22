@@ -72,3 +72,57 @@ describe('architecture boundaries: Standard does not import Advanced', () => {
     expect(specifiers(orchestrator).some((specifier) => specifier.includes('/services/') || specifier.includes('/providers/'))).toBe(true);
   });
 });
+
+// The API's shooter module (brief, compiler, gate, service) sits next to Standard
+// and Advanced but must not use their physics, repair or code-agent parts, nor
+// the GameSpec v1 types. Allowed from services/: game-generation-service
+// (generateArtifact), system-prompt (providerJsonSchema), redact,
+// standard-diagnostics and worker-run; and providers/ and http/.
+describe('architecture boundaries: the API shooter module', () => {
+  const shooterDirectory = join(src, 'shooter');
+  const forbiddenSpecifier = (specifier: string) => /(^|\/)(agent|sandbox)(\/|$)/.test(specifier)
+    || /services\/(repair-|game-geometry|enemy-hazard|platformer-physics|objective-route|isolated-repair)/.test(specifier)
+    || /(^|\/)game-spec(\.js)?$/.test(specifier);
+  /** Code without comments and string contents. */
+  const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+    .replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g, '""');
+  const usesGameSpec = (source: string) => /\bGameSpec(Schema|Shape|PlacementInputSchema)?\b/.test(code(source));
+  const problems = (file: string, source: string) => [
+    ...specifiers(source).filter(forbiddenSpecifier).map((specifier) => `${file}: imports "${specifier}"`),
+    ...(usesGameSpec(source) ? [`${file}: uses a GameSpec type`] : []),
+  ];
+
+  it('guards the real files', () => {
+    const files = tsFiles(shooterDirectory);
+    expect(files.map((file) => relative(shooterDirectory, file)).sort()).toEqual(expect.arrayContaining(['brief.ts', 'compile.ts', 'gate.ts', 'service.ts', 'waves.ts', 'maps.ts', 'notices.ts', 'prompt.ts', 'presets.ts', 'isolated-compile.ts']));
+  });
+
+  it('no file imports Advanced, the Standard physics or repair, or GameSpec v1', () => {
+    const found = tsFiles(shooterDirectory).flatMap((file) => problems(relative(shooterDirectory, file), readFileSync(file, 'utf8')));
+    expect(found).toEqual([]);
+  });
+
+  it('catches each kind of violation (so the check above can fail)', () => {
+    const bad: Array<[string, string]> = [
+      ["import { a } from '../agent/run-diagnostics.js';", 'imports "../agent/run-diagnostics.js"'],
+      ["import { a } from '../sandbox/docker-args.js';", 'imports "../sandbox/docker-args.js"'],
+      ["import { repairGamePlacement } from '../services/repair-game-placement.js';", 'repair-game-placement'],
+      ["import { buildNavigation } from '../services/game-geometry.js';", 'game-geometry'],
+      ["import { analyzeHazards } from '../services/enemy-hazard.js';", 'enemy-hazard'],
+      ["import { x } from '../../../packages/contracts/src/game-spec.js';", 'game-spec'],
+      ["import type { GameSpec } from '@game-creator/contracts';", 'uses a GameSpec type'],
+      ["const s = GameSpecSchema.parse(x);", 'uses a GameSpec type'],
+    ];
+    for (const [source, message] of bad) expect(problems('x.ts', source).join('|'), source).toContain(message);
+    const fine = [
+      "import { ShooterLevelSchema } from '@game-creator/contracts';",
+      "import { diagnosticSink } from '../providers/diagnostic-sink.js';",
+      "import type { GameGenerationService } from '../services/game-generation-service.js';",
+      "import { providerJsonSchema } from '../services/system-prompt.js';",
+      "import { redactDiagnostics } from '../services/redact.js';",
+      "import { runInWorker } from '../services/worker-run.js';",
+      '// a comment may say GameSpec v1 and ../agent/x.js freely',
+    ];
+    for (const source of fine) expect(problems('x.ts', source), source).toEqual([]);
+  });
+});

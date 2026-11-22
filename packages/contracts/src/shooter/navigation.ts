@@ -1,7 +1,7 @@
 // Grid pathfinding for chasing enemies. One breadth-first search from the
 // player gives every enemy its way; nothing here is per enemy.
 import { FIELD, NAV_CELL } from './constants.js';
-import { clamp, pointRectDistance, type Rect, type Vec } from './geometry.js';
+import { clamp, dist as length, pointRectDistance, type Rect, type Vec } from './geometry.js';
 import type { ShooterLevel } from './level.js';
 
 export const NAV_COLS = (FIELD.right - FIELD.left) / NAV_CELL;
@@ -79,7 +79,7 @@ function nearestFree(blocked: readonly boolean[], x: number, y: number): number 
       for (let c = Math.max(0, col - radius); c <= Math.min(NAV_COLS - 1, col + radius); c += 1) {
         const cell = r * NAV_COLS + c;
         if (blocked[cell]) continue;
-        const d = Math.hypot(cellX(cell) - x, cellY(cell) - y);
+        const d = length(cellX(cell) - x, cellY(cell) - y);
         if (d < bestDistance) { bestDistance = d; best = cell; }
       }
     }

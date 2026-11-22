@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SHOOTER_LEVELS, type ShooterLevel } from '@game-creator/contracts';
-import { IDLE, botInput, play } from './shooter-bot.js';
+import { IDLE, SHOOTER_LEVELS, botInput, playLevel as play, type ShooterLevel } from '@game-creator/contracts';
 
 // The levels are numbers, and numbers can be too easy or impossible. A plain
 // bot (aims at the nearest enemy, keeps firing, steps away from enemies and

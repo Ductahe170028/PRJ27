@@ -36,7 +36,7 @@ async function generate(page: Page, prompt: string) {
 test('settings makes no hidden provider calls and persists only provider/model selection', async ({ page }) => {
   const calls: string[] = [];
   page.on('request', (request) => { if (request.method() === 'POST') calls.push(request.url()); });
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await choose(page, 'gemini');
   expect(calls).toEqual([]);
   await expect(page.getByLabel('Model', { exact: true })).toHaveValue('auto');
@@ -69,7 +69,7 @@ test('settings makes no hidden provider calls and persists only provider/model s
 
 test('flags a saved retired model and generates with the server default only after the user picks it', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('game-creator.provider.v1', JSON.stringify({ providerId: 'groq', modelId: 'llama-3.3-70b-versatile' })));
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await expect(page.locator('.settings-summary')).toContainText('Unavailable');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('top-down collector');
   await expect(page.getByRole('button', { name: 'Generate Game' })).toBeDisabled();
@@ -84,7 +84,7 @@ test('flags a saved retired model and generates with the server default only aft
 test('Gemini platformer and Groq top-down collect coins, win and restart in sandbox', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await choose(page, 'gemini');
   let canvas = await generate(page, 'Tạo game platformer ninja nhặt xu và tránh quái');
   await expect(page.locator('iframe')).toHaveAttribute('sandbox', 'allow-scripts');
@@ -115,7 +115,7 @@ test('Gemini platformer and Groq top-down collect coins, win and restart in sand
 });
 
 test('AI platformer jumps and lands on a raised platform', async ({ page }) => {
-  await page.goto('/'); await choose(page, 'gemini');
+  await page.goto('/?legacy=standard'); await choose(page, 'gemini');
   const canvas = await generate(page, 'platformer [jump]');
   await expect.poll(async () => (await playerPosition(canvas))?.bottom ?? 0).toBeGreaterThan(495);
   await page.keyboard.down('ArrowRight');
@@ -130,7 +130,7 @@ test('AI platformer jumps and lands on a raised platform', async ({ page }) => {
 });
 
 test('top-down obstacles block movement and enemies cause loss, followed by restart', async ({ page }) => {
-  await page.goto('/'); await choose(page, 'groq');
+  await page.goto('/?legacy=standard'); await choose(page, 'groq');
   let canvas = await generate(page, 'top-down [obstacle]');
   await page.keyboard.down('ArrowRight');
   await expect.poll(async () => (await playerPosition(canvas))?.x ?? 0).toBeGreaterThan(450);
@@ -151,7 +151,7 @@ test('top-down obstacles block movement and enemies cause loss, followed by rest
 test('quota errors are visible without provider fallback or retries', async ({ page }) => {
   let requests = 0;
   page.on('request', (request) => { if (request.url().includes('/api/games/generate')) requests += 1; });
-  await page.goto('/'); await choose(page, 'gemini');
+  await page.goto('/?legacy=standard'); await choose(page, 'gemini');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('[quota]');
   await page.getByRole('button', { name: 'Generate Game' }).click();
   await expect(page.getByText('Provider đã hết quota. Hãy thử lại sau. Có thể thử lại sau khoảng 60 giây.')).toBeVisible();
@@ -166,7 +166,7 @@ test('unconfigured provider stays unavailable after reload', async ({ page }) =>
     { id: 'gemini', name: 'Google Gemini', available: false, reason: 'missing_key', defaultModelId: 'gemini-3.5-flash-lite', models: [] },
     { id: 'groq', name: 'Groq', available: false, reason: 'missing_key', defaultModelId: 'openai/gpt-oss-20b', models: [] },
   ] }) }));
-  await page.goto('/'); await choose(page, 'gemini');
+  await page.goto('/?legacy=standard'); await choose(page, 'gemini');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('Tạo game ninja');
   await expect(page.getByRole('button', { name: 'Generate Game' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Test connection' })).toBeDisabled();
@@ -180,7 +180,7 @@ test('unconfigured provider stays unavailable after reload', async ({ page }) =>
 
 test('backend 500 responses without a structured body show a readable error', async ({ page }) => {
   await page.route('**/api/games/generate', (route) => route.fulfill({ status: 502, contentType: 'text/plain', body: 'bad gateway' }));
-  await page.goto('/'); await choose(page, 'gemini');
+  await page.goto('/?legacy=standard'); await choose(page, 'gemini');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('Tạo game ninja');
   await page.getByRole('button', { name: 'Generate Game' }).click();
   await expect(page.getByText('Backend trả về lỗi HTTP 502. Hãy kiểm tra server và thử lại.')).toBeVisible();
@@ -189,7 +189,7 @@ test('backend 500 responses without a structured body show a readable error', as
 
 for (const genre of ['top-down', 'platformer']) {
   test(`${genre}: repaired coins keep their count/value and all must be collected to win`, async ({ page }) => {
-    await page.goto('/'); await choose(page, 'groq');
+    await page.goto('/?legacy=standard'); await choose(page, 'groq');
     const response = page.waitForResponse((response) => response.url().includes('/api/games/generate'));
     const canvas = await generate(page, `${genre} [repair] nhặt đủ 2 xu`);
     const body = await (await response).json();
@@ -213,7 +213,7 @@ for (const genre of ['top-down', 'platformer']) {
 test('unrepairable placement shows a specific error without a partial game or retry', async ({ page }) => {
   let requests = 0;
   page.on('request', (request) => { if (request.url().includes('/api/games/generate')) requests += 1; });
-  await page.goto('/'); await choose(page, 'groq');
+  await page.goto('/?legacy=standard'); await choose(page, 'groq');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('platformer [unrepairable] nhặt đủ 2 xu');
   const response = page.waitForResponse((response) => response.url().includes('/api/games/generate'));
   await page.getByRole('button', { name: 'Generate Game' }).click();
@@ -225,7 +225,7 @@ test('unrepairable placement shows a specific error without a partial game or re
 });
 
 test('shows the GameSpec field that failed validation', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await choose(page, 'groq');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('platformer [invalid-spec]');
   const response = page.waitForResponse((item) => item.url().includes('/api/games/generate'));

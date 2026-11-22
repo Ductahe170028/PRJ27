@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "start": "node dist/server.js",
     "sandbox:verify": "node dist/sandbox/verify-main.js",
-    "test:server": "tsx test/e2e-server.ts"
+    "test:server": "tsx test/e2e-server.ts",
+    "shooter:calibrate": "tsx scripts/calibrate-shooter.ts"
   },
   "dependencies": {
     "@game-creator/contracts": "0.1.0",

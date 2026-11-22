@@ -1,0 +1,12 @@
+{
+  "version": "brief-1",
+  "title": "Pirate Cove",
+  "theme": "pirate-cove",
+  "map": "open-arena",
+  "enemies": [{ "type": "runner", "share": 5 }],
+  "intensity": 3,
+  "playerHealth": "normal",
+  "weapon": "pistol",
+  "goal": { "type": "survive", "seconds": 60 },
+  "unsupported": []
+}

@@ -21,7 +21,7 @@ export interface StandardRequest {
 
 export type StandardValidation =
   | { status: 'not_reached' }
-  | { status: 'checked'; schema: 'GameSpecPlacementInputSchema'; success: boolean; issues: SpecIssue[] };
+  | { status: 'checked'; schema: 'GameSpecPlacementInputSchema' | 'ShooterBriefSchema'; success: boolean; issues: SpecIssue[] };
 
 export interface StandardFinish {
   stage: StandardStage;
@@ -33,6 +33,8 @@ export interface StandardFinish {
   issues: SpecIssue[];
   errorCode?: string;
   errorMessage?: string;
+  /** The shooter's compile report (map, gate wins, density steps): numbers and names only. */
+  report?: unknown;
 }
 
 export interface StandardDiagnostics extends DiagnosticSink {
@@ -201,6 +203,7 @@ export class StandardRun implements StandardDiagnostics {
     };
     if (record.errorCode !== undefined) summary.errorCode = record.errorCode;
     if (record.errorMessage !== undefined) summary.errorMessage = record.errorMessage;
+    if (record.report !== undefined) summary.compile = record.report;
     if (this.exchange?.httpStatus !== undefined) summary.httpStatus = this.exchange.httpStatus;
     if (this.exchange?.errorCode !== undefined) summary.schemaCode = this.exchange.errorCode;
     if (this.exchange?.schemaPath !== undefined) summary.schemaPath = this.exchange.schemaPath;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, Check, CircleAlert, Code2,
-  Gamepad2, Layers2, LoaderCircle, MonitorPlay, RefreshCw, Sparkles, Terminal,
+  Gamepad2, LoaderCircle, MonitorPlay, Sparkles, Terminal,
 } from 'lucide-react';
 import { PROMPT_MAX_LENGTH, type GameProject } from '@game-creator/contracts';
 import { checkHealth, describeError, generateGame, type ApiIssue } from './lib/api';
@@ -11,9 +11,9 @@ import { EmptyPreview } from './components/EmptyPreview';
 import { GamePreview } from './components/GamePreview';
 import { ProviderSettings, useProviderSettings } from './components/ProviderSettings';
 import { AdvancedWorkspace } from './components/AdvancedWorkspace';
+import { AppHeader, ConnectionAlert, type Health } from './components/AppHeader';
 
 type Phase = 'idle' | 'generating' | 'booting' | 'playing' | 'error';
-type Health = 'checking' | 'online' | 'offline';
 
 const phaseCopy: Record<Phase, { title: string; description: string }> = {
   idle: { title: 'Sẵn sàng cho ý tưởng của bạn', description: 'Bắt đầu bằng một mô tả ngắn về game bạn muốn tạo.' },
@@ -123,20 +123,7 @@ export function App() {
   const completedSteps = phase === 'playing' ? 3 : phase === 'booting' ? 2 : phase === 'generating' ? 1 : 0;
 
   return <div className="app-shell">
-    <header className="topbar">
-      <a className="brand" href="/" aria-label="AI Game Creator — trang chủ">
-        <span className="brand-icon"><Gamepad2 size={23} strokeWidth={1.8}/></span>
-        <span>Game<span className="brand-light">Creator</span><span className="brand-ai">AI</span></span>
-      </a>
-      <div className="workspace-label"><span className="topbar-divider"/><Layers2 size={15}/> Creator workspace</div>
-      <div className="topbar-right">
-        <span className={`connection connection-${health}`} role="status">
-          <span className="small-dot"/>
-          {health === 'online' ? 'Backend đã kết nối' : health === 'checking' ? 'Đang kết nối backend' : 'Backend chưa kết nối'}
-        </span>
-        <span className="phase-badge">PHASE 03</span>
-      </div>
-    </header>
+    <AppHeader health={health} badge="PHASE 03" home="/?legacy=standard"/>
 
     <main>
       <div className="page-intro">
@@ -152,10 +139,7 @@ export function App() {
         <button type="button" aria-pressed={!advanced} disabled={busy || advancedBusy} onClick={() => setAdvancedChoice(false)}>Standard Mode <span>GameSpec · nhanh và ổn định</span></button>
         <button type="button" aria-pressed={advanced} disabled={busy || advancedBusy} onClick={() => setAdvancedChoice(true)}>Advanced AI Mode <span>Code mới · kiểm tra và sửa lỗi</span></button>
       </div>}
-      {health === 'offline' && <div className="connection-alert" role="alert">
-        <CircleAlert size={17}/><span>{healthError}</span>
-        <button type="button" onClick={() => void refreshHealth()}><RefreshCw size={13}/> Kiểm tra lại</button>
-      </div>}
+      {health === 'offline' && <ConnectionAlert message={healthError} onRetry={() => void refreshHealth()}/>}
 
       {advanced ? <AdvancedWorkspace settings={settings} onBusy={setAdvancedBusy}/> : <div className="workspace-grid">
         <aside className="creator-column" aria-label="Tạo game">

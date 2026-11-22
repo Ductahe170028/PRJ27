@@ -7,3 +7,4 @@ export * from './level.js';
 export * from './navigation.js';
 export * from './sim.js';
 export * from './fixtures.js';
+export * from './bot.js';

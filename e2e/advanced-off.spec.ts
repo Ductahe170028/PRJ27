@@ -8,7 +8,7 @@ test('with Advanced off there is no mode switch and Standard still generates a g
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const config = page.waitForResponse((response) => response.url().endsWith('/api/agent/config'));
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await expect(page.getByText('Backend đã kết nối')).toBeVisible();
 
   const answer = await config;

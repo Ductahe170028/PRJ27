@@ -1,0 +1,12 @@
+{
+  "version": "brief-1",
+  "title": "Boss Rush",
+  "theme": "neon-arena",
+  "map": "open-arena",
+  "enemies": [{ "type": "brute", "share": 3 }, { "type": "runner", "share": 5 }],
+  "intensity": 2,
+  "playerHealth": "normal",
+  "weapon": "rapid",
+  "goal": { "type": "kill", "count": 20 },
+  "unsupported": ["Chưa có boss cuối", "Chưa có vật phẩm hồi máu"]
+}

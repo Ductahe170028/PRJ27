@@ -13,6 +13,8 @@ import type { AIRequest } from '../src/providers/ai-provider.js';
 import { mockProvider, mockRegistry, sampleSpec } from './fixtures.js';
 import { agentFixture } from './agent-fixtures.js';
 import { GroqRateLimiter } from '../src/providers/groq-rate-limit.js';
+import { SHOOTER_BRIEF_SYSTEM_PROMPT } from '../src/shooter/prompt.js';
+import { ShooterService } from '../src/shooter/service.js';
 
 // Deterministic transport simulation; exercises the production scheduler and
 // retry path without any credentials, network or real quota consumption.
@@ -49,7 +51,17 @@ function standardFixture(prompt: string): string | undefined {
   return JSON.stringify(fixture.spec);
 }
 
+// The shooter brief: `[brief:<name>]` in the prompt picks test/fixtures/shooter/<name>.json
+// (default ok-zombie). A fixture with `__raw` is returned as plain text (not JSON).
+const briefDir = fileURLToPath(new URL('./fixtures/shooter/', import.meta.url));
+function shooterBrief(prompt: string): string {
+  const name = /\[brief:([a-z0-9-]+)\]/.exec(prompt)?.[1] ?? 'ok-zombie';
+  const fixture = JSON.parse(readFileSync(join(briefDir, `${name}.json`), 'utf8')) as Record<string, unknown>;
+  return typeof fixture.__raw === 'string' ? fixture.__raw : JSON.stringify(fixture);
+}
+
 async function generate(input: AIRequest) {
+  if (input.systemPrompt === SHOOTER_BRIEF_SYSTEM_PROMPT) return shooterBrief(input.prompt);
   const properties = input.jsonSchema.properties as Record<string, unknown> | undefined;
   if (properties?.source || properties?.setup || properties?.update || properties?.mechanics) return agentFixture(input);
   const fixture = standardFixture(input.prompt);
@@ -83,7 +95,9 @@ const agent = new AgentOrchestrator(generationService, new PlaywrightGameTester(
 const advancedEnabled = process.env.E2E_ADVANCED !== '0';
 const root = express();
 root.use((_request, response, next) => { response.setHeader('X-Server-Mode', 'mock'); next(); });
-root.use(createApp({ generationService, agent, advancedEnabled }));
+// A fixed compiler seed: the same brief always gives the same level, so E2E results do not depend on luck.
+const shooterService = new ShooterService(generationService, { seed: () => 20_261_122 });
+root.use(createApp({ generationService, agent, advancedEnabled, shooterService }));
 const port = Number(process.env.PORT ?? 3101);
 const server = root.listen(port, '127.0.0.1', () => {
   console.warn(`\n=== MOCK SERVER – không gọi AI thật (http://127.0.0.1:${port}, header X-Server-Mode: mock, Advanced ${advancedEnabled ? 'bật' : 'tắt'}) ===\n`);

@@ -43,7 +43,7 @@ async function generate(page: Page, prompt = 'Một game platformer dưới ánh
 test('generates an isolated game, moves, jumps, and lands on a raised platform', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await expect(page.getByText('Backend đã kết nối')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Generate Game' })).toBeDisabled();
   await page.screenshot({ path: 'test-results/workspace-empty.png', fullPage: true });
@@ -95,7 +95,7 @@ test('generates an isolated game, moves, jumps, and lands on a raised platform',
 });
 
 test('shows loading, reports a network error, and can recover', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   let releaseRequest = () => {};
   const gate = new Promise<void>((resolve) => { releaseRequest = resolve; });
   await page.route('**/api/games/generate', async (route) => {
@@ -115,7 +115,7 @@ test('shows loading, reports a network error, and can recover', async ({ page })
 });
 
 test('keeps a pasted prompt over 2000 characters and sends an in-limit prompt verbatim', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await expect(page.getByText('Backend đã kết nối')).toBeVisible();
   const pasted = 'A'.repeat(2496);
   const box = page.getByLabel('Bạn muốn tạo game gì?');
@@ -143,7 +143,7 @@ test('keeps a pasted prompt over 2000 characters and sends an in-limit prompt ve
 
 test('reports a failed health check and retries', async ({ page }) => {
   await page.route('**/api/health', (route) => route.abort('failed'));
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await expect(page.getByText('Backend chưa kết nối')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Kiểm tra lại' })).toBeVisible();
   await page.unroute('**/api/health');
@@ -155,7 +155,7 @@ test('rejects invalid API data before starting the iframe', async ({ page }) => 
   await page.route('**/api/games/generate', (route) => route.fulfill({
     status: 201, contentType: 'application/json', body: JSON.stringify({ data: { code: 'alert(1)' } }),
   }));
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await page.getByLabel('Bạn muốn tạo game gì?').fill('Một game nhảy');
   await page.getByRole('button', { name: 'Generate Game' }).click();
   await expect(page.getByText('Dữ liệu game không hợp lệ. Hãy kiểm tra backend và thử lại.')).toBeVisible();
@@ -165,7 +165,7 @@ test('rejects invalid API data before starting the iframe', async ({ page }) => 
 test.describe('mobile', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   test('works on a narrow touch viewport without horizontal overflow', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/?legacy=standard');
     await generate(page);
     await expect(page.frameLocator('iframe').getByRole('button', { name: 'Di chuyển trái' })).toBeVisible();
     await expect(page.frameLocator('iframe').getByRole('button', { name: 'Nhảy', exact: true })).toBeVisible();

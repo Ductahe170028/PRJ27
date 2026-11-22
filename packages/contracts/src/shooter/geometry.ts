@@ -7,6 +7,10 @@ export interface Vec { x: number; y: number }
 
 export const clamp = (value: number, min: number, max: number) => (value < min ? min : value > max ? max : value);
 
+/** Length of (dx, dy). A plain square root: it is rounded the same way by every
+ * engine, unlike the standard hypot function. */
+export const dist = (dx: number, dy: number) => Math.sqrt(dx * dx + dy * dy);
+
 /** Inside the play field, edges included. */
 export function rectInsideField(rect: Rect): boolean {
   return rect.x - rect.width / 2 >= FIELD.left && rect.x + rect.width / 2 <= FIELD.right

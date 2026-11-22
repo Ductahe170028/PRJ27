@@ -2,7 +2,7 @@ import { z } from 'zod';
 import {
   EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE,
 } from './constants.js';
-import { pointRectDistance, rectInsideField } from './geometry.js';
+import { dist, pointRectDistance, rectInsideField } from './geometry.js';
 
 const integer = (min: number, max: number) => z.number().int().min(min).max(max);
 // Same rule as the `label` of GameSpec v1: letters, marks, numbers, dashes and
@@ -16,7 +16,7 @@ const point = { x: integer(FIELD.left, FIELD.right), y: integer(FIELD.top, FIELD
 export const ShooterLevelSchema = z.object({
   kind: z.literal('shooter-v1'),
   title: label,
-  seed: integer(0, 2 ** 31 - 1),
+  seed: integer(0, 2_147_483_647),
   width: z.literal(960), height: z.literal(540),
   theme: z.object({
     background: color, wall: color, player: color, enemy: color, bullet: color, accent: color,
@@ -49,7 +49,7 @@ export const ShooterLevelSchema = z.object({
   level.spawnPoints.forEach((spawn, index) => {
     if (!insideMargin(spawn)) issue(['spawnPoints', index], 'Điểm xuất hiện của quái nằm quá sát mép vùng chơi.');
     if (blocked(spawn)) issue(['spawnPoints', index], 'Điểm xuất hiện của quái nằm trong hoặc sát vật cản.');
-    if (Math.hypot(spawn.x - level.player.x, spawn.y - level.player.y) < SPAWN_SAFE_DISTANCE) {
+    if (dist(spawn.x - level.player.x, spawn.y - level.player.y) < SPAWN_SAFE_DISTANCE) {
       issue(['spawnPoints', index], 'Điểm xuất hiện của quái quá gần người chơi.');
     }
   });

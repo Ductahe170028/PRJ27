@@ -1283,3 +1283,7 @@ kbd {
 .shooter-help{margin:0;color:var(--muted)}.shooter-help kbd{border:1px solid var(--line);border-radius:4px;padding:1px 6px;margin-right:3px;color:#e9edf2}
 .shooter-unknown{display:flex;flex-direction:column;gap:6px;padding:16px;border:1px solid #7a3b46;border-radius:8px;background:#2a1519}
 .shooter-error{margin:0;color:#f27b91}
+
+/* Shooter app: what the engine could not do or changed. */
+.shooter-notices ul{margin:10px 0 0;padding-left:18px;color:#f0cf8a;font-size:13px;line-height:1.55}
+.shooter-notices li+li{margin-top:4px}

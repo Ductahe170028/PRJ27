@@ -12,7 +12,9 @@ Xem [báo cáo Code Audit + Refactor Phase 1–3](docs/audit-phase1-3.md) để 
 
 Sản phẩm sẽ chuyển sang **Top-down Survival Shooter** với spec mới, tách khỏi GameSpec v1. Platformer, Top-down Dodge/Collect và Advanced Mode đã đóng băng (giữ nguyên, không phát triển thêm). Chi tiết quyết định, kiến trúc đích và lộ trình: [docs/DIRECTION.md](docs/DIRECTION.md).
 
-Chơi thử lõi shooter (Stage 1: level viết tay, không AI, không cần backend): chạy `npm run dev` rồi mở `http://127.0.0.1:5173/?shooter=arena` (còn `pillars`, `wall`, `smoke-win`, `smoke-lose`). WASD hoặc phím mũi tên di chuyển, chuột ngắm, giữ chuột trái bắn, `R` chơi lại. Trang này không có liên kết trong giao diện chính.
+**Giao diện chính (`/`) là Top-down Survival Shooter** (Stage 2: `prompt → brief → compiler → cổng bot → game`, endpoint `POST /api/shooter/generate`). App Standard cũ (platformer và top-down GameSpec v1) vẫn chạy ở `http://127.0.0.1:5173/?legacy=standard`. Mật độ quái được hiệu chỉnh bằng `npm run shooter:calibrate -w @game-creator/api` (kết quả ở [docs/shooter-calibration.md](docs/shooter-calibration.md); không chạy trong `npm test`).
+
+Chơi thử các level viết tay (không AI, không cần backend): chạy `npm run dev` rồi mở `http://127.0.0.1:5173/?shooter=arena` (còn `pillars`, `wall`, `smoke-win`, `smoke-lose`). WASD hoặc phím mũi tên di chuyển, chuột ngắm, giữ chuột trái bắn, `R` chơi lại. Trang này không có liên kết trong giao diện chính.
 
 ## Chạy trên Windows
 
@@ -26,11 +28,11 @@ npm run dev
 
 Mở **http://127.0.0.1:5173**; backend **http://127.0.0.1:3001**. `Ctrl+C` để dừng. Nếu PowerShell chặn `npm.ps1`, dùng `npm.cmd` thay `npm`.
 
-1. Chưa có key: giữ **Demo**, nhập prompt, nhấn **Generate Game** để chơi Moonlight Run.
+1. Chưa có key: giữ **Demo**, nhập prompt, nhấn **Generate Game** để chơi màn mẫu **Đấu trường** (shooter).
 2. Để dùng AI, cấu hình backend bên dưới rồi khởi động lại.
 3. Mở **Settings**, chọn **Gemini** hoặc **Groq**. Ô **Model** mặc định là **Tự động** (model khuyến nghị của backend); có thể chọn model khác trong danh sách. Bảng trạng thái cho biết provider nào đã có key. **Test connection** kiểm tra key/danh sách model bằng metadata API, không sinh nội dung và không xác nhận quota còn lại.
-4. Nhập `Tạo game ninja nhặt xu và tránh quái`, nhấn **Generate Game**.
-5. Bấm vào preview để điều khiển bằng bàn phím. Điều khiển hiển thị dưới preview; **R** chơi lại. Platformer có nhảy, top-down di chuyển bốn hướng.
+4. Nhập `Sinh tồn 60 giây trong thành phố đầy zombie, súng bắn nhanh`, nhấn **Generate Game**. AI chọn bối cảnh, bản đồ, quái, độ khó, vũ khí và mục tiêu; engine dựng màn và cho bot chơi thử trước khi trả về. Yêu cầu engine chưa có (boss, xe, nhiều người, bảo vệ căn cứ, hết đạn, vật phẩm, đổi vũ khí, chế tạo, bẫy) hiện trong khối **Chưa hỗ trợ / điều chỉnh**, không bị bỏ qua im lặng.
+5. Bấm vào preview rồi chơi: **WASD** hoặc phím mũi tên di chuyển, chuột để ngắm, giữ chuột trái để bắn, **R** chơi lại.
 6. Chuyển sang provider còn lại (hoặc model khác), nhập prompt khác và tạo game mới.
 
 Để thử Phase 3 (Advanced đang đóng băng và tắt mặc định: đặt `ADVANCED_AI_ENABLED=true` trong `apps/api/.env` rồi chạy lại API): chọn **Advanced AI Mode** → chọn Gemini/Groq trong Settings → nhập `Tạo game bắn máy bay, có đạn, kẻ địch xuất hiện liên tục, điểm số và boss` → Generate Game. Theo dõi Planning/Coding/Validating/Testing/Repairing, mở Console/log khi có lỗi. Thử tiếp `Tạo game đỡ bóng phá gạch, thanh đỡ di chuyển ngang, bóng bật vào tường, phá hết gạch để thắng` để so sánh cơ chế. **Retry** bắt đầu lượt mới do bạn chủ động bấm, có tính quota. Advanced dùng bàn phím và chuột; chưa có điều khiển cảm ứng như Standard.
@@ -121,9 +123,13 @@ apps/api/
       objective-route.ts          Thứ tự hoàn thành objective trên đồ thị có hướng, cận trên thời gian
       request-budget.ts           Rate/concurrency/daily limit trong RAM
       game-service.ts             Giữ service demo Phase 1
+      worker-run.ts               Chạy một việc trong worker_threads (timeout, hủy theo client), dùng chung cho repair và compile
+    shooter/                      Top-down Shooter: brief.ts (AI sinh), presets.ts, maps.ts, waves.ts, compile.ts (xác định theo seed),
+                                  gate.ts (bot kiểm chứng), notices.ts, prompt.ts, service.ts, isolated-compile.ts + compile-worker.mjs
   test/                           Unit/API/SDK mocks và E2E mock server
 apps/web/src/
-  App.tsx                         Prompt, loading/error, selection, preview
+  ShooterApp.tsx                  Giao diện chính: prompt → shooter, khối "Chưa hỗ trợ / điều chỉnh"
+  App.tsx                         App Standard cũ (/?legacy=standard): prompt, loading/error, selection, preview
   components/ProviderSettings.tsx Provider/model, config, test connection
   components/GamePreview.tsx      Iframe và handshake
   lib/api.ts                      HTTP client và validation
@@ -154,6 +160,7 @@ Npm workspaces, TypeScript strict, `noUncheckedIndexedAccess`, `exactOptionalPro
 | `GET /api/ai/providers` | — | `{providers:[{id,name,available,reason,defaultModelId,models:[{id,name,capabilities}]}]}` |
 | `POST /api/ai/test-connection` | `{providerId,modelId?}` | `{status:"connected",providerId,modelId,message}` |
 | `POST /api/games/generate` | `{prompt,providerId,modelId?}` | `201 {data:{id,title,prompt,provider,modelId,capabilities,createdAt,game}}` |
+| `POST /api/shooter/generate` | `{prompt,providerId?,modelId?}` | `201 {data:{id,title,prompt,provider,modelId,createdAt,level,notices}}` (không chọn provider: màn mẫu `arena`); lỗi `invalid_brief`, `unwinnable_level`, `compile_timeout` có mã 422 |
 
 Ví dụ AI generation:
 

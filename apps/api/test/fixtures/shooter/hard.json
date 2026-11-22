@@ -1,0 +1,12 @@
+{
+  "version": "brief-1",
+  "title": "Last Stand",
+  "theme": "military-base",
+  "map": "rooms",
+  "enemies": [{ "type": "brute", "share": 6 }, { "type": "swarmer", "share": 4 }],
+  "intensity": 5,
+  "playerHealth": "fragile",
+  "weapon": "pistol",
+  "goal": { "type": "survive", "seconds": 90 },
+  "unsupported": []
+}

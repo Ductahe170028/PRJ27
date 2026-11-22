@@ -1,9 +1,17 @@
-// Test helper, not product code: a plain player to prove that a level is
-// winnable, and that standing still is not enough.
-import { FIELD, PLAYER_RADIUS, createSim, step, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
+// A plain player. It is the judge of a compiled level (can a simple player win?)
+// and the opponent in the tests. It is not meant to play like a person: it aims
+// perfectly and never gets tired.
+import { FIELD, PLAYER_RADIUS } from './constants.js';
+import { dist } from './geometry.js';
+import type { ShooterLevel } from './level.js';
+import { createSim, step, type ShooterInput, type ShooterState } from './sim.js';
 
+/** Enemies closer than this push the bot away (px). */
 const FLEE_RADIUS = 150;
+/** Walls and edges closer than this push the bot away (px). */
 const WALL_RADIUS = 60;
+
+export const IDLE: ShooterInput = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, fire: false };
 
 /** Aims at the nearest enemy, holds fire, and steps away from enemies within
  * 150 px and from walls. */
@@ -14,7 +22,7 @@ export function botInput(state: ShooterState): ShooterInput {
   let fx = 0;
   let fy = 0;
   for (const enemy of enemies) {
-    const distance = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+    const distance = dist(enemy.x - player.x, enemy.y - player.y);
     if (distance < nearestDistance) { nearestDistance = distance; nearest = enemy; }
     if (distance < FLEE_RADIUS && distance > 0) {
       const weight = (FLEE_RADIUS - distance) / FLEE_RADIUS / distance;
@@ -29,16 +37,16 @@ export function botInput(state: ShooterState): ShooterInput {
   for (const block of level.obstacles) {
     const dx = Math.max(Math.abs(player.x - block.x) - block.width / 2, 0);
     const dy = Math.max(Math.abs(player.y - block.y) - block.height / 2, 0);
-    const gap = Math.hypot(dx, dy) - PLAYER_RADIUS;
+    const gap = dist(dx, dy) - PLAYER_RADIUS;
     if (gap < WALL_RADIUS) {
       const nx = Math.max(Math.min(player.x, block.x + block.width / 2), block.x - block.width / 2);
       const ny = Math.max(Math.min(player.y, block.y + block.height / 2), block.y - block.height / 2);
-      const distance = Math.hypot(player.x - nx, player.y - ny) || 1;
+      const distance = dist(player.x - nx, player.y - ny) || 1;
       fx += ((player.x - nx) / distance) * edge(gap);
       fy += ((player.y - ny) / distance) * edge(gap);
     }
   }
-  const length = Math.hypot(fx, fy);
+  const length = dist(fx, fy);
   const sector = (value: number) => (length < 1e-6 ? 0 : value / length > 0.38 ? 1 : value / length < -0.38 ? -1 : 0);
   return {
     moveX: sector(fx), moveY: sector(fy),
@@ -47,13 +55,24 @@ export function botInput(state: ShooterState): ShooterInput {
   };
 }
 
-export const IDLE: ShooterInput = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, fire: false };
-
-export interface RunResult { status: ShooterState['status']; seconds: number; kills: number; hp: number; state: ShooterState }
+export interface PlayResult {
+  status: ShooterState['status'];
+  seconds: number;
+  kills: number;
+  hp: number;
+  maxHp: number;
+  /** hp / maxHp when the game ended; 0 when it was lost. */
+  hpLeft: number;
+  state: ShooterState;
+}
 
 /** Plays a level to its end (or `maxTicks`) with `policy`. */
-export function play(level: ShooterLevel, policy: (state: ShooterState) => ShooterInput, maxTicks = 60 * 400): RunResult {
+export function playLevel(level: ShooterLevel, policy: (state: ShooterState) => ShooterInput, maxTicks = 60 * 400): PlayResult {
   const state = createSim(level);
   while (state.status === 'playing' && state.tick < maxTicks) step(state, policy(state));
-  return { status: state.status, seconds: state.tick / 60, kills: state.kills, hp: state.player.hp, state };
+  const { hp, maxHp } = state.player;
+  return {
+    status: state.status, seconds: state.tick / 60, kills: state.kills, hp, maxHp,
+    hpLeft: state.status === 'lost' ? 0 : hp / maxHp, state,
+  };
 }

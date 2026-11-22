@@ -24,7 +24,7 @@ async function playerBox(canvas: Locator) {
 }
 
 async function load(page: Page, fixture: string) {
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   const toggle = page.getByRole('button', { name: /Settings/ });
   if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
   await expect(page.getByLabel('AI Provider')).toBeEnabled();

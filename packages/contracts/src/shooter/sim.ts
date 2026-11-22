@@ -8,7 +8,7 @@ import {
   NAV_REFRESH_TICKS, PLAYER_RADIUS, SPAWN_MIN_PLAYER_DISTANCE, SPAWN_STAGGER_MS, TICK_RATE, msToTicks, type EnemyType,
 } from './constants.js';
 import {
-  lineOfSight, pointRectDistance, resolveCircle, segmentCircleHit, segmentRectHit, type Rect,
+  dist, lineOfSight, pointRectDistance, resolveCircle, segmentCircleHit, segmentRectHit, type Rect,
 } from './geometry.js';
 import type { ShooterLevel } from './level.js';
 import { blockedCells, cellOf, flowDistances, flowTarget, type FlowField } from './navigation.js';
@@ -197,7 +197,7 @@ function spawnDue(state: ShooterState, t: number) {
 function placeEnemy(state: ShooterState, type: EnemyType): boolean {
   const { level, player } = state;
   const radius = ENEMY_TYPES[type].radius;
-  const distanceToPlayer = (p: { x: number; y: number }) => Math.hypot(p.x - player.x, p.y - player.y);
+  const distanceToPlayer = (p: { x: number; y: number }) => dist(p.x - player.x, p.y - player.y);
   let candidates = level.spawnPoints.filter((p) => distanceToPlayer(p) >= SPAWN_MIN_PLAYER_DISTANCE);
   let minDistance = SPAWN_MIN_PLAYER_DISTANCE;
   if (candidates.length === 0) {
@@ -210,9 +210,9 @@ function placeEnemy(state: ShooterState, type: EnemyType): boolean {
   const origin = candidates[Math.floor(random(state) * candidates.length)]!;
   const free = (x: number, y: number) => {
     if (x < FIELD.left + radius || x > FIELD.right - radius || y < FIELD.top + radius || y > FIELD.bottom - radius) return false;
-    if (Math.hypot(x - player.x, y - player.y) < minDistance) return false;
+    if (dist(x - player.x, y - player.y) < minDistance) return false;
     if (level.obstacles.some((block) => pointRectDistance(x, y, block) < radius)) return false;
-    return !state.enemies.some((other) => Math.hypot(other.x - x, other.y - y) < radius + ENEMY_TYPES[other.type].radius);
+    return !state.enemies.some((other) => dist(other.x - x, other.y - y) < radius + ENEMY_TYPES[other.type].radius);
   };
   for (let ring = 0; ring <= SPIRAL_RINGS; ring += 1) {
     const reach = ring * SPIRAL_STEP;

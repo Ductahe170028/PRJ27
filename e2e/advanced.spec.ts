@@ -1,7 +1,7 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 
 async function openAdvanced(page: Page) {
-  await page.goto('/');
+  await page.goto('/?legacy=standard');
   await page.getByRole('button', { name: /Advanced AI Mode/ }).click();
   const settings = page.getByRole('button', { name: /Settings/ });
   if (await settings.getAttribute('aria-expanded') !== 'true') await settings.click();

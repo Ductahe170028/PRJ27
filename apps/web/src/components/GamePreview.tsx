@@ -16,12 +16,19 @@ export function GamePreview({ source, onStarted, onError }: GamePreviewProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const sessionId = useMemo(() => randomUuid(), [source.id]);
   const document = useMemo(() => createPreviewDocument(sessionId), [sessionId]);
+  // What the effect reads when a message arrives. A parent that re-renders (typing in a
+  // prompt box, a state change) hands over a new `source` object or new callbacks; that
+  // must never restart the session: the iframe would not send `ready`/`started` again,
+  // and the 15 second timer would report a game that is running as not started.
+  const latest = useRef({ game: source.game, onStarted, onError });
+  latest.current = { game: source.game, onStarted, onError };
 
+  // One preview session = one effect run: it depends on the session identity only.
   useEffect(() => {
     let started = false;
     let initialized = false;
     const timer = window.setTimeout(() => {
-      if (!started) onError('Game chưa khởi chạy sau 15 giây. Hãy nhấn Generate Game để thử lại.');
+      if (!started) latest.current.onError('Game chưa khởi chạy sau 15 giây. Hãy nhấn Generate Game để thử lại.');
     }, 15_000);
     const onMessage = (event: MessageEvent<unknown>) => {
       // Opaque-origin iframe: identify the sender by its Window and session ID.
@@ -34,18 +41,18 @@ export function GamePreview({ source, onStarted, onError }: GamePreviewProps) {
           initialized = true;
           // '*' is required for a sandboxed recipient with an opaque origin.
           frame.current?.contentWindow?.postMessage({
-            channel: 'game-creator', type: 'runtime:init', sessionId, game: source.game,
+            channel: 'game-creator', type: 'runtime:init', sessionId, game: latest.current.game,
           }, '*');
           break;
         case 'runtime:started':
           if (started || !initialized) return;
           started = true;
           window.clearTimeout(timer);
-          onStarted();
+          latest.current.onStarted();
           break;
         case 'runtime:error':
           window.clearTimeout(timer);
-          onError('Game gặp lỗi khi chạy. Hãy nhấn Generate Game để tạo lại preview.');
+          latest.current.onError('Game gặp lỗi khi chạy. Hãy nhấn Generate Game để tạo lại preview.');
           break;
       }
     };
@@ -54,7 +61,7 @@ export function GamePreview({ source, onStarted, onError }: GamePreviewProps) {
       window.clearTimeout(timer);
       window.removeEventListener('message', onMessage);
     };
-  }, [source, sessionId, onStarted, onError]);
+  }, [sessionId, source.id]);
 
   return <iframe
     ref={frame}

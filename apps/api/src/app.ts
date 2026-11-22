@@ -13,10 +13,12 @@ import { withResponseAbort } from './http/response-abort.js';
 import { clientKey } from './http/client-key.js';
 import { resolveTrustProxy } from './http/trust-proxy.js';
 import { createAgent } from './agent/create-agent.js';
+import { ShooterService } from './shooter/service.js';
 
 interface AppOptions {
   service?: GameService;
   generationService?: GameGenerationService;
+  shooterService?: ShooterService;
   clientOrigins?: string[];
   agent?: AgentOrchestrator;
   advancedEnabled?: boolean;
@@ -32,6 +34,7 @@ export function createApp(options: AppOptions = {}) {
     requestsPerDay: readLimit('AI_REQUESTS_PER_DAY', 100, 1_000),
     maxConcurrent: readLimit('AI_MAX_CONCURRENT', 2, 5),
   }), readLimit('AI_TIMEOUT_MS', 45_000, 50_000));
+  const shooter = options.shooterService ?? new ShooterService(generation);
   const origins = options.clientOrigins ?? ['http://localhost:5173', 'http://127.0.0.1:5173'];
 
   app.disable('x-powered-by');
@@ -82,6 +85,27 @@ export function createApp(options: AppOptions = {}) {
     }
     await withResponseAbort(response, async (signal) => {
       const project = await generation.generate({ ...result.data, providerId }, clientKey(request.ip), signal);
+      response.status(201).json({ data: project });
+    });
+  });
+
+  // Same rules as /api/games/generate (prompt, provider/model choice, budget, timeout, abort).
+  app.post('/api/shooter/generate', async (request, response) => {
+    const result = GenerateGameRequestSchema.safeParse(request.body);
+    if (!result.success) {
+      response.status(400).json({ error: { code: 'INVALID_PROMPT', message: result.error.issues[0]?.message ?? 'Mô tả game không hợp lệ.' } });
+      return;
+    }
+    const { providerId, modelId } = result.data;
+    if ((!providerId && !modelId) || (providerId === 'demo' && modelId === 'platformer-v1')) {
+      response.status(201).json({ data: shooter.demo(result.data.prompt) });
+      return;
+    }
+    if (!providerId || providerId === 'demo') {
+      throw new AIError('invalid_model', 'Cần chọn cả provider và model hợp lệ.', 400);
+    }
+    await withResponseAbort(response, async (signal) => {
+      const project = await shooter.generate({ ...result.data, providerId }, clientKey(request.ip), signal);
       response.status(201).json({ data: project });
     });
   });

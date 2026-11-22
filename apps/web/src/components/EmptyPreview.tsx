@@ -1,6 +1,7 @@
 import { Gamepad2, ArrowUpRight } from 'lucide-react';
 
-export function EmptyPreview() {
+/** The empty stage. The defaults are the Standard app's; the shooter app passes its own words. */
+export function EmptyPreview({ hint = 'để khởi chạy game mẫu đầu tiên.', tag = 'Moonlight Run' }: { hint?: string; tag?: string }) {
   return <div className="empty-preview">
     <svg className="preview-art" viewBox="0 0 960 540" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
       <defs>
@@ -25,8 +26,8 @@ export function EmptyPreview() {
       <div className="empty-game-icon"><Gamepad2 size={29} strokeWidth={1.4}/></div>
       <span className="eyebrow">MỘT Ý TƯỞNG. MỘT KHỞI ĐẦU.</span>
       <h3>Sân chơi đang chờ bạn.</h3>
-      <p>Nhập mô tả và nhấn Generate Game<br/>để khởi chạy game mẫu đầu tiên.</p>
-      <div className="empty-preview-tag"><span className="small-dot"/> Moonlight Run <ArrowUpRight size={13}/></div>
+      <p>Nhập mô tả và nhấn Generate Game<br/>{hint}</p>
+      <div className="empty-preview-tag"><span className="small-dot"/> {tag} <ArrowUpRight size={13}/></div>
     </div>
     <span className="preview-watermark">YOUR NEXT WORLD STARTS HERE</span>
   </div>;
