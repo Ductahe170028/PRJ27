@@ -224,7 +224,7 @@ export function App() {
             <div className={`preview-state ${phase === 'playing' ? 'is-live' : ''}`}><span className="small-dot"/>{phase === 'playing' ? 'Đang chạy' : busy ? 'Đang tải' : 'Chờ khởi tạo'}</div>
           </div>
           <div className="preview-viewport">
-            {project ? <GamePreview key={project.id} project={project} onStarted={onStarted} onError={onRuntimeError}/> : <EmptyPreview/>}
+            {project ? <GamePreview key={project.id} source={project} onStarted={onStarted} onError={onRuntimeError}/> : <EmptyPreview/>}
             {busy && <div className="preview-loading" role="status"><LoaderCircle className="spin" size={27}/><strong>{phase === 'generating' ? 'Đang chuẩn bị màn chơi' : 'Đang khởi chạy game'}</strong><span>Chỉ một chút nữa thôi…</span></div>}
           </div>
           <div className="preview-controls">

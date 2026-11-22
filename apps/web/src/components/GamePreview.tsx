@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { RuntimeEventSchema, type GameProject } from '@game-creator/contracts';
+import { RuntimeEventSchema, type RuntimeGame } from '@game-creator/contracts';
 import { createPreviewDocument } from '../lib/preview-document';
 import { randomUuid } from '../lib/uuid';
 
+/** What the preview needs of a game: an id to key the session, a title for the frame, and the game data. */
+export interface GameSource { id: string; title: string; game: RuntimeGame }
+
 interface GamePreviewProps {
-  project: GameProject;
+  source: GameSource;
   onStarted: () => void;
   onError: (message: string) => void;
 }
 
-export function GamePreview({ project, onStarted, onError }: GamePreviewProps) {
+export function GamePreview({ source, onStarted, onError }: GamePreviewProps) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const sessionId = useMemo(() => randomUuid(), [project.id]);
+  const sessionId = useMemo(() => randomUuid(), [source.id]);
   const document = useMemo(() => createPreviewDocument(sessionId), [sessionId]);
 
   useEffect(() => {
@@ -31,7 +34,7 @@ export function GamePreview({ project, onStarted, onError }: GamePreviewProps) {
           initialized = true;
           // '*' is required for a sandboxed recipient with an opaque origin.
           frame.current?.contentWindow?.postMessage({
-            channel: 'game-creator', type: 'runtime:init', sessionId, game: project.game,
+            channel: 'game-creator', type: 'runtime:init', sessionId, game: source.game,
           }, '*');
           break;
         case 'runtime:started':
@@ -51,11 +54,11 @@ export function GamePreview({ project, onStarted, onError }: GamePreviewProps) {
       window.clearTimeout(timer);
       window.removeEventListener('message', onMessage);
     };
-  }, [project, sessionId, onStarted, onError]);
+  }, [source, sessionId, onStarted, onError]);
 
   return <iframe
     ref={frame}
-    title={`Game preview — ${project.title}`}
+    title={`Game preview — ${source.title}`}
     sandbox="allow-scripts"
     referrerPolicy="no-referrer"
     srcDoc={document}

@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import { GameSpecSchema } from './game-spec.js';
 import { CapabilitySchema, SelectionSchema } from './ai.js';
+import { ShooterLevelSchema } from './shooter/level.js';
 export * from './game-spec.js';
 export * from './ai.js';
 export * from './code-agent.js';
+export * from './shooter/index.js';
 
 export const PROMPT_MAX_LENGTH = 2_000;
 
@@ -92,7 +94,7 @@ export const RuntimeInitSchema = z.object({
   channel: z.literal('game-creator'),
   sessionId: z.string().uuid(),
   type: z.literal('runtime:init'),
-  game: z.union([GameDefinitionSchema, GameSpecSchema]),
+  game: z.union([GameDefinitionSchema, GameSpecSchema, ShooterLevelSchema]),
 }).strict();
 
 export type GenerateGameRequest = z.infer<typeof GenerateGameRequestSchema>;
@@ -100,3 +102,6 @@ export type GameSpecIssue = z.infer<typeof GameSpecIssueSchema>;
 export type GameDefinition = z.infer<typeof GameDefinitionSchema>;
 export type GameProject = z.infer<typeof GameProjectSchema>;
 export type RuntimeEvent = z.infer<typeof RuntimeEventSchema>;
+export type RuntimeInit = z.infer<typeof RuntimeInitSchema>;
+/** Anything the runtime iframe can play. */
+export type RuntimeGame = RuntimeInit['game'];

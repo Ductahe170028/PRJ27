@@ -12,6 +12,8 @@ Xem [báo cáo Code Audit + Refactor Phase 1–3](docs/audit-phase1-3.md) để 
 
 Sản phẩm sẽ chuyển sang **Top-down Survival Shooter** với spec mới, tách khỏi GameSpec v1. Platformer, Top-down Dodge/Collect và Advanced Mode đã đóng băng (giữ nguyên, không phát triển thêm). Chi tiết quyết định, kiến trúc đích và lộ trình: [docs/DIRECTION.md](docs/DIRECTION.md).
 
+Chơi thử lõi shooter (Stage 1: level viết tay, không AI, không cần backend): chạy `npm run dev` rồi mở `http://127.0.0.1:5173/?shooter=arena` (còn `pillars`, `wall`, `smoke-win`, `smoke-lose`). WASD hoặc phím mũi tên di chuyển, chuột ngắm, giữ chuột trái bắn, `R` chơi lại. Trang này không có liên kết trong giao diện chính.
+
 ## Chạy trên Windows
 
 Cần **Node.js 22+**, **npm 10+**. Vite 6 tương thích Node 22.11. Mở PowerShell tại thư mục dự án:
@@ -130,10 +132,14 @@ apps/web/src/
     runtime.ts                    Bundle độc lập, chọn renderer
     GameSpecScene.ts              Hai thể loại GameSpec v1
     PlatformerScene.ts            Giữ renderer Phase 1
+    ShooterScene.ts               Renderer Survival Shooter: chỉ vẽ và đọc input
+  components/ShooterPlayground.tsx Trang chơi thử /?shooter=<level>, không gọi API
 packages/contracts/src/
   index.ts                        Request/response và protocol iframe
   ai.ts                           Metadata và selection schemas
   game-spec.ts                    Zod strict, bounds và JSON schema v1
+  shooter/                        Lõi Survival Shooter, TypeScript thuần: level.ts (schema), sim.ts (mô phỏng 60 tick/s),
+                                  navigation.ts (flow field), geometry.ts, constants.ts, fixtures.ts (level viết tay)
 e2e/creator.spec.ts                Regression Phase 1
 e2e/ai.spec.ts                     Settings, provider switching, gameplay
 ```

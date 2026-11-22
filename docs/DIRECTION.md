@@ -24,6 +24,7 @@ ShooterBrief (AI sinh, chỉ ngữ nghĩa, không tọa độ)
 
 - Spec mới, tách hẳn GameSpec cũ. Standard/shooter không import `agent/` hay `sandbox/` (có test kiểm tra).
 - Logic game (di chuyển, va chạm, đạn, sát thương, spawn, thắng/thua) là module TypeScript thuần, không phụ thuộc Phaser. Phaser chỉ vẽ.
+- Hiện module nằm ở `packages/contracts/src/shooter/` (cùng package với schema để web và api cùng import, `npm run dev` đã build sẵn). Có test chặn import Phaser/DOM/`Math.random`/đồng hồ. Có thể tách thành package riêng sau này; nó chỉ phụ thuộc `zod`.
 - Lý do: không lệch giữa mô phỏng và render như ở platformer; test không cần trình duyệt; có thể thêm bot mô phỏng chạy trong worker.
 
 ## Quy tắc xử lý đầu vào
