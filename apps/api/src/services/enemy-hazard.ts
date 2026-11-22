@@ -1,3 +1,4 @@
+// FROZEN (legacy-standard-v1): Standard platformer/top-down; no new development. See docs/DIRECTION.md.
 // Platformer enemies as moving hazards over the physical graph. Pure functions;
 // input and output are plain serializable data.
 //

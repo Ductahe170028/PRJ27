@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { PROMPT_MAX_LENGTH, type GameProject } from '@game-creator/contracts';
 import { checkHealth, describeError, generateGame, type ApiIssue } from './lib/api';
+import { getAgentConfig } from './lib/agent-api';
 import { promptLimitWarning, promptToSend } from './lib/prompt-draft';
 import { EmptyPreview } from './components/EmptyPreview';
 import { GamePreview } from './components/GamePreview';
@@ -24,7 +25,11 @@ const phaseCopy: Record<Phase, { title: string; description: string }> = {
 
 export function App() {
   const settings = useProviderSettings();
-  const [advanced, setAdvanced] = useState(false);
+  // What the user picked, and whether the server offers Advanced at all. The
+  // mode only counts while the server says enabled: while loading or on error it is off.
+  const [advancedChoice, setAdvancedChoice] = useState(false);
+  const [advancedAvailable, setAdvancedAvailable] = useState(false);
+  const advanced = advancedChoice && advancedAvailable;
   const [advancedBusy, setAdvancedBusy] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [project, setProject] = useState<GameProject | null>(null);
@@ -37,6 +42,7 @@ export function App() {
   const [healthError, setHealthError] = useState('');
   const generationRequest = useRef<AbortController | null>(null);
   const healthRequest = useRef<AbortController | null>(null);
+  const configRequest = useRef<AbortController | null>(null);
   const busy = phase === 'generating' || phase === 'booting';
 
   const refreshHealth = useCallback(async () => {
@@ -47,7 +53,13 @@ export function App() {
     setHealthError('');
     try {
       await checkHealth(controller.signal);
-      if (!controller.signal.aborted) setHealth('online');
+      if (controller.signal.aborted) return;
+      setHealth('online');
+      configRequest.current?.abort();
+      const config = new AbortController();
+      configRequest.current = config;
+      getAgentConfig(config.signal).then((result) => { if (!config.signal.aborted) setAdvancedAvailable(result.enabled); })
+        .catch(() => { if (!config.signal.aborted) setAdvancedAvailable(false); });
     } catch (cause) {
       if (controller.signal.aborted) return;
       setHealth('offline');
@@ -59,6 +71,7 @@ export function App() {
     void refreshHealth();
     return () => {
       healthRequest.current?.abort();
+      configRequest.current?.abort();
       generationRequest.current?.abort();
     };
   }, [refreshHealth]);
@@ -135,10 +148,10 @@ export function App() {
         <div className="demo-mode"><span className="demo-mode-icon"><Code2 size={17}/></span><div><strong>{advanced ? 'Advanced AI Mode' : settings.isDemo ? 'Demo mode' : settings.provider?.name ?? settings.selection.providerId}</strong><span>{advanced ? 'Code Agent · Local preview' : settings.isDemo ? 'Game mẫu · Không gọi AI' : 'AI generation · GameSpec v1'}</span></div></div>
       </div>
 
-      <div className="generation-mode" role="group" aria-label="Chế độ tạo game">
-        <button type="button" aria-pressed={!advanced} disabled={busy || advancedBusy} onClick={() => setAdvanced(false)}>Standard Mode <span>GameSpec · nhanh và ổn định</span></button>
-        <button type="button" aria-pressed={advanced} disabled={busy || advancedBusy} onClick={() => setAdvanced(true)}>Advanced AI Mode <span>Code mới · kiểm tra và sửa lỗi</span></button>
-      </div>
+      {advancedAvailable && <div className="generation-mode" role="group" aria-label="Chế độ tạo game">
+        <button type="button" aria-pressed={!advanced} disabled={busy || advancedBusy} onClick={() => setAdvancedChoice(false)}>Standard Mode <span>GameSpec · nhanh và ổn định</span></button>
+        <button type="button" aria-pressed={advanced} disabled={busy || advancedBusy} onClick={() => setAdvancedChoice(true)}>Advanced AI Mode <span>Code mới · kiểm tra và sửa lỗi</span></button>
+      </div>}
       {health === 'offline' && <div className="connection-alert" role="alert">
         <CircleAlert size={17}/><span>{healthError}</span>
         <button type="button" onClick={() => void refreshHealth()}><RefreshCw size={13}/> Kiểm tra lại</button>

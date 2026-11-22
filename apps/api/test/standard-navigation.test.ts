@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GameSpecSchema, type GameSpec } from '@game-creator/contracts';
 import {
   buildNavigation, buildPhysicalGraph, collectibleCost, patrolRect, touchesCoin, type PhysicalGraph,
@@ -10,6 +10,11 @@ import { repairGamePlacement } from '../src/services/repair-game-placement.js';
 import { sampleSpec } from './fixtures.js';
 import { fixtureSpec } from './standard-fixtures.js';
 import { lowCorridor, patrolCrossing, platformer, stationaryHurdle, twoPits } from './standard-scenarios.js';
+
+// These tests build the physical graph and hazard analysis of recorded games: ~4 s of CPU
+// alone, several times that when the whole suite runs in parallel. Vitest's default 5 s
+// timeout made one of them fail intermittently, so the limit is explicit here.
+vi.setConfig({ testTimeout: 30_000 });
 
 const body = { half: 14, speed: 260, jumpSpeed: 560, gravity: 1200 };
 const reach = (game: GameSpec, avoidEnemies: boolean) => {

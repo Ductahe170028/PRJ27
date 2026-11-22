@@ -174,7 +174,7 @@ nano apps/api/.env        # điền khóa trong trình soạn thảo, không dù
 | `HOST` | `127.0.0.1` | `127.0.0.1` | Backend chỉ nghe loopback. Không đặt `0.0.0.0` |
 | `PORT` | `3001` | `3001` | Nginx proxy tới `127.0.0.1:3001`. Số nguyên 1–65535, nếu không backend không khởi động |
 | `TRUST_PROXY` | `loopback` | production: `loopback`; khác: `off` | Chỉ tin `X-Forwarded-For` khi kết nối TCP đến từ loopback (chính Nginx). Giá trị khác `loopback`/`off` làm backend từ chối khởi động |
-| `ADVANCED_AI_ENABLED` | `false` | `true` (nhưng bị `NODE_ENV=production` chặn) | Đặt `false` rõ ràng để có hai điều kiện cùng tắt Advanced |
+| `ADVANCED_AI_ENABLED` | `false` | không đặt (mặc định tắt); `true` để bật khi dev (vẫn bị `NODE_ENV=production` chặn) | Mặc định đã tắt. Production vẫn nên đặt `false` rõ ràng để có hai điều kiện cùng tắt Advanced |
 
 **AI Provider**, đặt trong `apps/api/.env` (bí mật):
 
@@ -591,7 +591,7 @@ pm2 status
 pm2 logs gamecreator-api --lines 30 --nostream
 ```
 
-Log khởi động mong đợi: `[api] http://127.0.0.1:3001 ...` và `[advanced] tắt (NODE_ENV=production hoặc ADVANCED_AI_ENABLED=false): ...`. Nếu thấy lỗi `PORT`/`AI_*`/`TRUST_PROXY phải là...`, đó là kiểm tra biến môi trường.
+Log khởi động mong đợi: `[api] http://127.0.0.1:3001 ...` và `[advanced] tắt (mặc định; chỉ bật khi ADVANCED_AI_ENABLED=true và NODE_ENV khác production): ...`. Nếu thấy lỗi `PORT`/`AI_*`/`TRUST_PROXY phải là...`, đó là kiểm tra biến môi trường.
 
 Tự chạy sau reboot (PM2 in ra một lệnh `sudo` cần chạy nguyên văn):
 

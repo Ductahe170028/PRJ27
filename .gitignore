@@ -17,3 +17,6 @@ coverage/
 **/.htpasswd*
 deploy/**/*.pem
 deploy/**/*.key
+
+# Removed skill pack: keep the folder from being added back by mistake.
+/skill/

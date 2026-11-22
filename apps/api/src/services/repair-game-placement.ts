@@ -1,3 +1,4 @@
+// FROZEN (legacy-standard-v1): Standard platformer/top-down; no new development. See docs/DIRECTION.md.
 import { GameSpecSchema, type GameSpec } from '@game-creator/contracts';
 import { AIError } from '../providers/errors.js';
 import { withReason } from './failure-reason.js';

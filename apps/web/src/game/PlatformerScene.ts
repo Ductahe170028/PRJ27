@@ -1,3 +1,4 @@
+// Still used by demo mode (Moonlight Run); do not extend.
 import Phaser from 'phaser';
 import type { GameDefinition } from '@game-creator/contracts';
 

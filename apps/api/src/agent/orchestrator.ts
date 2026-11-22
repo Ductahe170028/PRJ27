@@ -1,3 +1,4 @@
+// FROZEN: Advanced Mode is off by default and not part of the MVP. See docs/DIRECTION.md.
 import { randomUUID } from 'node:crypto';
 import { CODE_MAX_REPAIRS, type AgentEvent, type AgentRequest } from '@game-creator/contracts';
 import { AIError, StructuredOutputError, normalizeProviderError } from '../providers/errors.js';

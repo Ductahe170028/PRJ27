@@ -13,7 +13,7 @@ import { GENERIC_SPEC_MESSAGE, withReason } from './failure-reason.js';
 import { repairInWorker, type RepairRunner } from './isolated-repair.js';
 import type { AIRequest } from '../providers/ai-provider.js';
 import { waitForRateLimit } from '../providers/groq-rate-limit.js';
-import { redactDiagnostics } from '../agent/run-diagnostics.js';
+import { redactDiagnostics } from './redact.js';
 import { diagnosticSink } from '../providers/diagnostic-sink.js';
 import {
   openStandardDiagnostics, type StandardDiagnostics, type StandardFinish, type StandardRequest, type StandardValidation,

@@ -1,3 +1,4 @@
+// FROZEN (legacy-standard-v1): Standard platformer/top-down; no new development. See docs/DIRECTION.md.
 // Tick simulation of one platformer jump or fall, following Phaser Arcade as used
 // by GameSpecScene. Knows nothing about enemies, coins or repair.
 

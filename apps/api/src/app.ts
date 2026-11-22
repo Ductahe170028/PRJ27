@@ -86,7 +86,7 @@ export function createApp(options: AppOptions = {}) {
     });
   });
 
-  const advancedEnabled = options.advancedEnabled ?? (process.env.ADVANCED_AI_ENABLED !== 'false' && process.env.NODE_ENV !== 'production');
+  const advancedEnabled = options.advancedEnabled ?? (process.env.ADVANCED_AI_ENABLED === 'true' && process.env.NODE_ENV !== 'production');
   // The sandbox and queue are only built when Advanced can run at all.
   const agent = options.agent ?? (advancedEnabled ? createAgent(generation, process.env) : new AgentOrchestrator(generation));
   app.locals.agent = agent;

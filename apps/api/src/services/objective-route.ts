@@ -1,3 +1,4 @@
+// FROZEN (legacy-standard-v1): Standard platformer/top-down; no new development. See docs/DIRECTION.md.
 // Objective routes over the zero-damage macro graph of a platformer. Pure
 // functions on plain data: the caller passes the macro edges, never a game scene.
 //

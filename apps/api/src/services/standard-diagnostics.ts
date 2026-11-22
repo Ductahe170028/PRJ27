@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { redactDiagnostics, type DiagnosticIO } from '../agent/run-diagnostics.js';
+import { redactDiagnostics, type DiagnosticIO } from './redact.js';
 import type { DiagnosticSink, ProviderExchange } from '../providers/diagnostic-sink.js';
 import type { SpecIssue } from '../providers/errors.js';
 

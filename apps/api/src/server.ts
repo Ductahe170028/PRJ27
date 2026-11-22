@@ -15,7 +15,7 @@ const agent = app.locals.agent as AgentOrchestrator;
 const server = app.listen(port, host, () => {
   console.log(`[api] http://${host}:${port} — AI Game Creator (Gemini / Groq / demo)`);
   if (!app.locals.advancedEnabled) {
-    console.log('[advanced] tắt (NODE_ENV=production hoặc ADVANCED_AI_ENABLED=false): không có sandbox nào được khởi tạo.');
+    console.log('[advanced] tắt (mặc định; chỉ bật khi ADVANCED_AI_ENABLED=true và NODE_ENV khác production): không có sandbox nào được khởi tạo.');
     return;
   }
   // Advanced reports itself unavailable until the sandbox self-check passes.

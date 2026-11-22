@@ -78,12 +78,15 @@ const agent = new AgentOrchestrator(generationService, new PlaywrightGameTester(
 // Label every response, so a stray request to this server is never mistaken for
 // the real API. The /api/health body cannot carry it: HealthResponseSchema is
 // strict and the web client rejects any extra field.
+// E2E_ADVANCED=0 starts the same server with Advanced switched off, as it is by
+// default in the real API. The Advanced specs use the default here (on).
+const advancedEnabled = process.env.E2E_ADVANCED !== '0';
 const root = express();
 root.use((_request, response, next) => { response.setHeader('X-Server-Mode', 'mock'); next(); });
-root.use(createApp({ generationService, agent }));
+root.use(createApp({ generationService, agent, advancedEnabled }));
 const port = Number(process.env.PORT ?? 3101);
 const server = root.listen(port, '127.0.0.1', () => {
-  console.warn(`\n=== MOCK SERVER – không gọi AI thật (http://127.0.0.1:${port}, header X-Server-Mode: mock) ===\n`);
+  console.warn(`\n=== MOCK SERVER – không gọi AI thật (http://127.0.0.1:${port}, header X-Server-Mode: mock, Advanced ${advancedEnabled ? 'bật' : 'tắt'}) ===\n`);
 });
 const shutdown = () => server.close(() => process.exit(0));
 process.on('SIGINT', shutdown);

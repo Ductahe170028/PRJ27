@@ -2,11 +2,15 @@
 
 **Standard Mode** giữ Phase 2: nhập mô tả tiếng Việt/tiếng Anh, chọn **Gemini/Groq**, chơi game 2D từ **GameSpec v1**. AI chỉ sinh dữ liệu JSON; renderer Phaser của dự án dựng game trong iframe sandbox. Hỗ trợ **platformer** và **top-down collector/dodge**: di chuyển, vật cản, kẻ địch, máu, điểm, nhặt xu, thắng/thua, chơi lại và bàn phím/cảm ứng.
 
-**Advanced AI Mode** thêm AI Code Agent: lập kế hoạch → viết TypeScript → kiểm tra → chạy Chromium → sửa tối đa 2 lần → preview. Code tự triển khai cơ chế mới trên API Phaser giới hạn, không dùng GameSpec hoặc template game có sẵn. Chỉ mở để **thử nghiệm local**; chưa dùng làm dịch vụ công khai. Xem [kiến trúc, API, giới hạn và bảo mật Phase 3](docs/phase3.md).
+**Advanced AI Mode** (đóng băng, tắt mặc định) thêm AI Code Agent: lập kế hoạch → viết TypeScript → kiểm tra → chạy Chromium → sửa tối đa 2 lần → preview. Code tự triển khai cơ chế mới trên API Phaser giới hạn, không dùng GameSpec hoặc template game có sẵn. Chỉ mở để **thử nghiệm local**; chưa dùng làm dịch vụ công khai. Xem [kiến trúc, API, giới hạn và bảo mật Phase 3](docs/phase3.md).
 
 Demo **Moonlight Run** của Phase 1 được giữ nguyên và chạy không cần key. Demo là lựa chọn mặc định ban đầu; lỗi AI không tự chuyển sang demo hay provider khác. Chỉ lựa chọn provider/model được lưu trong localStorage; game không được lưu khi reload.
 
 Xem [báo cáo Code Audit + Refactor Phase 1–3](docs/audit-phase1-3.md) để biết các lỗi đã sửa, thay đổi module, kết quả hồi quy và rủi ro còn lại trước Phase 4.
+
+## Hướng phát triển
+
+Sản phẩm sẽ chuyển sang **Top-down Survival Shooter** với spec mới, tách khỏi GameSpec v1. Platformer, Top-down Dodge/Collect và Advanced Mode đã đóng băng (giữ nguyên, không phát triển thêm). Chi tiết quyết định, kiến trúc đích và lộ trình: [docs/DIRECTION.md](docs/DIRECTION.md).
 
 ## Chạy trên Windows
 
@@ -27,9 +31,9 @@ Mở **http://127.0.0.1:5173**; backend **http://127.0.0.1:3001**. `Ctrl+C` đ�
 5. Bấm vào preview để điều khiển bằng bàn phím. Điều khiển hiển thị dưới preview; **R** chơi lại. Platformer có nhảy, top-down di chuyển bốn hướng.
 6. Chuyển sang provider còn lại (hoặc model khác), nhập prompt khác và tạo game mới.
 
-Để thử Phase 3: chọn **Advanced AI Mode** → chọn Gemini/Groq trong Settings → nhập `Tạo game bắn máy bay, có đạn, kẻ địch xuất hiện liên tục, điểm số và boss` → Generate Game. Theo dõi Planning/Coding/Validating/Testing/Repairing, mở Console/log khi có lỗi. Thử tiếp `Tạo game đỡ bóng phá gạch, thanh đỡ di chuyển ngang, bóng bật vào tường, phá hết gạch để thắng` để so sánh cơ chế. **Retry** bắt đầu lượt mới do bạn chủ động bấm, có tính quota. Advanced dùng bàn phím và chuột; chưa có điều khiển cảm ứng như Standard.
+Để thử Phase 3 (Advanced đang đóng băng và tắt mặc định: đặt `ADVANCED_AI_ENABLED=true` trong `apps/api/.env` rồi chạy lại API): chọn **Advanced AI Mode** → chọn Gemini/Groq trong Settings → nhập `Tạo game bắn máy bay, có đạn, kẻ địch xuất hiện liên tục, điểm số và boss` → Generate Game. Theo dõi Planning/Coding/Validating/Testing/Repairing, mở Console/log khi có lỗi. Thử tiếp `Tạo game đỡ bóng phá gạch, thanh đỡ di chuyển ngang, bóng bật vào tường, phá hết gạch để thắng` để so sánh cơ chế. **Retry** bắt đầu lượt mới do bạn chủ động bấm, có tính quota. Advanced dùng bàn phím và chuột; chưa có điều khiển cảm ứng như Standard.
 
-Advanced mặc định bật ở local nếu `ADVANCED_AI_ENABLED` không phải `false`, luôn tắt khi `NODE_ENV=production`. Có thể thêm `ADVANCED_AI_ENABLED=false` vào `apps/api/.env` để tắt. Không cần key mới, không thêm key ở frontend. Mặc định Advanced kiểm tra game trong **Docker sandbox** (`ADVANCED_TESTER=docker`): cần Docker đang chạy và image `gamecreator-sandbox:pw1.60.0` (`npm run sandbox:build`, rồi `npm run sandbox:verify`). Nếu chưa có Docker và chỉ đang phát triển trên máy cá nhân, thêm `ADVANCED_TESTER=local` vào `apps/api/.env` để chạy Chromium trực tiếp (chạy `npx playwright install chromium` và build runtime bằng `npm run build` hoặc `npm run dev`); chế độ `local` bị từ chối khi `NODE_ENV=production`. Nếu báo `tester_unavailable`, đọc thông báo trong Advanced: backend nói rõ Docker hay kiểm tra cách ly nào chưa đạt. Không dùng `--no-sandbox` để bỏ qua lỗi Chromium trên máy chủ.
+Advanced **mặc định tắt** (đóng băng, không thuộc MVP; UI không hiện nút chọn chế độ). Chỉ bật khi `ADVANCED_AI_ENABLED=true` trong `apps/api/.env` **và** `NODE_ENV` khác `production`. Không cần key mới, không thêm key ở frontend. Mặc định Advanced kiểm tra game trong **Docker sandbox** (`ADVANCED_TESTER=docker`): cần Docker đang chạy và image `gamecreator-sandbox:pw1.60.0` (`npm run sandbox:build`, rồi `npm run sandbox:verify`). Nếu chưa có Docker và chỉ đang phát triển trên máy cá nhân, thêm `ADVANCED_TESTER=local` vào `apps/api/.env` để chạy Chromium trực tiếp (chạy `npx playwright install chromium` và build runtime bằng `npm run build` hoặc `npm run dev`); chế độ `local` bị từ chối khi `NODE_ENV=production`. Nếu báo `tester_unavailable`, đọc thông báo trong Advanced: backend nói rõ Docker hay kiểm tra cách ly nào chưa đạt. Không dùng `--no-sandbox` để bỏ qua lỗi Chromium trên máy chủ.
 
 ## API key và model
 

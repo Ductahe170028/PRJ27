@@ -20,6 +20,8 @@
     "build": "npm run build:contracts && npm run build -w @game-creator/api && npm run build -w @game-creator/web",
     "typecheck": "npm run build:contracts && npm run typecheck --workspaces --if-present && tsc -p tsconfig.tools.json",
     "test": "npm run build:contracts && vitest run",
+    "test:advanced": "npm run build:contracts && vitest run -c vitest.advanced.config.ts",
+    "test:all": "npm run test && npm run test:advanced",
     "test:e2e": "npm run build && playwright test",
     "sandbox:build": "npm run build && docker build -f deploy/sandbox/Dockerfile -t gamecreator-sandbox:pw1.60.0 .",
     "sandbox:verify": "npm run sandbox:verify -w @game-creator/api",
