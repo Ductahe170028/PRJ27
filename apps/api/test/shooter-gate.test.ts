@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ShooterLevelSchema, botInput, playLevel, type PlayResult, type ShooterLevel } from '@game-creator/contracts';
+import { ShooterLevelSchema, createCasualBot, playLevel, type PlayResult, type ShooterLevel } from '@game-creator/contracts';
 import { AIError } from '../src/providers/errors.js';
 import { ShooterBriefSchema, type ShooterBrief } from '../src/shooter/brief.js';
 import { compileShooter } from '../src/shooter/compile.js';
@@ -39,7 +39,7 @@ describe('thinning a level the bot cannot win', () => {
     expect(gated.report.wins).toBe(GATE_SEEDS);
   });
 
-  it('never goes below 30% of the original density: 4 steps at most, then unwinnable_level', () => {
+  it('never goes below 25% of the original density: 6 steps at most, then unwinnable_level', () => {
     const level = compileShooter(brief(), 5).level;
     let calls = 0;
     const play = (lvl: ShooterLevel) => { calls += 1; return result(lvl, false); };
@@ -49,7 +49,8 @@ describe('thinning a level the bot cannot win', () => {
     expect(thrown).toMatchObject({ code: 'unwinnable_level', status: 422, issues: ['goal'], message: UNWINNABLE_MESSAGE });
     expect((thrown as AIError).message).toBe('Không dựng được màn chơi thắng được với yêu cầu này. Hãy giảm độ khó hoặc đổi vũ khí/số máu.');
     expect(calls).toBe(GATE_SEEDS * (1 + MAX_THIN_STEPS));
-    expect(0.8 ** MAX_THIN_STEPS).toBeGreaterThanOrEqual(0.3);
+    expect(MAX_THIN_STEPS).toBe(6); // 4 while the gate's bot was the expert; the casual bot needs up to 6 (docs/shooter-calibration.md)
+    expect(0.8 ** MAX_THIN_STEPS).toBeGreaterThanOrEqual(0.25);
   });
 
   it('thinning really removes enemies even when every wave holds only one or two', () => {
@@ -207,10 +208,11 @@ describe('a kill goal that is too heavy is lowered, not refused', () => {
   });
 
   it('with the real bot: a heavy goal with brutes is lowered, and the result is the same bit for bit', () => {
+    // (with the pistol or the heavy gun, the casual bot cannot win a 200-kill brute level even after three reductions: unwinnable_level)
     const b = ShooterBriefSchema.parse({
       version: 'brief-1', title: 'Heavy', theme: 'zombie-city', map: 'pillars',
       enemies: [{ type: 'brute', share: 5 }, { type: 'runner', share: 3 }, { type: 'swarmer', share: 2 }],
-      intensity: 3, playerHealth: 'normal', weapon: 'heavy', goal: { type: 'kill', count: 200 }, unsupported: [],
+      intensity: 3, playerHealth: 'normal', weapon: 'rapid', goal: { type: 'kill', count: 200 }, unsupported: [],
     });
     const first = compileAndGate({ brief: b, seed: 1 });
     expect(first.report.killReductions).toBeGreaterThan(0);
@@ -224,12 +226,28 @@ describe('a kill goal that is too heavy is lowered, not refused', () => {
 });
 
 describe('the gate with the real bot', () => {
+  it('the gate plays with the casual bot, says so in its report, and gives the same answer every time', () => {
+    const level = compileShooter(brief({ intensity: 3 }), 21).level;
+    const first = gateLevel(level);
+    expect(first.report.bot).toBe('casual');
+    expect(JSON.stringify(gateLevel(level))).toBe(JSON.stringify(first));
+    // a test's own player is named as such
+    expect(gateLevel(level, { play: (lvl) => result(lvl, true, 1) }).report.bot).toBe('custom');
+  });
+
+  it('what it reports is what a fresh casual bot does on the same seeds', () => {
+    const level = compileShooter(brief({ intensity: 3 }), 21).level;
+    const gated = gateLevel(level);
+    const wins = [1, 2, 3].filter((i) => playLevel({ ...gated.level, seed: gated.level.seed + i }, createCasualBot(gated.level.seed + i)).status === 'won').length;
+    expect(gated.report.wins).toBe(wins);
+  });
+
   it('a brief that is too hard comes out as a level the bot wins', () => {
     const b = brief({ intensity: 5, playerHealth: 'fragile', enemies: [{ type: 'brute', share: 6 }, { type: 'swarmer', share: 4 }], map: 'rooms' });
     for (const seed of [1, 2, 3]) {
       const out = compileAndGate({ brief: b, seed });
       expect(ShooterLevelSchema.safeParse(out.level).success).toBe(true);
-      const wins = [1, 2, 3].filter((i) => playLevel({ ...out.level, seed: out.level.seed + i }, botInput).status === 'won').length;
+      const wins = [1, 2, 3].filter((i) => playLevel({ ...out.level, seed: out.level.seed + i }, createCasualBot(out.level.seed + i)).status === 'won').length;
       expect(wins, `seed ${seed}`).toBeGreaterThanOrEqual(MIN_WINS);
       expect(out.report.wins).toBeGreaterThanOrEqual(MIN_WINS);
     }

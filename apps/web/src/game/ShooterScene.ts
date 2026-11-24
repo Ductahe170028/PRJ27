@@ -1,16 +1,7 @@
 import Phaser from 'phaser';
-import {
-  BULLET_RADIUS, ENEMY_TYPES, FIELD, PLAYER_RADIUS, TICK_RATE, createSim, elapsedSeconds, step,
-  type ShooterInput, type ShooterLevel, type ShooterState,
-} from '@game-creator/contracts';
-
-const color = (hex: string) => Number.parseInt(hex.slice(1), 16);
-/** Scales each channel of #rrggbb by `factor` (<1 darker, >1 lighter, capped). */
-function shade(hex: string, factor: number): number {
-  const value = color(hex);
-  const channel = (shift: number) => Math.min(255, Math.round(((value >> shift) & 255) * factor));
-  return (channel(16) << 16) | (channel(8) << 8) | channel(0);
-}
+import { TICK_RATE, createSim, elapsedSeconds, step, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
+import { hudLine } from '../lib/shooter-text';
+import { createBanner, createHud, drawBoard, drawState } from './shooter-draw';
 
 const TICK_MS = 1000 / TICK_RATE;
 /** Ticks run per frame to catch up after a slow frame. Beyond this the lag is dropped. */
@@ -19,11 +10,14 @@ type Keys = Record<'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
 
 /** Draws a ShooterState and reads input. The game itself is `createSim`/`step`
  * in the contracts package: this scene has no rules, no physics and no
- * collision of its own, so what is drawn is exactly what was simulated. */
+ * collision of its own, so what is drawn is exactly what was simulated.
+ * What is drawn lives in shooter-draw.ts; the sentences in lib/shooter-text.ts. */
 export class ShooterScene extends Phaser.Scene {
   private state!: ShooterState;
   private art!: Phaser.GameObjects.Graphics;
   private hud!: Phaser.GameObjects.Text;
+  private banner: ReturnType<typeof createBanner> | undefined;
+  private bannerMs = 0;
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined;
   private keys: Keys | undefined;
   private accumulator = 0;
@@ -37,22 +31,15 @@ export class ShooterScene extends Phaser.Scene {
   create() {
     const { level } = this;
     this.state = createSim(level);
-    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.lastHud = '';
+    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.lastHud = ''; this.bannerMs = 0;
     this.cameras.main.setBackgroundColor(level.theme.background);
 
-    const board = this.add.graphics();
-    board.lineStyle(1, color(level.theme.accent), 0.09);
-    for (let x = 0; x < 960; x += 40) board.lineBetween(x, FIELD.top, x, FIELD.bottom);
-    for (let y = FIELD.top + 10; y < FIELD.bottom; y += 40) board.lineBetween(0, y, 960, y);
-    for (const block of level.obstacles) {
-      board.fillStyle(color(level.theme.wall), 1).fillRect(block.x - block.width / 2, block.y - block.height / 2, block.width, block.height);
-      board.lineStyle(2, color(level.theme.accent), 0.7).strokeRect(block.x - block.width / 2, block.y - block.height / 2, block.width, block.height);
-    }
-    this.add.rectangle(480, 35, 960, 70, 0x060d18, 0.8).setDepth(8);
-    this.add.text(22, 12, level.title, { fontFamily: 'system-ui', fontSize: '20px', color: '#ffffff' }).setDepth(9);
-    this.hud = this.add.text(22, 43, '', { fontFamily: 'system-ui', fontSize: '13px', color: '#d6e1ee' }).setDepth(10);
-    this.add.text(938, 18, 'SURVIVAL SHOOTER', { fontFamily: 'monospace', fontSize: '12px', color: level.theme.accent }).setOrigin(1, 0).setDepth(9);
+    drawBoard(this, level);
+    this.hud = createHud(this, level);
     this.art = this.add.graphics().setDepth(5);
+    // The goal, for the first 3 seconds of every game (and again after R). The game runs underneath.
+    this.banner = createBanner(this, level);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.banner?.dispose());
 
     this.setupControls();
     const result = document.getElementById('game-result');
@@ -64,6 +51,8 @@ export class ShooterScene extends Phaser.Scene {
 
   update(_time: number, delta: number) {
     if (this.finished) return;
+    this.bannerMs += delta;
+    this.banner?.update(this.bannerMs);
     this.accumulator += Math.min(delta, 250);
     const input = this.readInput();
     let ticks = 0;
@@ -96,39 +85,12 @@ export class ShooterScene extends Phaser.Scene {
   }
 
   private draw() {
-    const { state, level } = this;
-    const { player } = state;
-    const g = this.art;
-    g.clear();
-    for (const enemy of state.enemies) {
-      const kind = ENEMY_TYPES[enemy.type];
-      if (enemy.type === 'brute') {
-        g.fillStyle(shade(level.theme.enemy, 0.55), 1).fillCircle(enemy.x, enemy.y, kind.radius);
-        g.lineStyle(3, color(level.theme.enemy), 1).strokeCircle(enemy.x, enemy.y, kind.radius - 1.5);
-        // hit points left, as the share of an inner disk
-        g.fillStyle(color(level.theme.enemy), 1).fillCircle(enemy.x, enemy.y, (kind.radius - 6) * (enemy.hp / kind.hp));
-      } else {
-        g.fillStyle(enemy.type === 'swarmer' ? shade(level.theme.enemy, 1.2) : color(level.theme.enemy), 1).fillCircle(enemy.x, enemy.y, kind.radius);
-        g.lineStyle(1.5, 0x101b30, 0.8).strokeCircle(enemy.x, enemy.y, kind.radius);
-      }
-    }
-    g.fillStyle(color(level.theme.bullet), 1);
-    for (const bullet of state.bullets) g.fillCircle(bullet.x, bullet.y, BULLET_RADIUS);
-    // The player blinks while protected; the barrel points where it aims.
-    const protectedNow = state.tick < player.invulnerableUntilTick && Math.floor(state.tick / 5) % 2 === 0;
-    const alpha = protectedNow ? 0.35 : 1;
-    const dx = Math.cos(player.aim);
-    const dy = Math.sin(player.aim);
-    g.lineStyle(6, 0xffffff, alpha).lineBetween(player.x + dx * 6, player.y + dy * 6, player.x + dx * (PLAYER_RADIUS + 9), player.y + dy * (PLAYER_RADIUS + 9));
-    g.fillStyle(color(level.theme.player), alpha).fillCircle(player.x, player.y, PLAYER_RADIUS);
-    g.lineStyle(2, 0x101b30, alpha).strokeCircle(player.x, player.y, PLAYER_RADIUS);
+    drawState(this.art, this.state, this.level);
   }
 
   private hudText(): string {
     const { state, level } = this;
-    const seconds = Math.floor(elapsedSeconds(state));
-    const goal = level.win.type === 'survive' ? `Sống sót ${Math.min(seconds, level.win.seconds)}/${level.win.seconds}s` : `Mục tiêu hạ ${level.win.count}`;
-    return `Máu ${state.player.hp}/${state.player.maxHp}  ·  Điểm ${state.score}  ·  Hạ ${state.kills}  ·  ${goal}  ·  R: chơi lại`;
+    return hudLine(level.win, { hp: state.player.hp, maxHp: state.player.maxHp, score: state.score, kills: state.kills, seconds: elapsedSeconds(state) });
   }
 
   private updateHud() {
@@ -143,6 +105,7 @@ export class ShooterScene extends Phaser.Scene {
   private finish() {
     this.finished = true;
     this.mouseDown = false;
+    this.banner?.dispose();
     const { state, level } = this;
     const won = state.status === 'won';
     const result = document.getElementById('game-result');

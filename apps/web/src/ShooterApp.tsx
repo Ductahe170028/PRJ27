@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUpRight, Check, CircleAlert, Code2, Crosshair, Gamepad2
 import { PROMPT_MAX_LENGTH, type ShooterProject } from '@game-creator/contracts';
 import { checkHealth, describeError, generateShooter, type ApiIssue } from './lib/api';
 import { promptLimitWarning, promptToSend } from './lib/prompt-draft';
+import { levelInfo } from './lib/shooter-text';
 import { AppHeader, ConnectionAlert, type Health } from './components/AppHeader';
 import { EmptyPreview } from './components/EmptyPreview';
 import { GamePreview } from './components/GamePreview';
@@ -35,6 +36,8 @@ export function ShooterApp() {
   const busy = phase === 'generating' || phase === 'booting';
   // Stable between renders: a new object here would be a new preview source on every render.
   const source = useMemo(() => (project ? { id: project.id, title: project.title, game: project.level } : null), [project]);
+  // The card is read from the level itself, so it can never disagree with the game that is played.
+  const info = useMemo(() => (project ? levelInfo(project.level) : null), [project]);
 
   const refreshHealth = useCallback(async () => {
     healthRequest.current?.abort();
@@ -159,6 +162,16 @@ export function ShooterApp() {
               </div>)}
             </div>
           </section>
+
+          {project && info && <section className="panel status-panel shooter-info" aria-label="Thông tin màn">
+            <div className="status-heading"><Gamepad2 size={14}/><h2>Thông tin màn</h2></div>
+            <dl>
+              <div><dt>Mục tiêu</dt><dd data-info="goal">{info.goal}</dd></div>
+              <div><dt>Máu tối đa</dt><dd data-info="health">{info.maxHealth}</dd></div>
+              <div><dt>Quái tối đa</dt><dd data-info="enemies">{info.maxEnemies}</dd></div>
+              <div><dt>Súng</dt><dd data-info="weapon">{info.weapon}<small>{info.weaponDetail}</small></dd></div>
+            </dl>
+          </section>}
 
           {project && project.notices.length > 0 && <section className="panel status-panel shooter-notices" role="status" aria-label="Chưa hỗ trợ và điều chỉnh">
             <div className="status-heading"><CircleAlert size={14}/><h2>Chưa hỗ trợ / điều chỉnh</h2></div>

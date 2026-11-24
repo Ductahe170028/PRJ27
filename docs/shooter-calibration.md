@@ -1,15 +1,85 @@
 # Hiệu chỉnh mật độ quái của shooter
 
-Ngày chạy: 2026-11-22 (Stage 3). Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
+Phần "Stage 4A" ngay dưới là số liệu mới nhất (bot bình thường); các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
 
 Lưới: intensity 1-5 x mix quái (runner, brute, swarmer, cả ba) x map (5) x weapon (3) x health (3) x 3 seed; mục tiêu sống sót 60 s.
 "Trước cổng" là bot chơi level đúng như compiler dựng; "sau cổng" là level service sẽ trả (compile + cổng), chơi trên seed mà cổng chưa dùng.
+
+## Stage 4A: cổng dùng bot "người chơi bình thường" (mới nhất)
+
+Người chơi thử Stage 3 thấy màn "khó" dù cổng đã chỉnh: bot trong cổng (`botInput`) ngắm chuẩn và phản xạ tức thì nên giỏi hơn người rõ rệt. Từ Stage 4A cổng dùng `createCasualBot(seed)` (`packages/contracts/src/shooter/casual-bot.ts`), mỗi ván một bot mới; `botInput` ("bot giỏi") chỉ còn để test và để so sánh ở đây. Báo cáo cổng ghi `bot: 'casual'`. Mọi số dưới đây là từ `npx tsx scripts/calibrate-shooter.ts` (chạy từ `apps/api`; `--bot=casual|expert`, `--casual=reaction=18,aim=12,flee=0.8,wall=0.5,fire=0.85` để thử số khác mà không sửa mã; `--out=tệp` để lưu bảng). `INTENSITY_RATE` không đổi.
+
+### Tham số `CASUAL` (một nơi, đều là ước đoán)
+
+| tham số | giá trị | ý nghĩa |
+|---|---|---|
+| `reactionTicks` | 18 (0,3 s) | chỉ "nhìn lại" sân mỗi 18 tick, giữa hai lần dùng ảnh cũ (giới hạn ≤ 24) |
+| `aimErrorDeg` | 12° | mỗi lần nhìn thêm sai số góc đều trong ±12°, giữ đến lần nhìn sau (giới hạn ≤ 12) |
+| `fireRangeShare` | 0,85 | chỉ bắn khi mục tiêu trong 85% tầm súng |
+| `fleeScale` | 0,8 | né quái trong 120 px (bot giỏi 150 px) |
+| `wallScale` | 0,5 | tránh tường và cạnh trong 30 px (bot giỏi 60 px); không có đường đi vòng |
+
+Giá trị khởi điểm của prompt (12 tick, 5°) cho bot gần như ngang bot giỏi (100 / 98,9 / 83,7 / 55,4 / 42,6%): intensity 2 và 3 vượt khoảng đặt ra. Các bộ đã thử (thắng trước cổng, intensity 1 → 5, lưới 2700 ván):
+
+| bot | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| bot giỏi | 100,0 | 100,0 | 87,6 | 63,3 | 48,0 |
+| 12 tick, 5° (khởi điểm) | 100,0 | 98,9 | 83,7 | 55,4 | 42,6 |
+| 18 tick, 8° | 99,4 | 94,3 | 74,8 | 48,9 | 30,7 |
+| 24 tick, 10° | 98,9 | 92,2 | 58,9 | 42,6 | 24,8 |
+| 24 tick, 12°, né 50%, tường 30% | 97,4 | 74,3 | 50,7 | 38,7 | 17,4 |
+| 16 tick, 12° | 98,5 | 86,1 | 57,2 | 42,2 | 24,8 |
+| **18 tick, 12° (chọn)** | **99,6** | **87,0** | **57,8** | **43,3** | **24,3** |
+| khoảng yêu cầu | ≥ 90 | 70–90 | 50–75 | 30–55 | 15–40 |
+
+Bộ chọn nằm trong khoảng ở cả 5 mức và giữ nguyên né quái 80%, tường 50%, bắn trong 85% tầm; độ trễ và sai số đều trong giới hạn (≤ 24 tick, ≤ 12°). Mức 2 sát cận trên (87,0 so với 90) nên là mức nhạy nhất với chỉnh sau này.
+
+### Bot bình thường và bot giỏi cạnh nhau (survive 60 s, 2700 ván mỗi pha)
+
+| intensity | thắng trước cổng: giỏi → bình thường | hp còn trước | dựng được sau cổng | bot thắng sau cổng (seed chưa dùng) | ván bị giảm mật độ (trên 540) |
+|---|---|---|---|---|---|
+| 1 | 100,0 → 99,6% | 1,000 → 0,980 | 100 → 100% | 100,0 → 98,9% | 0 → 1 (0%) |
+| 2 | 100,0 → 87,0% | 0,991 → 0,774 | 100 → 100% | 99,8 → 96,3% | 0 → 75 (14%) |
+| 3 | 87,6 → 57,8% | 0,834 → 0,502 | 100 → 100% | 94,4 → 84,1% | 66 → 233 (43%) |
+| 4 | 63,3 → 43,3% | 0,570 → 0,389 | 100 → 100% | 92,6 → 84,3% | 190 → 299 (55%) |
+| 5 | 48,0 → 24,3% | 0,443 → 0,195 | 100 → 100% | 88,9 → 82,0% | 286 → 390 (72%) |
+
+0 trên 2700 ván không dựng được (cả hai bot). Theo vũ khí (thắng trước cổng, bình thường / giỏi): súng ngắn 46 / 72%, bắn nhanh 94 / 100%, nặng 47 / 68%. Người ngắm lệch cần nhịp bắn cao để bù: với súng ngắn và súng nặng bot bình thường thua gần một nửa số ván trước cổng. Theo máu: yếu 58%, thường 62%, bền 67%; theo map: 61–64% (không map nào lệch); theo quái: runner 63%, trâu 72%, swarmer 63%, trộn 52%.
+
+### Cổng: `MAX_THIN_STEPS` từ 4 lên 6 (sai lệch so với Stage 3, có số liệu)
+
+Giữ 4 bước (sàn 41% mật độ) thì bot bình thường chỉ dựng được 100 / 100 / 100 / **98,0** / **87,0**% ở intensity 1-5 (81 trên 2700 ván bị `unwinnable_level`), thấp hơn mức ≥ 99% yêu cầu. Đo số bước cần (không giới hạn): intensity 4 cần 0 / 1 / 2 / 3 / 4 / 5 / 6 bước ở 241 / 58 / 102 / 83 / 45 / 10 / 1 ván; intensity 5 ở 150 / 77 / 77 / 96 / 70 / 56 / 14 ván. Không ván nào cần quá 6 bước, nên 6 bước (0,8^6 = 26%) cho 100%; 5 bước chỉ cho 97,4% ở intensity 5. Tham số bot không bù được: ván khó nhất là súng nặng với quái swarmer và máu yếu, nơi một phát một con quái không đủ ngay cả ở mật độ thấp. Hệ quả: màn khó nhất bị giảm xuống mật độ ngang intensity 1-2 và có thông báo "Độ khó được điều chỉnh để màn chơi thắng được."; nếu muốn giữ sàn 41%, đặt lại `MAX_THIN_STEPS = 4` và chấp nhận 13% ván intensity 5 bị từ chối.
+
+### Mục tiêu khác, bot bình thường (một seed, 900 ván mỗi mục tiêu, 6 bước)
+
+| mục tiêu | thắng trước cổng (intensity 1…5) | dựng được sau cổng | bot thắng sau cổng | ván bị giảm mật độ (trên 180) | ván bị giảm mục tiêu (trên 180) |
+|---|---|---|---|---|---|
+| survive 20 | 100 / 100 / 97,8 / 95,0 / 86,7% | 100% ở cả 5 | 100 / 100 / 99,4 / 97,8 / 97,2% | 0 / 0 / 0 / 7 / 29 | 0 |
+| survive 180 | 85,6 / 68,3 / 51,1 / 45,6 / 28,9% | 100 / 100 / 100 / 100 / **99,4%** | 93,3 / 82,8 / 82,2 / 80,6 / 81,0% | 17 / 51 / 87 / 95 / 124 | 0 |
+| kill 10 | 100 / 100 / 97,8 / 93,3 / 91,1% | 100% ở cả 5 | 100 / 100 / 97,8 / 95,6 / 96,1% | 3 / 0 / 12 / 15 / 17 | 0 |
+| kill 40 | 92,8 / 87,2 / 72,2 / 53,9 / 47,2% | 100% ở cả 5 | 94,4 / 91,7 / 81,1 / 80,6 / 71,1% | 16 / 33 / 59 / 87 / 104 | 5 / 5 / 12 / 20 / 25 |
+| kill 100 | 55,6 / 37,8 / 41,1 / 30,0 / 20,6% | 96,7 / 96,7 / 95,6 / 91,1 / 93,3% | 85,1 / 78,7 / 68,0 / 68,9 / 66,1% | 50 / 65 / 89 / 102 / 125 | 54 / 66 / 62 / 70 / 92 (30 / 37 / 34 / 39 / 51%) |
+| kill 200 | 25,0 / 26,1 / 25,0 / 23,3 / 12,8% | 71,7 / 76,1 / 76,1 / 72,2 / 55,6% | 74,4 / 75,2 / 71,5 / 73,1 / 69,0% | 36 / 49 / 60 / 70 / 65 | 78 / 87 / 93 / 82 / 55 (43 / 48 / 52 / 46 / 31%) |
+
+Đạt: dựng được ≥ 99% với survive 20/60/180 và kill 10/40 ở mọi intensity (thấp nhất 99,4%: survive 180 intensity 5, 1 trên 180 ván); bot bình thường thắng trên seed chưa dùng ≥ 55% ở mọi intensity và mọi mục tiêu (thấp nhất 66,1%).
+
+So với Stage 3 (bot giỏi, 4 bước; bảng ở dưới): kill 100 dựng được 100 / 100 / 100 / 99,4 / 100% → 96,7 / 96,7 / 95,6 / 91,1 / 93,3%, phải giảm mục tiêu 17 / 19 / 23 / 24 / 24% → 30 / 37 / 34 / 39 / 51%; kill 200 dựng được 90,0 / 93,9 / 93,3 / 94,4 / 86,7% → 71,7 / 76,1 / 76,1 / 72,2 / 55,6%, phải giảm mục tiêu 41 / 45 / 43 / 44 / 43% → 43 / 48 / 52 / 46 / 31%. Mục tiêu hạ rất nhiều quái (nhất là quái trâu với súng ngắn hoặc nặng) vẫn bị từ chối `unwinnable_level` thay vì đưa ra một màn người không thắng nổi; đây là hệ quả có chủ ý của bot yếu hơn.
+
+### Thời gian dựng + cổng qua worker (bản build, `node scripts/measure-compile-time.mjs 40`)
+
+| trường hợp (40 lần, nhiều seed / map / intensity) | median | p95 | lớn nhất |
+|---|---|---|---|
+| survive 60 s | 0,35 s | 0,54 s | 0,60 s |
+| survive 180 s | 0,41 s | 0,68 s | 0,94 s |
+| xấu nhất: kill 200, toàn quái trâu, intensity 5, máu yếu (cả 40 lần bị từ chối sau khi dùng hết 6 bước và 3 lần giảm mục tiêu) | 1,29 s | 1,81 s | 2,01 s |
+
+Giới hạn 8 s của worker (`COMPILE_TIMEOUT_MS`) không đổi; không lần nào hết giờ.
 
 ## Quy tắc của cổng từ Stage 3
 
 **Bot chơi giỏi hơn người, vì vậy cổng chỉ làm màn DỄ HƠN, không bao giờ KHÓ HƠN.** Một màn dễ với bot không có nghĩa là dễ với người; một màn bot chỉ thắng 1 trong 3 ván thì gần như người không thắng nổi.
 
-- Bot chơi 3 seed. Thắng ít hơn 2 (`MIN_WINS = 2`) thì giảm mật độ quái, tối đa 4 lần x0,8 (`MAX_THIN_STEPS = 4`, sàn 41%). Hết bước mà vẫn dưới 2 thì `unwinnable_level`.
+- Bot chơi 3 seed. Thắng ít hơn 2 (`MIN_WINS = 2`) thì giảm mật độ quái, tối đa 4 lần x0,8 (`MAX_THIN_STEPS = 4`, sàn 41%); **từ Stage 4A là 6 lần, sàn 26%**, xem trên. Hết bước mà vẫn dưới 2 thì `unwinnable_level`.
 - Thắng 2/3 hoặc 3/3 thì nhận ngay, không đổi gì, kể cả khi bot thắng dễ ở intensity 5. Bước "làm khó" (x1,2, thông báo "khó hơn") của Stage 2 đã bị xóa.
 - Mục tiêu `kill` quá nặng (cổng báo `unwinnable_level`): giảm `count` x0,7 (làm tròn xuống, tối thiểu 10), dựng lại cùng brief và seed, chạy cổng lại, tối đa 3 lần. Thành công thì có đúng một thông báo `Mục tiêu hạ N quái quá nặng; đã giảm còn M.` (N là số được yêu cầu, M là số cuối). Mục tiêu `survive` không có bước này.
 

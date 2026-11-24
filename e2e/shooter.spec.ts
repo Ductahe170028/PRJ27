@@ -108,3 +108,31 @@ test('an unknown level lists the valid ones', async ({ page }) => {
   await page.goto('/?shooter=constructor');
   await expect(page.getByRole('alert')).toContainText('Level hợp lệ');
 });
+
+// --- Stage 4A part 1: the playground shows the same banner and HUD as the app ---
+
+test('playground: a survive level shows the goal banner for about 3 s, then it is gone; the HUD shows the goal in one piece', async ({ page }) => {
+  const { frame, hud, errors } = await open(page, 'arena');
+  const banner = frame.locator('#game-banner');
+  await expect(banner).toContainText('MỤC TIÊU: Sống sót 60 giây');
+  await expect(banner).toContainText('WASD di chuyển · chuột ngắm và bắn · R chơi lại');
+  const seen = Date.now();
+  await expect(hud).toContainText(/Sống sót \d+\/60s/);
+  await expect(banner).toHaveCount(0, { timeout: 4000 });
+  expect(Date.now() - seen).toBeLessThan(3600);
+  await expect(hud).toContainText('Máu 5/5');
+  expect(errors).toEqual([]);
+});
+
+test('playground: a kill level shows "Hạ n/total" in the HUD and its goal on the banner, which comes back after the restart button', async ({ page }) => {
+  const { frame, hud, errors } = await open(page, 'pillars');
+  const banner = frame.locator('#game-banner');
+  await expect(banner).toContainText('MỤC TIÊU: Hạ 50 quái');
+  await expect(hud).toContainText('Hạ 0/50');
+  await expect(hud).not.toContainText('Mục tiêu');
+  await expect(banner).toHaveCount(0, { timeout: 4000 });
+  await frame.locator('canvas').click({ position: { x: 100, y: 120 } });
+  await page.keyboard.press('r');
+  await expect(banner).toContainText('MỤC TIÊU: Hạ 50 quái');
+  expect(errors).toEqual([]);
+});

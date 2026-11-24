@@ -29,13 +29,16 @@ export const OBSTACLE_MARGIN = 24;
 /** Most enemies one level may schedule. */
 export const MAX_SCHEDULED_ENEMIES = 400;
 
+/** One row per enemy kind: everything the simulation knows about a kind is here, so a new kind is one more
+ * row (plus its name in ENEMY_TYPE_NAMES). `code` is a small number that only the state hash uses; keep
+ * the codes of existing kinds as they are, or every recorded hash changes. */
 export const ENEMY_TYPES = {
   /** Fast and thin. */
-  runner: { radius: 11, speed: 135, hp: 2, damage: 1, points: 2 },
+  runner: { code: 1, radius: 11, speed: 135, hp: 2, damage: 1, points: 2 },
   /** Slow and tough. */
-  brute: { radius: 20, speed: 50, hp: 12, damage: 2, points: 5 },
+  brute: { code: 2, radius: 20, speed: 50, hp: 12, damage: 2, points: 5 },
   /** Small and weak; comes in swarms. */
-  swarmer: { radius: 9, speed: 95, hp: 1, damage: 1, points: 1 },
+  swarmer: { code: 3, radius: 9, speed: 95, hp: 1, damage: 1, points: 1 },
 } as const;
 
 export type EnemyType = keyof typeof ENEMY_TYPES;

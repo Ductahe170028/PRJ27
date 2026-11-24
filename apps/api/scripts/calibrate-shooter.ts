@@ -1,8 +1,11 @@
-// Offline calibration of INTENSITY_RATE (apps/api/src/shooter/waves.ts).
+// Offline calibration of INTENSITY_RATE (apps/api/src/shooter/waves.ts) and of the casual bot (CASUAL).
 //
-//   npm run shooter:calibrate -w @game-creator/api            run the grid, print the tables
-//   ... -- --write                                            also write docs/shooter-calibration.md
-//   ... -- --pre-only                                         only the bot on the raw compiled levels (fast, for tuning)
+//   npx tsx scripts/calibrate-shooter.ts                      run the grid with the casual bot (the gate's bot), print the tables
+//   ... --bot=expert                                          the same grid with the expert bot (botInput; the gate's bot before Stage 4A)
+//   ... --casual=reaction=12,aim=5,flee=0.8,wall=0.5,fire=0.85   try other casual-bot numbers without editing CASUAL
+//   ... --pre-only                                            only the bot on the raw compiled levels (fast, for tuning)
+//   ... --goal=survive:180 | --goal=kill:100 | --seeds=1      another goal / fewer seeds
+//   ... --out=path.txt                                        also write the tables to that file
 //
 // The grid: intensity 1-5 x enemy mix (runner, brute, swarmer, all three) x map (5)
 // x weapon (3) x health (3) x 3 seeds = 2700 games per phase. "Before the gate"
@@ -14,7 +17,7 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { botInput, playLevel } from '@game-creator/contracts';
+import { CASUAL, botInput, createCasualBot, playLevel, type CasualParams, type ShooterLevel } from '@game-creator/contracts';
 import { ShooterBriefSchema, SHOOTER_MAPS, PLAYER_HEALTHS, WEAPONS, type ShooterBrief } from '../src/shooter/brief.js';
 import { compileShooter } from '../src/shooter/compile.js';
 import { compileAndGate } from '../src/shooter/compile-job.js';
@@ -30,6 +33,26 @@ const SEEDS = [101, 202, 303];
 // --goal=survive:180 or --goal=kill:100 measures another goal (the default grid is survive 60).
 const goalArg = /^--goal=(survive|kill):(\d+)$/.exec(process.argv.slice(2).find((arg) => arg.startsWith('--goal=')) ?? '');
 const GOAL: ShooterBrief['goal'] = goalArg ? (goalArg[1] === 'kill' ? { type: 'kill', count: Number(goalArg[2]) } : { type: 'survive', seconds: Number(goalArg[2]) }) : { type: 'survive', seconds: 60 };
+
+// The bot that plays: --bot=casual (default) or --bot=expert; --casual=... overrides numbers of CASUAL.
+const BOT = /^--bot=(casual|expert)$/.exec(process.argv.slice(2).find((arg) => arg.startsWith('--bot=')) ?? '')?.[1] ?? 'casual';
+const CASUAL_KEYS = { reaction: 'reactionTicks', aim: 'aimErrorDeg', flee: 'fleeScale', wall: 'wallScale', fire: 'fireRangeShare' } as const;
+function casualParams(): CasualParams {
+  const params: CasualParams = { ...CASUAL };
+  const text = process.argv.slice(2).find((arg) => arg.startsWith('--casual='))?.slice('--casual='.length) ?? '';
+  for (const pair of text.split(',').filter(Boolean)) {
+    const [key, value] = pair.split('=');
+    const field = CASUAL_KEYS[key as keyof typeof CASUAL_KEYS];
+    if (!field || value === undefined || !Number.isFinite(Number(value))) throw new Error(`--casual: unknown or bad "${pair}" (keys: ${Object.keys(CASUAL_KEYS).join(', ')})`);
+    params[field] = Number(value);
+  }
+  return params;
+}
+const PARAMS = casualParams();
+const botDescription = () => (BOT === 'expert' ? 'expert (botInput: exact sight, perfect aim)'
+  : `casual (reaction ${PARAMS.reactionTicks} ticks, aim error ±${PARAMS.aimErrorDeg}°, fires within ${PARAMS.fireRangeShare * 100}% of range, flee ${PARAMS.fleeScale * 100}%, walls ${PARAMS.wallScale * 100}%)`);
+/** One game with a fresh bot made from that game's seed. */
+const playWith = (level: ShooterLevel) => playLevel(level, BOT === 'expert' ? botInput : createCasualBot(level.seed, PARAMS));
 
 interface Combo { intensity: number; mix: string; map: string; weapon: string; health: string; seed: number }
 interface Row {
@@ -56,12 +79,12 @@ function runShard(index: number, shards: number, preOnly: boolean): Row[] {
   for (const { combo, brief } of grid()) {
     if (n++ % shards !== index) continue;
     const compiled = compileShooter(brief, combo.seed);
-    const pre = playLevel(compiled.level, botInput);
+    const pre = playWith(compiled.level);
     const row: Row = { combo, preWon: pre.status === 'won', preHp: pre.hpLeft, postOk: false, postWon: false, postHp: 0, thin: 0, reduced: false };
     if (!preOnly) {
       try {
-        const job = compileAndGate({ brief, seed: combo.seed });
-        const post = playLevel({ ...job.level, seed: job.level.seed + 11 }, botInput);
+        const job = compileAndGate({ brief, seed: combo.seed }, { play: playWith });
+        const post = playWith({ ...job.level, seed: job.level.seed + 11 });
         Object.assign(row, { postOk: true, postWon: post.status === 'won', postHp: post.hpLeft, thin: job.report.thinSteps, reduced: job.report.killReductions > 0 });
       } catch (error) {
         row.error = error instanceof Error ? error.message : String(error);
@@ -77,7 +100,7 @@ const avg = (values: number[]) => (values.length === 0 ? 0 : values.reduce((a, b
 
 function report(rows: Row[], preOnly: boolean): string {
   const lines: string[] = [];
-  lines.push(`INTENSITY_RATE = [${INTENSITY_RATE.join(', ')}]`, `goal: ${JSON.stringify(GOAL)}`, '');
+  lines.push(`bot: ${botDescription()}`, `INTENSITY_RATE = [${INTENSITY_RATE.join(', ')}]`, `goal: ${JSON.stringify(GOAL)}`, '');
   lines.push(`| intensity | games | bot wins before gate | hp left before | ${preOnly ? '' : 'compiled after gate | bot wins after gate | hp left after | thinned | goal reduced |'}`.trimEnd());
   lines.push(`|---|---|---|---|${preOnly ? '' : '---|---|---|---|---|'}`);
   for (const intensity of [1, 2, 3, 4, 5]) {
@@ -116,7 +139,7 @@ if (shardArg) {
   const script = fileURLToPath(import.meta.url);
   const started = Date.now();
   const rows = (await Promise.all(Array.from({ length: shards }, (_, index) => new Promise<Row[]>((resolve, reject) => {
-    const child = spawn(process.execPath, [...process.execArgv, script, `--shard=${index}/${shards}`, ...(preOnly ? ['--pre-only'] : []), ...args.filter((arg) => arg.startsWith('--seeds=') || arg.startsWith('--goal='))], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const child = spawn(process.execPath, [...process.execArgv, script, `--shard=${index}/${shards}`, ...(preOnly ? ['--pre-only'] : []), ...args.filter((arg) => /^--(seeds|goal|bot|casual)=/.test(arg))], { stdio: ['ignore', 'pipe', 'inherit'] });
     let out = '';
     child.stdout.on('data', (chunk: Buffer) => { out += chunk.toString(); });
     child.on('error', reject);
@@ -125,17 +148,9 @@ if (shardArg) {
   const text = report(rows, preOnly);
   console.log(text);
   console.log(`\n${rows.length} games per phase, ${shards} shards, ${((Date.now() - started) / 1000).toFixed(0)} s`);
-  if (args.includes('--write')) {
-    const date = new Date().toISOString().slice(0, 10);
-    writeFileSync(new URL('../../../docs/shooter-calibration.md', import.meta.url), [
-      '# Hiệu chỉnh mật độ quái của shooter', '',
-      `Ngày chạy: ${date}. Kết quả của \`npm run shooter:calibrate -w @game-creator/api -- --write\` (${rows.length} ván mỗi pha, ${shards} tiến trình song song, ${((Date.now() - started) / 1000).toFixed(0)} s).`, '',
-      'Lưới: intensity 1-5 x mix quái (runner, brute, swarmer, cả ba) x map (5) x weapon (3) x health (3) x 3 seed; mục tiêu sống sót 60 s.',
-      '"Trước cổng" là bot chơi level đúng như compiler dựng; "sau cổng" là level service sẽ trả (compile + cổng), chơi trên seed mà cổng chưa dùng.', '',
-      'Ngưỡng đặt ra cho trước cổng: thắng intensity 1 ≥ 95%, 2 ≥ 90%, 3 ≥ 80%, 4 ≥ 55%, 5 ≥ 35%; sau cổng: ≥ 99% tổ hợp compile được và bot thắng ≥ 55% trên seed chưa dùng, ở mọi intensity.',
-      'Cổng chỉ làm màn DỄ HƠN (giảm mật độ quái); mục tiêu `kill` quá nặng thì được giảm có thông báo (cột "goal reduced").', '',
-      '```', text, '```', '',
-      'Chạy lại: `npm run shooter:calibrate -w @game-creator/api` (thêm `-- --write` để ghi lại tệp này, `-- --pre-only` để chỉ đo trước cổng khi chỉnh `INTENSITY_RATE`). Không chạy trong `npm test`.', '',
-    ].join('\n'));
-  }
+  const out = args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length);
+  if (out) writeFileSync(out, `${text}
+
+${rows.length} games per phase, ${shards} shards
+`);
 }

@@ -1,14 +1,14 @@
 // Opt-in diagnostic: real Groq requests through the shooter service (brief ->
 // compiler -> bot gate). Never run by `npm test` or E2E.
 //
-//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3]
+//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3|stage4a] [--dump=file.json]
 //
 // The key is read from apps/api/.env (git-ignored) exactly like the server does,
 // and is never printed or written anywhere. Requests go one after the other and
 // keep to AI_REQUESTS_PER_MINUTE / AI_REQUESTS_PER_DAY; the Groq pacing of
 // GameGenerationService waits when the minute is used up. No retry here: a
 // failed run is reported as it is. If the day's limit is reached the run stops.
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { parse } from 'dotenv';
 import { createProviderRegistry } from '../src/providers/create-registry.js';
 import { AIError } from '../src/providers/errors.js';
@@ -50,7 +50,16 @@ const DEFAULT_PROMPTS: ReadonlyArray<[string, string]> = [
   ['i', 'zombie'],
   ['j', 'Không có quái nhưng phải hạ 50 quái.'],
 ];
-const PROMPTS = arg('set') === 'stage3' ? STAGE3_PROMPTS : DEFAULT_PROMPTS;
+// --set=stage4a: the three prompts of the Stage 4A check (one request each: --rounds=1).
+const STAGE4A_PROMPTS: ReadonlyArray<[string, string]> = [
+  ['a', 'zombie thành phố 60 giây'],
+  ['b', 'hạ 40 con quái ở rừng tối'],
+  ['c', 'bệnh viện, zombie chậm, súng bắn nhanh'],
+];
+const PROMPTS = arg('set') === 'stage3' ? STAGE3_PROMPTS : arg('set') === 'stage4a' ? STAGE4A_PROMPTS : DEFAULT_PROMPTS;
+// --dump=file.json keeps the generated projects (level + notices, never the key) so a browser can open exactly them.
+const dumpPath = arg('dump');
+const dumped: Record<string, unknown> = {};
 
 const captured: { record: StandardFinish | undefined } = { record: undefined };
 const lastRecord = () => captured.record; // read through a function: it is set inside a callback
@@ -76,6 +85,7 @@ outer: for (let round = 1; round <= rounds; round += 1) {
     const row: Record<string, unknown> = { prompt: id, round };
     try {
       const project = await shooter.generate({ prompt, providerId: 'groq' }, 'live-smoke', new AbortController().signal);
+      dumped[id] = project;
       const brief = lastRecord()?.normalized as Record<string, unknown> | undefined;
       Object.assign(row, {
         ok: true, title: project.title, notices: project.notices,
@@ -100,5 +110,6 @@ outer: for (let round = 1; round <= rounds; round += 1) {
     if (stopped) break outer;
   }
 }
+if (dumpPath) await writeFile(dumpPath, JSON.stringify(dumped));
 const ok = rows.filter((row) => (row as { ok: boolean }).ok).length;
 console.log(JSON.stringify({ summary: { runs: done, ok, failed: done - ok, stoppedAtLimit: stopped ?? null } }));

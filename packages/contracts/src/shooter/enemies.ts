@@ -1,0 +1,80 @@
+﻿// Step 6 of a tick: enemies move. Every number about a kind comes from ENEMY_TYPES.
+import { ENEMY_TYPES, MAX_ENEMY_RADIUS, NAV_REFRESH_TICKS, PLAYER_RADIUS, TICK_RATE } from './constants.js';
+import { lineOfSight, resolveCircle, type Rect } from './geometry.js';
+import { GRID_COLS, buildGrid, gridCells, gridCol, gridRow } from './grid.js';
+import { cellOf, flowDistances, flowTarget, type FlowField } from './navigation.js';
+import type { ShooterState } from './state.js';
+
+/** 6. Enemies move (straight at the player in plain sight, else along the flow
+ * field), push each other apart, then leave walls. */
+export function moveEnemies(state: ShooterState, t: number, walls: readonly Rect[]) {
+  const { player, enemies } = state;
+  if (enemies.length === 0) return;
+  let flow = state.flow;
+  const ensureFlow = (): FlowField => {
+    const goal = cellOf(player.x, player.y);
+    if (!flow || flow.goal !== goal || t - flow.atTick >= NAV_REFRESH_TICKS) {
+      flow = { goal, atTick: t, dist: flowDistances(state.blocked, goal) };
+      state.flow = flow;
+    }
+    return flow;
+  };
+  for (const enemy of enemies) {
+    const kind = ENEMY_TYPES[enemy.type];
+    const stride = kind.speed / TICK_RATE;
+    let toPlayer = true;
+    let tx = player.x;
+    let ty = player.y;
+    if (!lineOfSight(enemy, player, kind.radius, walls)) {
+      const target = flowTarget(state.blocked, ensureFlow().dist, enemy.x, enemy.y);
+      if (target) { tx = target.x; ty = target.y; toPlayer = false; }
+    }
+    const dx = tx - enemy.x;
+    const dy = ty - enemy.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance === 0) continue;
+    // Chasing the player: stop just inside touching range instead of walking into the center.
+    const room = toPlayer ? distance - (PLAYER_RADIUS + kind.radius - 1) : distance;
+    const move = Math.min(stride, Math.max(0, room));
+    enemy.x += (dx / distance) * move;
+    enemy.y += (dy / distance) * move;
+  }
+
+  pushApart(state);
+  for (const enemy of enemies) resolveCircle(enemy, ENEMY_TYPES[enemy.type].radius, walls);
+}
+
+/** Push overlapping enemies apart: half the overlap each, at most 2 px per tick. */
+function pushApart(state: ShooterState) {
+  const { enemies } = state;
+  buildGrid(enemies);
+  for (let i = 0; i < enemies.length; i += 1) {
+    const a = enemies[i]!;
+    const ra = ENEMY_TYPES[a.type].radius;
+    const around = ra + MAX_ENEMY_RADIUS; // farthest center that can still overlap `a`
+    const c0 = gridCol(a.x - around); const c1 = gridCol(a.x + around);
+    const r0 = gridRow(a.y - around); const r1 = gridRow(a.y + around);
+    for (let r = r0; r <= r1; r += 1) {
+      for (let c = c0; c <= c1; c += 1) {
+        const list = gridCells[r * GRID_COLS + c]!;
+        for (let k = 0; k < list.length; k += 1) {
+          const j = list[k]!;
+          if (j <= i) continue;
+          const other = enemies[j]!;
+          const reach = ra + ENEMY_TYPES[other.type].radius;
+          const dx = other.x - a.x;
+          const dy = other.y - a.y;
+          const squared = dx * dx + dy * dy;
+          if (squared >= reach * reach) continue; // most pairs: no square root needed
+          const distance = Math.sqrt(squared);
+          const push = Math.min((reach - distance) / 2, 2);
+          // Exactly on top of each other: split along x, so the result does not depend on luck.
+          const nx = distance > 0 ? dx / distance : 1;
+          const ny = distance > 0 ? dy / distance : 0;
+          a.x -= nx * push; a.y -= ny * push;
+          other.x += nx * push; other.y += ny * push;
+        }
+      }
+    }
+  }
+}

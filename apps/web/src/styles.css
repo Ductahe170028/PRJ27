@@ -1287,3 +1287,10 @@ kbd {
 /* Shooter app: what the engine could not do or changed. */
 .shooter-notices ul{margin:10px 0 0;padding-left:18px;color:#f0cf8a;font-size:13px;line-height:1.55}
 .shooter-notices li+li{margin-top:4px}
+
+/* Shooter app: the "Thông tin màn" card (goal, health, enemies, weapon), read from the level itself. */
+.shooter-info dl{margin:12px 0 0;display:grid;gap:8px}
+.shooter-info dl>div{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:baseline;min-width:0}
+.shooter-info dt{flex:0 0 86px;font-size:12px;color:#84909f}
+.shooter-info dd{margin:0;flex:1 1 140px;min-width:0;font-size:13px;line-height:1.5;color:#e1e8f0;overflow-wrap:anywhere}
+.shooter-info dd small{display:block;font-size:11.5px;color:#9aa6b4}

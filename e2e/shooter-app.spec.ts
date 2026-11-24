@@ -136,3 +136,72 @@ test('a running game is not reported as "not started" 15 seconds later, even aft
   await expect(page.getByText('Đang chạy', { exact: true })).toBeVisible();
   await expect(frame.locator('#game-hud')).toContainText('Máu');
 });
+
+// --- Stage 4A part 1: the player is told what to do ---
+
+const infoCard = (page: Page) => page.getByRole('region', { name: 'Thông tin màn' });
+const field = (page: Page, name: string) => infoCard(page).locator(`[data-info="${name}"]`);
+
+test('the level card shows the goal and the gun of a survive level, read from the level itself', async ({ page }) => {
+  await page.goto('/');
+  await expect(infoCard(page)).toHaveCount(0);
+  await useMockProvider(page);
+  await generate(page, 'zombie thành phố, sống sót 60 giây');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  await expect(infoCard(page)).toBeVisible();
+  await expect(infoCard(page).getByRole('heading', { name: 'Thông tin màn' })).toBeVisible();
+  await expect(field(page, 'goal')).toHaveText('Sống sót 60 giây');
+  await expect(field(page, 'health')).toHaveText('5');
+  await expect(field(page, 'enemies')).toHaveText(/^[1-9]\d*$/);
+  await expect(field(page, 'weapon')).toContainText('Bắn từng phát');
+  await expect(field(page, 'weapon')).toContainText('mỗi 0,3 giây một phát · sát thương 1 · tầm 600');
+  // the HUD in the game says the same goal, with progress in one piece
+  await expect(page.frameLocator('iframe').locator('#game-hud')).toContainText(/Sống sót \d+\/60s/);
+});
+
+test('the level card shows the goal and the gun of a kill level, and sits above the notices', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'bắn zombie, có boss cuối và hồi máu [brief:unsupported]');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  await expect(field(page, 'goal')).toHaveText('Hạ 20 quái');
+  await expect(field(page, 'health')).toHaveText('5');
+  await expect(field(page, 'weapon')).toContainText('Bắn liên tục');
+  await expect(field(page, 'weapon')).toContainText('mỗi 0,15 giây một phát · sát thương 1 · tầm 500');
+  const card = (await infoCard(page).boundingBox())!;
+  const list = (await notices(page).boundingBox())!;
+  expect(card.y).toBeLessThan(list.y);
+  const hud = page.frameLocator('iframe').locator('#game-hud');
+  await expect(hud).toContainText(/Hạ \d+\/20/);
+  await expect(hud).not.toContainText('Mục tiêu');
+});
+
+test('the goal banner is shown at the start for about 3 seconds while the game keeps running, and again after a restart', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'zombie thành phố, sống sót 60 giây');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  const frame = page.frameLocator('iframe');
+  const banner = frame.locator('#game-banner');
+  await expect(banner).toContainText('MỤC TIÊU: Sống sót 60 giây');
+  await expect(banner).toContainText('WASD di chuyển · chuột ngắm và bắn · R chơi lại');
+  const seen = Date.now();
+  // the simulation is not paused behind the banner: the clock in the HUD moves while it is up
+  await expect(frame.locator('#game-hud')).toContainText(/Sống sót [1-9]\/60s/);
+  await expect(banner).toHaveCount(0, { timeout: 4000 });
+  expect(Date.now() - seen).toBeLessThan(3600);
+  await expect(frame.locator('#game-hud')).toContainText('Máu');
+  // R plays again, and the banner comes back
+  await frame.locator('canvas').click({ position: { x: 100, y: 120 } });
+  await page.keyboard.press('r');
+  await expect(banner).toContainText('MỤC TIÊU: Sống sót 60 giây');
+  await expect(banner).toHaveCount(0, { timeout: 4000 });
+});
+
+test('a kill level names its goal on the banner', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'bắn zombie, có boss cuối và hồi máu [brief:unsupported]');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  await expect(page.frameLocator('iframe').locator('#game-banner')).toContainText('MỤC TIÊU: Hạ 20 quái');
+});

@@ -1,9 +1,11 @@
-// The gate: a plain bot plays the compiled level on a few seeds. A level the bot
-// wins on fewer than MIN_WINS of them is thinned out. The bot plays better than a
-// person does, so the gate only ever makes a level EASIER, never harder: a level
-// that is easy for the bot is not necessarily easy for a person.
+// The gate: a casual bot plays the compiled level on a few seeds. A level the bot
+// wins on fewer than MIN_WINS of them is thinned out. The casual bot reacts late and
+// aims badly (createCasualBot), which is closer to a person than the expert bot of
+// the tests; it still plays better than some people, so the gate only ever makes a
+// level EASIER, never harder: a level that is easy for the bot is not necessarily
+// easy for a person.
 import {
-  ShooterLevelSchema, botInput, playLevel, type PlayResult, type ShooterLevel,
+  ShooterLevelSchema, createCasualBot, playLevel, type PlayResult, type ShooterLevel,
 } from '@game-creator/contracts';
 import { AIError } from '../providers/errors.js';
 import { killTarget } from './waves.js';
@@ -12,8 +14,11 @@ import { killTarget } from './waves.js';
 export const GATE_SEEDS = 3;
 /** The bot must win on at least this many of the GATE_SEEDS games (2 of 3). */
 export const MIN_WINS = 2;
-/** Most thinning steps, each x0.8 (0.8^4 = 41% of the original density; never below 30%). */
-export const MAX_THIN_STEPS = 4;
+/** Most thinning steps, each x0.8 (0.8^6 = 26% of the original density; never below 25%). It was 4 steps
+ * (41%) while the gate's bot was the expert. The casual bot is weaker, and measured over the whole grid
+ * (docs/shooter-calibration.md) every combination is winnable within 6 steps but not within 4 (at
+ * intensity 5, 13% of the combinations needed a 5th or 6th step). */
+export const MAX_THIN_STEPS = 6;
 export const THIN_FACTOR = 0.8;
 const MAX_ATMS = 600_000;
 
@@ -21,6 +26,8 @@ export const THINNED_NOTICE = 'Độ khó được điều chỉnh để màn ch
 export const UNWINNABLE_MESSAGE = 'Không dựng được màn chơi thắng được với yêu cầu này. Hãy giảm độ khó hoặc đổi vũ khí/số máu.';
 
 export interface GateReport {
+  /** Who played: the casual bot of the gate, or a replacement given by a test (`options.play`). */
+  bot: 'casual' | 'custom';
   runs: number;
   wins: number;
   hpLeftAvg: number;
@@ -36,7 +43,8 @@ export interface GateOptions {
 
 const total = (level: ShooterLevel) => level.waves.reduce((sum, wave) => sum + wave.count, 0);
 const withSeed = (level: ShooterLevel, seed: number): ShooterLevel => ({ ...level, seed: seed % 2_147_483_648 });
-const defaultPlay = (level: ShooterLevel) => playLevel(level, botInput);
+/** A new casual bot for every game, made from that game's own seed. */
+const defaultPlay = (level: ShooterLevel) => playLevel(level, createCasualBot(level.seed));
 
 function evaluate(level: ShooterLevel, play: (level: ShooterLevel) => PlayResult) {
   let wins = 0;
@@ -93,5 +101,5 @@ export function gateLevel(level: ShooterLevel, options: GateOptions = {}): { lev
   if (result.wins < MIN_WINS) throw new AIError('unwinnable_level', UNWINNABLE_MESSAGE, 422, undefined, ['goal']);
 
   const notices = thinSteps > 0 ? [THINNED_NOTICE] : [];
-  return { level: current, notices, report: { runs: GATE_SEEDS, wins: result.wins, hpLeftAvg: Math.round(result.hpLeftAvg * 1000) / 1000, thinSteps, scheduled: total(current) } };
+  return { level: current, notices, report: { bot: options.play ? 'custom' : 'casual', runs: GATE_SEEDS, wins: result.wins, hpLeftAvg: Math.round(result.hpLeftAvg * 1000) / 1000, thinSteps, scheduled: total(current) } };
 }

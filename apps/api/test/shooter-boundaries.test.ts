@@ -63,7 +63,10 @@ const files = readdirSync(directory).filter((name) => name.endsWith('.ts'));
 
 describe('shooter core stays pure', () => {
   it('has the files it should', () => {
-    expect(files).toEqual(expect.arrayContaining(['constants.ts', 'fixtures.ts', 'geometry.ts', 'index.ts', 'level.ts', 'navigation.ts', 'sim.ts']));
+    expect(files).toEqual(expect.arrayContaining([
+      'constants.ts', 'fixtures.ts', 'geometry.ts', 'index.ts', 'level.ts', 'navigation.ts',
+      'sim.ts', 'state.ts', 'grid.ts', 'player.ts', 'spawn.ts', 'enemies.ts', 'weapons.ts', 'combat.ts', 'hash.ts', 'bot.ts',
+    ]));
   });
 
   it('no file imports anything but zod or a sibling, and none uses the page, the engine, the clock or Math.random', () => {
@@ -99,12 +102,12 @@ describe('shooter core stays pure', () => {
     expect(violations('x.ts', "import { z } from 'zod';\nimport { a } from './geometry.js';\nexport * from './sim.js';")).toEqual([]);
   });
 
-  it('Math.atan2 appears exactly once, in sim.ts (the aim angle that is only drawn)', () => {
+  it('Math.atan2 appears exactly once, in player.ts (the aim angle that is only drawn)', () => {
     const uses = files.flatMap((file) => {
       const found = code(readFileSync(join(directory, file), 'utf8')).match(/\bMath\s*\.\s*atan2\b/g) ?? [];
       return found.map(() => file);
     });
-    expect(uses).toEqual(['sim.ts']);
+    expect(uses).toEqual(['player.ts']);
   });
 
   it('the package index exposes the shooter module', () => {
