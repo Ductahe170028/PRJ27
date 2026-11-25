@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { SHOOTER_LEVELS, totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
+import { ENEMY_TYPES, SHOOTER_LEVELS, totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
 import {
-  BANNER_FADE_MS, BANNER_HINT, BANNER_MS, bannerAlpha, bannerTextColor, bannerTitle, contrastRatio, goalProgress, goalSentence,
+  BANNER_FADE_MS, BANNER_HINT, BANNER_MS, BOSS_WARNING_TEXT, bannerAlpha, bannerTextColor, bannerTitle, bossBar, bossWarningAlpha, contrastRatio, goalProgress, goalSentence,
   hudLine, levelInfo, weaponSummary,
 } from '../src/lib/shooter-text';
 
@@ -169,5 +169,53 @@ describe('the extra lines of the level card', () => {
     expect(levelInfo(SHOOTER_LEVELS['shotgun-pit']).weapon).toBe('Bắn chùm');
     expect(levelInfo(SHOOTER_LEVELS.spitters).extras).toContain('Có quái bắn xa (né đạn của chúng)');
     expect(levelInfo(SHOOTER_LEVELS.medic).extras).toEqual(['Quái bị hạ có thể rơi vật phẩm hồi máu (25%)']);
+  });
+});
+
+describe('the boss in words (Stage 4C)', () => {
+  const boss = { type: 'boss' } as const;
+  it('the goal is "Hạ boss" in the sentence, the banner and the HUD (no number; the boss bar is the progress)', () => {
+    expect(goalSentence(boss)).toBe('Hạ boss');
+    expect(bannerTitle(boss)).toBe('MỤC TIÊU: Hạ boss');
+    expect(goalProgress(boss, { kills: 30, seconds: 99 })).toBe('Hạ boss');
+    expect(hudLine(boss, { hp: 4, maxHp: 6, score: 17, kills: 3, seconds: 12 })).toBe('Máu 4/6  ·  Điểm 17  ·  Hạ boss  ·  R: chơi lại');
+  });
+  it('the boss bar: share, percent, label, and "CUỒNG NỘ" only when enraged', () => {
+    expect(bossBar(40, 40, false)).toEqual({ share: 1, percent: 100, label: 'BOSS', note: '' });
+    expect(bossBar(10, 40, false)).toEqual({ share: 0.25, percent: 25, label: 'BOSS', note: '' });
+    expect(bossBar(20, 40, true)).toEqual({ share: 0.5, percent: 50, label: 'BOSS', note: 'CUỒNG NỘ' });
+    expect(bossBar(-3, 40, true).share).toBe(0);
+    expect(bossBar(99, 40, false).share).toBe(1);
+    expect(bossBar(5, 0, false).share).toBe(0);
+  });
+  it('the warning lasts 120 ticks of game time: full for 90, fading to 0 at 120', () => {
+    expect(BOSS_WARNING_TEXT).toBe('BOSS XUẤT HIỆN!');
+    expect(bossWarningAlpha(0)).toBe(1);
+    expect(bossWarningAlpha(90)).toBe(1);
+    expect(bossWarningAlpha(105)).toBeCloseTo(0.5, 10);
+    expect(bossWarningAlpha(119)).toBeGreaterThan(0);
+    expect(bossWarningAlpha(119)).toBeLessThan(0.05);
+    expect(bossWarningAlpha(120)).toBe(0);
+    expect(bossWarningAlpha(500)).toBe(0);
+    expect(bossWarningAlpha(-1)).toBe(0);
+    expect(bossWarningAlpha(Number.NaN)).toBe(0);
+    let last = 1;
+    for (let t = 0; t <= 130; t += 1) { const a = bossWarningAlpha(t); expect(a).toBeLessThanOrEqual(last); last = a; }
+  });
+  it('the level card has a boss line from the boss\'s own data, with its real hit points; the boss counts in "most enemies"', () => {
+    const crusher = levelInfo(SHOOTER_LEVELS['boss-crusher']);
+    expect(crusher.goal).toBe('Hạ boss');
+    expect(crusher.extras).toEqual(['Boss cuối: quái khổng lồ, lao vào bạn (máu 40)']);
+    expect(crusher.maxEnemies).toBe(6 + 3 + 1 + 6);
+    const gunner = levelInfo(SHOOTER_LEVELS['boss-gunner']);
+    expect(gunner.extras).toEqual(['Boss cuối: bắn đạn quạt và vòng đạn (máu 24)']); // (the gunner is not a "shooting enemy": no spitter line)
+    expect(gunner.maxEnemies).toBe(2 + 3 + 1 + 3);
+    // no bossHp in the level: the kind's own hit points
+    const { bossHp: _drop, ...plain } = SHOOTER_LEVELS['boss-crusher'];
+    void _drop;
+    expect(levelInfo(plain).extras).toEqual([`Boss cuối: quái khổng lồ, lao vào bạn (máu ${ENEMY_TYPES.crusher.hp})`]);
+  });
+  it('a level without a boss has no boss line', () => {
+    expect(levelInfo(SHOOTER_LEVELS.arena).extras.some((e) => e.startsWith('Boss'))).toBe(false);
   });
 });

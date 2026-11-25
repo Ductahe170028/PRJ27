@@ -63,3 +63,16 @@ describe('the Stage 4B hand-made levels are playable', () => {
     expect(SEEDS.map((seed) => play(withSeed(SHOOTER_LEVELS[name], seed), () => IDLE).status)).toEqual(SEEDS.map(() => 'lost'));
   });
 });
+
+// Stage 4C: the two hand-made boss levels can be won by the expert bot (by defeating the boss), and not by standing still.
+describe('the Stage 4C hand-made boss levels are playable', () => {
+  it.each(['boss-crusher', 'boss-gunner'] as const)('the bot defeats the boss of %s with at least 7 of 8 seeds', (name) => {
+    const results = SEEDS.map((seed) => play(withSeed(SHOOTER_LEVELS[name], seed), botInput));
+    console.info(`[shooter] bot on ${name}: ${results.map((r) => `${r.status[0]}${r.hp}@${Math.round(r.seconds)}s`).join(' ')}`);
+    expect(results.filter((r) => r.status === 'won').length).toBeGreaterThanOrEqual(7);
+    for (const r of results.filter((x) => x.status === 'won')) expect(r.state.bossDown).toBe(true);
+  });
+  it.each(['boss-crusher', 'boss-gunner'] as const)('standing still loses %s every time', (name) => {
+    expect(SEEDS.map((seed) => play(withSeed(SHOOTER_LEVELS[name], seed), () => IDLE).status)).toEqual(SEEDS.map(() => 'lost'));
+  });
+});

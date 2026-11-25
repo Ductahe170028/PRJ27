@@ -1,11 +1,170 @@
 # Hiệu chỉnh mật độ quái của shooter
 
-Phần "Stage 4B" ngay dưới là số liệu mới nhất (hai súng mới, quái bắn xa, hồi máu); phần "Stage 4A" sau nó là bot bình thường; các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
+Phần "Stage 4C.1" ngay dưới là số liệu mới nhất (boss không kẹt, nhịp quái của màn boss); phần "Stage 4C" sau nó là boss cuối (các số của boss và bảng trước 4C.1: bảng I1–I5 của 4C đã bị 4C.1 thay thế); phần "Stage 4B" là hai súng mới, quái bắn xa và hồi máu; phần "Stage 4A" là bot bình thường; các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
 
 Lưới: intensity 1-5 x mix quái (runner, brute, swarmer, cả ba) x map (5) x weapon (3) x health (3) x 3 seed; mục tiêu sống sót 60 s.
 "Trước cổng" là bot chơi level đúng như compiler dựng; "sau cổng" là level service sẽ trả (compile + cổng), chơi trên seed mà cổng chưa dùng.
 
-## Stage 4B: hai súng mới, quái bắn xa, hồi máu (mới nhất)
+## Stage 4C.1: boss không kẹt, màn boss tập trung vào boss (mới nhất)
+
+Hai lỗi của Stage 4C đã được đo (không phải phỏng đoán) rồi sửa. `maps.ts`, `CASUAL`, `INTENSITY_RATE`, `gate.ts`, số của quái, súng và boss (máu, chu kỳ, tốc độ) KHÔNG đổi. Số liệu từ `npx tsx scripts/calibrate-shooter.ts --set=boss` (cùng lưới 6750 ván của Stage 4C, brief `survive 60`) và từ `npx tsx scripts/measure-boss-reach.ts` (chạy từ `apps/api`).
+
+### Lỗi 1: boss crusher bị kẹt
+
+Bài đo: người chơi đứng yên, không chết được; mỗi cặp (boss × map) 30 seed (seed = số thứ tự × 7919), intensity 1, brief `survive 60`, quái `runner`, súng `pistol`, máu `sturdy`, không hồi máu. Boss phải tới trong `max(140, holdRange + 40)` px (crusher 140, gunner 340) trong 120 giây mô phỏng. Script `measure-boss-reach.ts`, và thành test lâu dài `shooter-boss-reach.test.ts`.
+
+| trước khi sửa (cuối Stage 4C) | tới được | kẹt |
+|---|---|---|
+| crusher / pillars | 29/30 | seed 174218 (gần nhất 167 px) |
+| crusher / rooms | 29/30 | seed 221732 (380 px) |
+| crusher / ring | 29/30 | seed 15838 (361 px) |
+| mọi cặp khác (gunner cả 5 map; crusher open-arena, cross-corridors) | 30/30 | |
+
+**Nguyên nhân (xác nhận bằng cách theo dõi từng bước):** đường dẫn (flow field) của mô phỏng chỉ nới vật cản thêm 12 px cho MỌI quái, trong khi thân crusher rộng 68 px (bán kính 34). Boss được dẫn dọc sát tường và qua khe mà thân nó không lọt, rồi đứng im tới hết ván (ví dụ ở `rooms` 221732: kẹt ở góc tường tại (98, 309), dù khe giữa hai bức tường rộng tới 142 px: đường đi ngắn nhất ôm sát góc, cách tường chỉ 22 px).
+
+**Thử trước: chỉ đổi luật chọn bố cục ở `compile.ts`** (mọi khe giữa vật cản và với mép sân đóng hoặc ≥ 2 × bán kính + 8 px, và đường đi có chỗ cho thân boss). Chưa đủ: bản đồ bị đơn giản hóa thành đấu trường trống (crusher: pillars 20%, cross-corridors 17%, ring 3%; gunner: cross-corridors 3%) mà vẫn kẹt 2/300 (đường đi vẫn ôm sát góc). Bỏ cách này.
+
+**Cách sửa chọn:** (1) trong mô phỏng, màn có boss mang một lưới đi riêng cho boss (`bossBlockedCells`: vật cản được nới thêm bán kính boss + 4 px, và ô nằm quá sát mép sân so với thân boss bị chặn) cùng flow field riêng (`state.bossBlocked`, `state.bossFlow`; chỉ có ở màn boss, màn khác không có hai trường này); (2) `compile.ts` chỉ dùng bố cục mà MỌI điểm xuất hiện (boss ra ở một trong số đó, nên chỗ ra nào cũng phải đi tới được người chơi) nối tới người chơi trên chính lưới đó (`usableLayout(obstacles, bossRadius)`; bán kính lấy từ `ENEMY_TYPES`). Bố cục không đạt thì thử biến thể kế tiếp, hết biến thể thì đấu trường trống kèm thông báo như cũ. Không đụng `maps.ts`.
+
+| sau khi sửa | tới được |
+|---|---|
+| 30 seed × 5 map × 2 boss | **300/300** |
+| 200 seed × 5 map × 2 boss (kiểm tra thêm) | **2000/2000** |
+
+Tỉ lệ bản đồ bị đơn giản hóa thành đấu trường trống vì luật mới: **0%** ở mọi map và cả hai boss (0/200 mỗi cặp). Luật bố cục không phải từ chối một bố cục nào trong 2000 màn: lưới riêng của boss mới là thứ sửa lỗi, luật bố cục là lưới an toàn. Bỏ qua kiểm tra khe rộng (cách thử trước) nên không cần dùng tới cách "nới" ở Phần 1.3.
+
+**Giới hạn còn lại (đã đo):** kiểm tra thêm với người chơi đứng ở 8 chỗ khác ngoài điểm xuất phát (2772 ván): 2769 tới được. 3 ván không tới: người chơi đứng ở chỗ lưới của boss không nối tới (ví dụ một lối 68 px giữa hai bức tường: ôm vừa khít thân crusher nên bị coi là chắn). Người chơi có thể trốn ở một chỗ như vậy và đứng ngoài tầm với của boss. Không sửa trong lần này (cần đổi cách boss tìm đường khi không có đường, hoặc đổi `maps.ts`).
+
+### Lỗi 2: màn boss quá khó ở intensity 3–5
+
+Nhịp quái thường của màn boss (`BOSS_TIMING` trong `waves.ts`): thêm `beforePace` (nhân vào nhịp TRƯỚC khi boss ra), đổi `afterPace` và `afterSeconds`. Chỉ đụng lịch màn boss; lịch của brief không boss giống từng bit. Bot bình thường, TRƯỚC cổng, lưới 6750 ván:
+
+| bộ số | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|
+| Stage 4C (before 1, after 30 s × 0,4; boss đi trên lưới cũ) | 89,6 | 68,4 | 29,2 | 20,2 | 11,0 |
+| boss đi trên lưới mới, vẫn nhịp cũ (before 1, after 30 s × 0,4) | 87,6 | 67,2 | 30,4 | 20,0 | 11,1 |
+| **cuối: before 0,7, after 20 s × 0,25** (đúng khởi điểm của prompt) | **94,6** | **83,5** | **67,9** | **44,4** | **27,7** |
+| mục tiêu | ≥ 80 | 65–90 | 50–80 | 35–65 | 20–50 |
+
+Đạt ở mọi intensity ngay bộ số khởi điểm, nên không thử thêm bộ nào. `atShare` giữ 0,7. Dòng thứ hai cho thấy việc sửa lỗi kẹt không đổi độ khó; toàn bộ cải thiện là do nhịp quái. Theo boss: crusher 97,5 / 82,1 / 67,1 / 43,6 / 27,0; gunner 91,7 / 84,9 / 68,7 / 45,3 / 28,4.
+
+**Sau cổng** (6750 ván, tối đa 6 bước giảm):
+
+| intensity | dựng được | bot thắng trên seed chưa dùng | ván bị giảm mật độ (trên 1350): trước → sau |
+|---|---|---|---|
+| 1 | 100,0% | 97,3% | 80 (5,9%) → 31 (2,3%) |
+| 2 | 100,0% | 86,3% | 477 (35,3%) → 130 (9,6%) |
+| 3 | 100,0% | 76,7% | 939 (69,6%) → 444 (32,9%) |
+| 4 | 100,0% | 71,6% | 1072 (79,4%) → 775 (57,4%) |
+| 5 | 100,0% | 69,8% | 1218 (90,2%) → 993 (73,6%) |
+
+("Trước" là Stage 4C.) Đạt: dựng được 100% (0 trên 6750 bị từ chối, ≤ 1%), bot thắng ≥ 60% (thấp nhất 69,8%). Số màn boss phải giảm mật độ (người dùng thấy thông báo "độ khó được điều chỉnh") giảm rõ ở intensity 3–5 (từ 70/79/90% xuống 33/57/74%) mà vẫn còn nhiều ở intensity 5: ở mức đó màn boss vẫn khó đối với bot bình thường, bộ lọc xử lý phần còn lại. `bossHp` trung bình sau giảm: crusher 16,0 / 17,8 / 19,0 / 19,2 / 19,4, gunner 11,9 / 13,8 / 14,2 / 15,0 / 14,8 (mức 1…5).
+
+**Thời gian trận đánh boss** (giây từ lúc boss ra tới lúc bị hạ, ván bot bình thường thắng trước cổng; mọi intensity / intensity 3):
+
+| boss | pistol | rapid | heavy | shotgun | piercing |
+|---|---|---|---|---|---|
+| crusher | 13,4 / 16,8 | 9,4 / 9,0 | 11,9 / 13,5 | 13,0 / 14,3 | 13,6 / 13,3 |
+| gunner | 15,2 / 18,6 | 9,7 / 9,7 | 12,6 / 13,7 | 30,5 / 35,1 | 14,2 / 14,7 |
+
+Pistol ở intensity 3: 16,8 s và 18,6 s (trong 10–60 s); không súng nào hạ boss trung bình dưới 9 s (≥ 6 s).
+
+**Không thoái lui:** `--set=old` và `--set=new` chạy lại SAU mọi thay đổi: giống HỆT từng ký tự các bảng Stage 4A và 4B.
+
+**Thời gian dựng + cổng qua worker** (bản build, `node scripts/measure-compile-time.mjs 40`): survive 60 s median 0,45 / p95 0,65 / max 0,85 s; survive 180 s 0,55 / 0,79 / 1,19 s; ca xấu nhất boss (kill 200, all4, shotgun, mức 5, máu yếu, gunner; 7 dựng được, 33 bị từ chối) 0,87 / **1,37** / 1,54 s (giới hạn p95 < 5 s); ca xấu nhất 4B 2,01 / 2,82 / 2,95 s; ca xấu nhất cũ 1,58 / 2,27 / 2,51 s.
+
+
+## Stage 4C: boss cuối, hai loại
+
+Bot bình thường (`CASUAL`, không đổi) là thước đo; `INTENSITY_RATE`, `CASUAL`, `maps.ts` và mọi số của quái và súng đã có không đổi. Số liệu từ `npx tsx scripts/calibrate-shooter.ts --set=boss` (chạy từ `apps/api`): lưới intensity 1–5 × 2 boss × 5 súng × 5 map × 3 mức máu × 3 hỗn hợp quái thường (`mixed`, `runner`, `all4`) × 3 seed = 6750 ván mỗi pha, brief `survive 60`. Script có thêm `--tune=` cho boss: `crusher.hp`, `gunner.hp`, `crusher.cycle`, `crusher.telegraph`, `crusher.rush`, `gunner.fan`, `gunner.ring`, `gunner.fanspeed`, `gunner.ringspeed`, `boss.at`, `bossmult.1`…`bossmult.5` (và `boss.after`, `boss.afterpace` chỉ để đo đề xuất).
+
+### 1. Không thoái lui: `--set=old` và `--set=new` giống HỆT bảng cũ
+
+Chạy SAU khi hoàn tất mọi thay đổi Stage 4C: `--set=old` so với bảng Stage 4A (10 dòng gốc: 5 dòng intensity, 4 dòng vũ khí/máu/map/quái, dòng "0 trên 2700 không dựng được") và `--set=new` so với bảng Stage 4B (21 dòng gồm cả bảng theo súng và theo hỗn hợp sau cổng): **giống nhau từng ký tự** (so bằng máy). Thêm bằng chứng độc lập: một brief không boss dựng ra đúng 30 màn của file vàng cũ (`golden-sim.json`, test `shooter-boss-brief`), và 525 lịch quái không boss vẫn có digest `a4aa7b68`.
+
+### 2. Số cuối cùng và những số đã thử
+
+| thứ | khởi điểm (prompt) | cuối cùng | giới hạn cho phép |
+|---|---|---|---|
+| crusher: máu gốc | 70 | **40** | 40 … 110 |
+| gunner: máu gốc | 50 | **30** | 30 … 90 |
+| `BOSS_HP_BY_INTENSITY` | 0,6 / 0,8 / 1 / 1,2 / 1,4 | **0,4 / 0,45 / 0,5 / 0,55 / 0,6** | 0,4 … 1,8, tăng dần |
+| crusher: chu kỳ lao | 4,5 s | **6 s** | 3,5 … 6 s |
+| gunner: nhịp quạt 3 viên | 2,0 s | **2,6 s** | 1,5 … 2,6 s |
+| gunner: nhịp vòng 12 viên | 5,0 s | **7 s** | 4 … 7 s |
+| tốc độ đạn của boss (quạt / vòng) | 200 / 150 | **120 / 120** | 120 … 220 |
+| boss xuất hiện lúc | 70% | 70% (làm tròn 5 s) | 65% … 80% |
+
+Từ đó `bossHp` của màn là: crusher 16 / 18 / 20 / 22 / 24, gunner 12 / 14 / 15 / 17 / 18 (intensity 1…5). Mọi núm đều nằm ở MÉP dễ nhất của giới hạn.
+
+Thắng của bot bình thường trước cổng, intensity 1…5 (lưới boss, 6750 ván):
+
+| bộ số | cả lưới | crusher | gunner |
+|---|---|---|---|
+| khởi điểm | 51,9 / 24,3 / 8,3 / 4,1 / 1,5 | 46,2 / 24,1 / 7,7 / 3,4 / 1,6 | 57,6 / 24,4 / 8,9 / 4,9 / 1,3 |
+| máu nhỏ nhất, hệ số 0,4–0,6 | 86,2 / 62,7 / 26,4 / 18,5 / 10,3 | 90,8 / 68,6 / 27,4 / 20,7 / 12,4 | 81,6 / 56,9 / 25,5 / 16,3 / 8,1 |
+| **+ chu kỳ chậm nhất, đạn chậm nhất (cuối)** | **89,6 / 68,4 / 29,2 / 20,2 / 11,0** | 90,1 / 69,8 / 28,7 / 20,3 / 11,4 | 89,2 / 67,1 / 29,6 / 20,1 / 10,5 |
+| khoảng yêu cầu | ≥ 80 / 65–90 / 50–80 / 35–65 / 20–50 | | |
+
+(Đặt boss xuất hiện lúc 65% thay vì 70% cho đúng số cũ: 60 s × 0,65 = 39 s và 60 × 0,7 = 42 s đều làm tròn về 40 s.)
+
+**Không đạt trong giới hạn cho phép (báo cáo theo đúng yêu cầu):** intensity 1 và 2 đạt (89,6 và 68,4%); intensity 3, 4 và 5 **không đạt** (29,2 / 20,2 / 11,0% so với 50–80 / 35–65 / 20–50). Nguyên nhân không phải boss: với boss chỉ còn 10 máu (dưới giới hạn cho phép) cả lưới là 91,9 / 76,7 / 35,6 / 24,7 / 16,1%. Phần quái thường cùng 30 giây sau boss mới là gánh nặng với bot bình thường (bot này chỉ thắng 57,8 / 43,3 / 24,3% ở intensity 3–5 ngay cả khi không có boss, trung bình mọi hỗn hợp; ba hỗn hợp của lưới boss khó hơn trung bình). Các đề xuất đã đo (không áp dụng, vì ngoài giới hạn cho phép):
+
+| thay đổi | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|
+| bộ số cuối | 89,6 | 68,4 | 29,2 | 20,2 | 11,0 |
+| giai đoạn sau boss 15 s thay vì 30 s | 93,9 | 68,4 | 33,1 | 23,5 | 12,1 |
+| nhịp quái sau boss 0,2 thay vì 0,4 | 89,6 | 67,6 | 35,3 | 23,0 | 13,4 |
+| cả hai (15 s, nhịp 0,2) | 93,9 | 74,1 | 37,5 | 23,8 | 14,7 |
+| không có quái sau boss (hạ boss là hết màn) | 97,1 | 81,8 | 44,4 | 27,8 | 19,2 |
+| boss 10 máu, không có quái sau boss | 97,9 | 87,6 | 51,9 | 31,9 | 22,9 |
+
+Ngay cả khi bỏ hẳn quái sau boss và để boss 10 máu, intensity 4 vẫn dưới 35%. Muốn đạt các khoảng ở intensity 3–5 cần giảm nhịp quái thường TRƯỚC boss ở màn boss (ví dụ ×0,7), hoặc hạ yêu cầu xuống cho khớp bot (3: 30–45, 4: 20–35, 5: 10–25). Vì cổng giảm mật độ quái thường và máu boss cho tới khi bot thắng được, người dùng vẫn nhận màn thắng được (bảng sau cổng bên dưới).
+
+### 3. Bảng sau cổng (bot bình thường, survive 60 s, 6750 ván, tối đa 6 bước giảm)
+
+| intensity | dựng được | bot thắng trên seed chưa dùng | ván bị giảm (trên 1350) |
+|---|---|---|---|
+| 1 | 100,0% | 91,9% | 80 |
+| 2 | 100,0% | 73,8% | 477 |
+| 3 | 99,9% | 70,2% | 939 |
+| 4 | 99,9% | 65,4% | 1072 |
+| 5 | 99,9% | 65,9% | 1218 |
+
+**Đạt:** dựng được ≥ 99% ở mọi mức (thấp nhất 99,9%), bot thắng ≥ 60% (thấp nhất 65,4%), `unwinnable_level` 4 trên 6750 ván (0,06%, ≤ 1%). Theo boss (dựng được / bot thắng / ván bị giảm trên 675 / `bossHp` trung bình sau giảm): crusher I1 100% / 92,9% / 35 / 15,9; I2 100 / 73,9 / 247 / 16,8; I3 100 / 70,1 / 479 / 17,0; I4 100 / 64,3 / 533 / 17,3; I5 99,9 / 65,7 / 609 / 16,9. gunner I1 100 / 90,8 / 45 / 11,9; I2 100 / 73,6 / 230 / 13,0; I3 99,9 / 70,3 / 460 / 12,5; I4 99,7 / 66,4 / 539 / 13,3; I5 100 / 66,1 / 609 / 12,8. Mỗi bước giảm hạ `bossHp` ×0,9 (làm tròn xuống, sàn 40% giá trị gốc và 10) và quái thường ×0,8; đợt boss không bao giờ bị bỏ hay giảm số lượng.
+
+### 4. Độ dài trận đấu với boss
+
+Từ lúc boss xuất hiện tới lúc bị hạ, ván bot bình thường thắng trước cổng, trung bình (mọi intensity / intensity 3), giây:
+
+| boss | pistol | rapid | heavy | shotgun | piercing |
+|---|---|---|---|---|---|
+| crusher | 13,4 / 16,0 | 10,2 / 11,2 | 11,4 / 14,4 | 13,4 / 17,3 | 12,5 / 12,2 |
+| gunner | 15,0 / 18,0 | 11,0 / 12,0 | 11,4 / 13,5 | 27,0 / 26,7 | 13,2 / 12,9 |
+
+Pistol ở intensity 3: 16,0 s (crusher) và 18,0 s (gunner), trong khoảng 10–60 s. Shotgun và súng xuyên không làm boss chết dưới 6 giây trung bình (nhỏ nhất ở từng ván lẻ là 4–9 s, vì cổng còn giảm máu boss).
+
+### 5. Thời gian dựng + cổng qua worker (bản build, `node scripts/measure-compile-time.mjs 40`)
+
+| trường hợp (40 lần, nhiều seed / map / intensity) | median | p95 | lớn nhất |
+|---|---|---|---|
+| survive 60 s | 0,33 s | 0,57 s | 0,61 s |
+| survive 180 s | 0,43 s | 0,68 s | 0,92 s |
+| xấu nhất boss: kill 200, all4, shotgun, intensity 5, máu yếu, boss gunner (9 dựng được, 31 bị từ chối) | 0,70 s | 0,90 s | 0,93 s |
+| xấu nhất Stage 4B: kill 200, all4, shotgun, intensity 5, máu yếu (cả 40 bị từ chối) | 1,66 s | 2,20 s | 2,41 s |
+| xấu nhất cũ: kill 200, toàn quái trâu, intensity 5, máu yếu | 1,33 s | 1,81 s | 1,91 s |
+
+Mọi p95 dưới 5 s; giới hạn 8 s của worker không đổi và không lần nào hết giờ. (Ca boss xấu nhất bị từ chối sớm vì một màn boss không còn kéo dài theo mục tiêu `kill`.)
+
+### 6. Cách làm và giới hạn đã biết
+
+- Màn có boss luôn thắng bằng cách hạ boss; `goal` của brief chỉ quyết định thời lượng giai đoạn trước boss (70%, làm tròn 5 s, tối thiểu 20 s; với `kill N` là 70% của thời lượng `killHorizon`). Mục tiêu `kill N` không được hạ khi bị từ chối (hạ N cũng chẳng đổi gì): cổng chỉ giảm quái và máu boss.
+- Boss ra ở điểm xuất hiện xa người chơi nhất và không dùng số ngẫu nhiên của game; boss không bị quái thường đẩy (quái thường bị đẩy ra khỏi boss); bán kính lớn nhất của màn được lưu theo màn (20, hoặc bán kính boss), nên màn cũ không đổi bit nào.
+- Bot bình thường vẫn bỏ qua vật phẩm hồi máu, né boss từ xa hơn một quái thường (cộng bán kính boss) và nhắm boss khi boss nằm trong 85% tầm súng.
+- Một cú lao chạm tường thì dừng; các khe giữa vật cản của `maps.ts` rộng khoảng 60 px, hẹp hơn thân boss (60–68 px), nên boss có thể bị kẹt ở lối hẹp (chưa đo).
+- `golden-sim-4c.json` (18 ván, 547 hash) được sinh từ mã mới nên chỉ chứng minh "không đổi về sau"; tính đúng do `shooter-boss.test.ts` chịu trách nhiệm.
+
+## Stage 4B: hai súng mới, quái bắn xa, hồi máu
 
 Bot bình thường (`CASUAL`, không đổi) là thước đo. `INTENSITY_RATE`, `CASUAL` và các số của quái và súng cũ không đổi. Số liệu từ `npx tsx scripts/calibrate-shooter.ts` (chạy từ `apps/api`); script có thêm `--set=old|new|all` (old = lưới Stage 4A, new = mọi ván có súng hoặc hỗn hợp quái mới), hai hỗn hợp mới (`spitter`: một mình; `all4`: runner 3, brute 2, swarmer 3, spitter 2), hai súng mới, các bảng cắt lát, và `--tune=spitter.weight=4,shotgun.cooldown=1000,...` để thử số khác trong một lần chạy mà không sửa file. Hồi máu giữ `none` trong lưới đo (bot bỏ qua vật phẩm).
 

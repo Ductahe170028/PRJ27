@@ -1,5 +1,6 @@
 ﻿// Step 5 of a tick: due enemies appear.
-import { ENEMY_TYPES, FIELD, MAX_ENEMIES_ALIVE, SPAWN_MIN_PLAYER_DISTANCE, msToTicks, rangedOf, type EnemyType } from './constants.js';
+import { ENEMY_TYPES, FIELD, MAX_ENEMIES_ALIVE, SPAWN_MIN_PLAYER_DISTANCE, bossOf, msToTicks, rangedOf, type EnemyType } from './constants.js';
+import { startBoss } from './boss.js';
 import { dist, pointRectDistance } from './geometry.js';
 import { random, type ShooterEnemy, type ShooterState } from './state.js';
 
@@ -10,9 +11,17 @@ const RING_DIRECTIONS: ReadonlyArray<readonly [number, number]> = [
 const SPIRAL_STEP = 6;
 const SPIRAL_RINGS = 12;
 
-/** 5. Due enemies spawn (waiting ones stay queued, none is dropped). */
+/** 5. Due enemies spawn (waiting ones stay queued, none is dropped). The boss, when it is due, goes before the ordinary
+ * enemies that are waiting: it takes the first free place, and nobody else is placed ahead of it. */
 export function spawnDue(state: ShooterState, t: number) {
+  const bossEntry = state.bossIndex === undefined || state.bossSpawned ? undefined : state.schedule[state.bossIndex];
+  if (bossEntry && bossEntry.tick <= t && state.enemies.length < MAX_ENEMIES_ALIVE && placeEnemy(state, bossEntry.type, t)) state.bossSpawned = true;
   while (state.spawned < state.schedule.length) {
+    if (state.bossIndex !== undefined && state.spawned === state.bossIndex) {
+      if (!state.bossSpawned) return; // the boss is next in line and not out yet: nobody goes ahead of it
+      state.spawned += 1; // it came out ahead of its turn
+      continue;
+    }
     const entry = state.schedule[state.spawned]!;
     if (entry.tick > t || state.enemies.length >= MAX_ENEMIES_ALIVE) return;
     if (!placeEnemy(state, entry.type, t)) return; // no free spot now: it waits, in order
@@ -33,7 +42,8 @@ function placeEnemy(state: ShooterState, type: EnemyType, t: number): boolean {
     candidates = [far];
     minDistance = 0;
   }
-  const origin = candidates[Math.floor(random(state) * candidates.length)]!;
+  // The boss does not use the game's random numbers: it comes out at the candidate farthest from the player (first on a tie).
+  const origin = bossOf(type) ? candidates.reduce((far, p) => (distanceToPlayer(p) > distanceToPlayer(far) ? p : far)) : candidates[Math.floor(random(state) * candidates.length)]!;
   const free = (x: number, y: number) => {
     if (x < FIELD.left + radius || x > FIELD.right - radius || y < FIELD.top + radius || y > FIELD.bottom - radius) return false;
     if (dist(x - player.x, y - player.y) < minDistance) return false;
@@ -53,6 +63,8 @@ function placeEnemy(state: ShooterState, type: EnemyType, t: number): boolean {
       // enemies that appear together do not all fire at once.
       const ranged = rangedOf(type);
       if (ranged) enemy.nextShotTick = t + msToTicks(ranged.cooldownMs / 2 + (enemy.id % 5) * 100);
+      const boss = bossOf(type);
+      if (boss) startBoss(enemy, boss, t, level.bossHp);
       state.enemies.push(enemy);
       state.nextId += 1;
       return true;

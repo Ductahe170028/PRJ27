@@ -1,6 +1,6 @@
 // Grid pathfinding for chasing enemies. One breadth-first search from the
 // player gives every enemy its way; nothing here is per enemy.
-import { FIELD, NAV_CELL } from './constants.js';
+import { BOSS_NAV_SLACK, FIELD, NAV_CELL } from './constants.js';
 import { clamp, dist as length, pointRectDistance, type Rect, type Vec } from './geometry.js';
 import type { ShooterLevel } from './level.js';
 
@@ -34,6 +34,19 @@ export function blockedCells(obstacles: readonly Rect[], inflate: number): boole
     const x = cellX(cell);
     const y = cellY(cell);
     blocked.push(y >= FIELD.bottom || obstacles.some((block) => pointRectDistance(x, y, block) < inflate));
+  }
+  return blocked;
+}
+
+/** The grid a boss walks on: like `blockedCells`, but grown by the boss's radius (and a little more), and a cell whose center
+ * is too near the field edge for the boss's body is blocked too. A boss is far wider than the other enemies, so on the ordinary
+ * grid it is led along walls and through gaps its body does not fit. */
+export function bossBlockedCells(obstacles: readonly Rect[], radius: number): boolean[] {
+  const blocked = blockedCells(obstacles, radius + BOSS_NAV_SLACK);
+  for (let cell = 0; cell < blocked.length; cell += 1) {
+    const x = cellX(cell);
+    const y = cellY(cell);
+    if (x < FIELD.left + radius || x > FIELD.right - radius || y < FIELD.top + radius || y > FIELD.bottom - radius) blocked[cell] = true;
   }
   return blocked;
 }
@@ -126,8 +139,7 @@ export function flowTarget(blocked: readonly boolean[], dist: readonly number[],
  * `clearance` px between obstacles (a disk of that diameter fits). The player's
  * and each spawn's own cell may sit near a wall: they only need a free
  * neighbor that the search reached. */
-export function freeSpaceConnected(level: ShooterLevel, clearance: number): boolean {
-  const blocked = blockedCells(level.obstacles, clearance / 2);
+export function freeSpaceConnected(level: ShooterLevel, clearance: number, blocked: readonly boolean[] = blockedCells(level.obstacles, clearance / 2)): boolean {
   const dist = flowDistances(blocked, cellOf(level.player.x, level.player.y));
   return level.spawnPoints.every((spawn) => {
     const cell = cellOf(spawn.x, spawn.y);

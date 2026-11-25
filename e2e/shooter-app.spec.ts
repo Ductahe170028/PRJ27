@@ -219,3 +219,21 @@ test('a brief with the shotgun, spitters and health drops: the card says so, and
   await expect(notices(page)).toHaveCount(0);
   await expect(page.frameLocator('iframe').locator('#game-hud')).toHaveAttribute('data-pickups', '0');
 });
+
+// --- Stage 4C: a generated level with a boss ---
+
+test('a brief with a boss: the banner, the card and the notice all say "Hạ boss", and the boss bar is not there until it comes', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'bảo vệ căn cứ có boss cuối to khổng lồ [brief:boss]');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  const frame = page.frameLocator('iframe');
+  await expect(frame.locator('#game-banner')).toContainText('MỤC TIÊU: Hạ boss');
+  await expect(field(page, 'goal')).toHaveText('Hạ boss');
+  await expect(infoCard(page).locator('[data-info="extra"]')).toHaveText([/^Boss cuối: quái khổng lồ, lao vào bạn \(máu \d+\)$/]);
+  await expect(notices(page).getByRole('listitem').filter({ hasText: 'Màn có boss: thắng bằng cách hạ boss.' })).toHaveCount(1);
+  await expect(frame.locator('#game-hud')).toContainText('Hạ boss');
+  await expect(frame.locator('#game-hud')).toHaveAttribute('data-boss-hp', '');
+  // one boss is supported: no "unsupported boss" sentence
+  await expect(notices(page).getByRole('listitem').filter({ hasText: 'Chưa hỗ trợ: boss' })).toHaveCount(0);
+});

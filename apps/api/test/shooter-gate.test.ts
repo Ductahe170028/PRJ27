@@ -13,7 +13,7 @@ import {
 import { killTarget } from '../src/shooter/waves.js';
 
 const brief = (patch: Record<string, unknown> = {}): ShooterBrief => ShooterBriefSchema.parse({
-  version: 'brief-1', healthDrops: 'none', title: 'Gate', theme: 'zombie-city', map: 'open-arena',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Gate', theme: 'zombie-city', map: 'open-arena',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 4, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [], ...patch,
 });
@@ -210,7 +210,7 @@ describe('a kill goal that is too heavy is lowered, not refused', () => {
   it('with the real bot: a heavy goal with brutes is lowered, and the result is the same bit for bit', () => {
     // (with the pistol or the heavy gun, the casual bot cannot win a 200-kill brute level even after three reductions: unwinnable_level)
     const b = ShooterBriefSchema.parse({
-      version: 'brief-1', healthDrops: 'none', title: 'Heavy', theme: 'zombie-city', map: 'pillars',
+      version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Heavy', theme: 'zombie-city', map: 'pillars',
       enemies: [{ type: 'brute', share: 5 }, { type: 'runner', share: 3 }, { type: 'swarmer', share: 2 }],
       intensity: 3, playerHealth: 'normal', weapon: 'rapid', goal: { type: 'kill', count: 150 }, unsupported: [],
     });

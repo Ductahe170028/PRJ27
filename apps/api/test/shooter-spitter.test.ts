@@ -16,7 +16,7 @@ describe('the spitter is one more row of data', () => {
     expect(rangedOf('spitter')).toEqual(RANGED);
     for (const type of ['runner', 'brute', 'swarmer'] as const) expect(rangedOf(type)).toBeUndefined();
     expect([1, 2, 3].map((n) => Object.values(ENEMY_TYPES).find((e) => e.code === n)?.radius)).toEqual([11, 20, 9]);
-    expect(Math.max(...Object.values(ENEMY_TYPES).map((e) => e.radius))).toBe(20);
+    expect(Math.max(...Object.values(ENEMY_TYPES).filter((e) => !('boss' in e)).map((e) => e.radius))).toBe(20); // the bosses are bigger: the level carries its own largest radius
   });
 
   it('a level with spitters passes the schema', () => {

@@ -56,7 +56,7 @@ Bảo vệ căn cứ, pickup đạn, mobile/cảm ứng, chỉnh game bằng pro
 
 `prompt → AI sinh ShooterBrief → compileShooter(brief, seed) → bot kiểm chứng → ShooterLevel → game`, qua `POST /api/shooter/generate`.
 
-- **Brief** (`apps/api/src/shooter/brief.ts`): chỉ ngữ nghĩa, chọn từ danh sách cố định (8 theme, 5 map, 4 loại quái từ Stage 4B, độ khó 1-5, máu, 5 vũ khí từ Stage 4B, hồi máu rơi, mục tiêu) cộng `unsupported`. AI không bao giờ sinh tọa độ hay số vật lý. Giá trị số và độ dài được kẹp (`normalizeBrief`), giá trị enum sai thì từ chối, không đoán.
+- **Brief** (`apps/api/src/shooter/brief.ts`): chỉ ngữ nghĩa, chọn từ danh sách cố định (8 theme, 5 map, 4 loại quái từ Stage 4B, độ khó 1-5, máu, 5 vũ khí từ Stage 4B, hồi máu rơi, boss từ Stage 4C, mục tiêu) cộng `unsupported`. AI không bao giờ sinh tọa độ hay số vật lý. Giá trị số và độ dài được kẹp (`normalizeBrief`), giá trị enum sai thì từ chối, không đoán.
 - **Preset** (`presets.ts`): bảng duy nhất biến từ thành số (máu 3/5/8, ba vũ khí, màu theo theme, tốc độ người chơi 210).
 - **Compiler** (`compile.ts`, `maps.ts`, `waves.ts`): xác định theo `seed`. Bố cục map phải qua schema, nối được mọi điểm xuất hiện tới người chơi cho một con brute, và khe ≥ 60 px; không vừa thì thử 8 biến thể rồi rơi về đấu trường trống kèm thông báo. Lịch wave theo nhịp `INTENSITY_RATE` (đe dọa mỗi giây, chia cho trọng số trung bình của loại quái) và giảm nhịp khi màn dài hơn 60 s.
 - **Cổng bot** (`gate.ts`, `compile-job.ts`): bot chơi level trên 3 seed. Thắng dưới 2/3 thì giảm mật độ (tối đa 6 lần x0.8, từ Stage 4A; trước đó 4), hết bước mà vẫn dưới 2/3 thì `unwinnable_level`; thắng 2/3 trở lên thì nhận nguyên vẹn. Bot vẫn chơi giỏi hơn nhiều người, nên cổng chỉ làm màn DỄ HƠN, không bao giờ KHÓ HƠN. Mục tiêu `kill` quá nặng thì giảm x0.7 (tối thiểu 10, tối đa 3 lần, cùng seed) thay vì từ chối; `survive` không bị đổi thời gian. Mỗi điều chỉnh có một thông báo cố định. Chạy trong worker, tối đa 8 s.
@@ -83,3 +83,19 @@ Bảo vệ căn cứ, pickup đạn, mobile/cảm ứng, chỉnh game bằng pro
 - **Bot bỏ qua vật phẩm hồi máu (cố ý).** Cổng đánh giá màn như thể người chơi không bao giờ nhặt, nên màn có hồi máu dễ hơn mức cổng đo (phía an toàn).
 - **Bot né đạn quái bằng cách bước ngang** (vuông góc đường bay), không lùi thẳng ra xa: đạn nhanh hơn người, nên lùi thẳng không bao giờ thoát (xem `docs/shooter-calibration.md`, mục Stage 4B). Bot bình thường chỉ thấy đạn ở lần "nhìn" gần nhất, với bán kính né nhỏ hơn bot giỏi.
 - Số liệu và các điều chưa đạt: [shooter-calibration.md](shooter-calibration.md), mục "Stage 4B". Chỉnh các số `ranged`, súng và `ENEMY_WEIGHT.spitter` bằng `npx tsx scripts/calibrate-shooter.ts --tune=...` trước khi sửa file.
+
+## Stage 4C: boss cuối
+
+- **Một boss mỗi màn, hai kiểu** (`ENEMY_TYPES`, mỗi kiểu một dòng dữ liệu có nhóm `boss`, tra bằng `bossOf`, không so tên): `crusher` (quái khổng lồ: đứng yên báo hiệu 0,8 s rồi lao 0,6 s vào chỗ người chơi đứng lúc bắt đầu lao, tường chặn thì dừng) và `gunner` (giữ khoảng cách 300 px, bắn quạt 3 viên và vòng 12 viên). Dưới 50% máu thì cuồng nộ (nhanh hơn, chu kỳ ngắn hơn). Không dùng `random`, không lượng giác (vòng 12 viên là bảng vector viết sẵn).
+- **Mục tiêu thắng `boss`** (`win: { type: 'boss' }`, `bossHp` tùy chọn 10..400): hạ boss thì thắng; thua vẫn kiểm tra trước thắng. Màn có boss LUÔN thắng bằng cách hạ boss, `goal` của brief chỉ quyết định thời lượng trước boss (70%) và engine luôn báo "Màn có boss: thắng bằng cách hạ boss." Nhiều boss, mini-boss, boss triệu hồi quái vẫn chưa hỗ trợ (có thông báo).
+- **Cộng thêm**: màn cũ chạy ra đúng từng bit (ba bản chụp vàng: `golden-sim.json` Stage 4A và `golden-sim-4b.json` không bao giờ tạo lại, `golden-sim-4c.json` chỉ tạo lại khi cố ý đổi mô phỏng). Bán kính quái lớn nhất tính theo màn (20, hoặc bán kính boss) nên không đổi thứ tự duyệt của màn cũ.
+- **Cổng với màn boss**: mỗi bước giảm quái thường ×0,8 và máu boss ×0,9 (sàn 40% và 10), không bao giờ xóa đợt boss; không hạ mục tiêu `kill`.
+- **Bot**: né boss từ xa hơn (cộng bán kính boss), nhắm boss khi boss trong tầm, vẫn bỏ qua vật phẩm. Bot bình thường chỉ thắng các màn boss ở mức dễ nhất của giới hạn (xem `docs/shooter-calibration.md`, mục Stage 4C): các khoảng ở intensity 3–5 chưa đạt, cần giảm nhịp quái thường ở màn boss hoặc đổi yêu cầu.
+- **Giao diện**: thanh máu boss, "BOSS XUẤT HIỆN!" 2 s, "CUỒNG NỘ", mục tiêu "Hạ boss", dòng boss trong thẻ "Thông tin màn"; hai màn tay `boss-crusher` và `boss-gunner` trong playground.
+
+## Stage 4C.1: boss không kẹt, màn boss tập trung vào boss
+
+- **Boss đi trên lưới riêng.** Flow field chung nới vật cản chỉ 12 px nên dẫn thân boss (rộng 60–68 px) vào chỗ nó không lọt, và crusher đứng im 3 trên 30 màn đo được. Màn có boss nay mang lưới đi và flow field riêng cho boss (vật cản nới thêm bán kính boss + 4 px, mép sân tính theo thân boss); màn không có boss không có hai trường này và chạy y như cũ. `compile.ts` chỉ chọn bố cục mà mọi điểm xuất hiện nối tới người chơi trên lưới đó. Không đụng `maps.ts`.
+- **Bài đo thành test lâu dài** (`shooter-boss-reach.test.ts`): người chơi đứng yên bất tử, boss phải tới trong `max(140, holdRange + 40)` px trong 120 s ở mọi cặp boss × map. 300/300 trên 30 seed, 2000/2000 trên 200 seed, 0% bản đồ bị đơn giản hóa.
+- **Màn boss là về boss.** Quái thường nhẹ nhịp hơn trước boss (`beforePace` 0,7) và rất ít sau khi boss ra (20 s, `afterPace` 0,25). Bot bình thường trước cổng: 94,6 / 83,5 / 67,9 / 44,4 / 27,7% (intensity 1…5), đạt mọi khoảng mục tiêu; số màn boss bị cổng giảm mật độ ở intensity 3–5 giảm từ 70/79/90% xuống 33/57/74%.
+- **Chưa làm:** người chơi vẫn có thể đứng ở chỗ lưới của boss không nối tới (ví dụ lối vừa khít 68 px) và ra ngoài tầm với của boss (đo: 3 trên 2772 ván thử vị trí khác).

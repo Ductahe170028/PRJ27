@@ -4,7 +4,7 @@ import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema, describeBrief } from '../
 import { THEMES } from '../src/shooter/presets.js';
 
 const valid = () => ({
-  version: 'brief-1', healthDrops: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [] as unknown[],
 }) as Record<string, any>;
@@ -138,7 +138,7 @@ describe('the prompt for the model', () => {
   });
 
   it('is short, and its field list is generated from the schema lists', () => {
-    expect(SHOOTER_BRIEF_SYSTEM_PROMPT.length).toBeLessThan(3_500);
+    expect(SHOOTER_BRIEF_SYSTEM_PROMPT.length).toBeLessThan(4_600); // (3 500 before the new weapons, healthDrops and boss)
     expect(describeBrief().join('\n')).toContain('theme: zombie-city|alien-lab');
     expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toContain(describeBrief().join('\n'));
   });

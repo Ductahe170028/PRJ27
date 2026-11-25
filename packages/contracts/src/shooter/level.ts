@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE,
+  EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
 } from './constants.js';
 import { dist, pointRectDistance, rectInsideField } from './geometry.js';
 
@@ -37,9 +37,12 @@ export const ShooterLevelSchema = z.object({
   }).strict()).min(1).max(30),
   /** Chance in percent that a defeated enemy drops a health pickup (absent or 0 = never). */
   drops: z.object({ healthChancePct: integer(0, 50) }).strict().optional(),
+  /** Hit points of the boss when it appears (absent = the boss kind's own). */
+  bossHp: integer(10, 400).optional(),
   win: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(10, 300) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(1, 400) }).strict(),
+    z.object({ type: z.literal('boss') }).strict(),
   ]),
 }).strict().superRefine((level, ctx) => {
   const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
@@ -63,6 +66,12 @@ export const ShooterLevelSchema = z.object({
   if (level.win.type === 'kill' && level.win.count > total) {
     issue(['win', 'count'], 'Mục tiêu hạ quái vượt tổng số quái theo lịch.');
   }
+  // At most one boss per level, once; a level that is won by defeating the boss must have it.
+  const bossWaves = level.waves.filter((wave) => bossOf(wave.type) !== undefined);
+  if (bossWaves.length > 1) issue(['waves'], 'Mỗi màn có tối đa một đợt boss.');
+  bossWaves.forEach((wave) => { if (wave.count !== 1) issue(['waves'], 'Đợt boss chỉ có một con.'); });
+  if (level.win.type === 'boss' && bossWaves.length !== 1) issue(['win'], 'Màn có mục tiêu hạ boss cần đúng một đợt boss.');
+  if (level.bossHp !== undefined && bossWaves.length === 0) issue(['bossHp'], 'bossHp cần có đợt boss.');
   if (level.win.type === 'survive') {
     const endMs = level.win.seconds * 1000;
     if (!level.waves.some((wave) => wave.atMs < endMs)) issue(['waves'], 'Màn sống sót cần ít nhất một đợt quái xuất hiện trước khi hết giờ.');
@@ -70,3 +79,6 @@ export const ShooterLevelSchema = z.object({
 });
 
 export type ShooterLevel = z.infer<typeof ShooterLevelSchema>;
+
+/** The level's boss wave, if it has one (a level has at most one). */
+export const bossWaveOf = (level: Pick<ShooterLevel, 'waves'>) => level.waves.find((wave) => bossOf(wave.type) !== undefined);

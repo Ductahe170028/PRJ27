@@ -36,7 +36,8 @@ export function compileAndGate(job: CompileJob, options: CompileOptions & GateOp
         report: { ...gated.report, map: compiled.map, variant: compiled.variant, killReductions: reductions },
       };
     } catch (error) {
-      if (!(error instanceof AIError) || error.code !== 'unwinnable_level' || brief.goal.type !== 'kill' || reductions >= MAX_KILL_REDUCTIONS) throw error;
+      // (a level with a boss is won by defeating it: lowering the kill goal would change nothing)
+      if (!(error instanceof AIError) || error.code !== 'unwinnable_level' || brief.goal.type !== 'kill' || brief.boss !== 'none' || reductions >= MAX_KILL_REDUCTIONS) throw error;
       const lower = Math.max(MIN_KILL_COUNT, Math.floor(brief.goal.count * KILL_REDUCE_FACTOR));
       if (lower >= brief.goal.count) throw error; // already at the floor: nothing left to lower
       brief = { ...brief, goal: { type: 'kill', count: lower } };

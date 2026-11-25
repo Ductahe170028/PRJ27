@@ -6,8 +6,9 @@
 //   ... --pre-only                                            only the bot on the raw compiled levels (fast, for tuning)
 //   ... --goal=survive:180 | --goal=kill:100 | --seeds=1      another goal / fewer seeds
 //   ... --tune=spitter.weight=2.5,spitter.hold=260,shotgun.cooldown=800,...   try other Stage 4B numbers for this run only (see applyTune)
-//   ... --set=old|new|all                                     old = the Stage 4A grid (3 old weapons x 4 old mixes, 2700 games);
-//                                                             new = every game with a new weapon or a new mix; all = both (default)
+//   ... --set=old|new|all|boss                                     old = the Stage 4A grid (3 old weapons x 4 old mixes, 2700 games);
+//                                                             new = every game with a new weapon or a new mix; all = both (default);
+//                                                             boss = the Stage 4C grid: 2 bosses x 5 weapons x mixed/runner/all4 (6750 games, survive 60 s)
 //   ... --out=path.txt                                        also write the tables to that file
 //
 // The grid: intensity 1-5 x enemy mix (runner, brute, swarmer, mixed; Stage 4B adds spitter and all4)
@@ -21,12 +22,12 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { CASUAL, ENEMY_TYPES, botInput, createCasualBot, playLevel, type CasualParams, type ShooterLevel } from '@game-creator/contracts';
+import { CASUAL, ENEMY_TYPES, bossWaveOf, botInput, createCasualBot, playLevel, type CasualParams, type ShooterLevel } from '@game-creator/contracts';
 import { ShooterBriefSchema, SHOOTER_MAPS, PLAYER_HEALTHS, WEAPONS, type ShooterBrief } from '../src/shooter/brief.js';
 import { compileShooter } from '../src/shooter/compile.js';
 import { compileAndGate } from '../src/shooter/compile-job.js';
-import { WEAPONS as WEAPON_PRESETS } from '../src/shooter/presets.js';
-import { ENEMY_WEIGHT, INTENSITY_RATE, NOT_BEFORE } from '../src/shooter/waves.js';
+import { BOSS_HP_BY_INTENSITY, WEAPONS as WEAPON_PRESETS } from '../src/shooter/presets.js';
+import { BOSS_TIMING, ENEMY_WEIGHT, INTENSITY_RATE, NOT_BEFORE } from '../src/shooter/waves.js';
 
 const MIXES: ReadonlyArray<{ name: string; enemies: ShooterBrief['enemies'] }> = [
   { name: 'runner', enemies: [{ type: 'runner', share: 5 }] },
@@ -39,8 +40,10 @@ const MIXES: ReadonlyArray<{ name: string; enemies: ShooterBrief['enemies'] }> =
 ];
 const OLD_MIXES = ['runner', 'brute', 'swarmer', 'mixed'];
 const OLD_WEAPONS = ['pistol', 'rapid', 'heavy'];
-const SET = /^--set=(old|new|all)$/.exec(process.argv.slice(2).find((arg) => arg.startsWith('--set=')) ?? '')?.[1] ?? 'all';
-const inSet = (mix: string, weapon: string) => SET === 'all' || (SET === 'old') === (OLD_MIXES.includes(mix) && OLD_WEAPONS.includes(weapon));
+const SET = /^--set=(old|new|all|boss)$/.exec(process.argv.slice(2).find((arg) => arg.startsWith('--set=')) ?? '')?.[1] ?? 'all';
+const BOSS_MIXES = ['mixed', 'runner', 'all4'];
+const BOSSES = SET === 'boss' ? (['crusher', 'gunner'] as const) : (['none'] as const);
+const inSet = (mix: string, weapon: string) => (SET === 'boss' ? BOSS_MIXES.includes(mix) : SET === 'all' || (SET === 'old') === (OLD_MIXES.includes(mix) && OLD_WEAPONS.includes(weapon)));
 const SEEDS = [101, 202, 303];
 // --goal=survive:180 or --goal=kill:100 measures another goal (the default grid is survive 60).
 const goalArg = /^--goal=(survive|kill):(\d+)$/.exec(process.argv.slice(2).find((arg) => arg.startsWith('--goal=')) ?? '');
@@ -66,22 +69,26 @@ const botDescription = () => (BOT === 'expert' ? 'expert (botInput: exact sight,
 /** One game with a fresh bot made from that game's seed. */
 const playWith = (level: ShooterLevel) => playLevel(level, BOT === 'expert' ? botInput : createCasualBot(level.seed, PARAMS));
 
-interface Combo { intensity: number; mix: string; map: string; weapon: string; health: string; seed: number }
+interface Combo { intensity: number; boss: string; mix: string; map: string; weapon: string; health: string; seed: number }
 interface Row {
   combo: Combo;
   preWon: boolean; preHp: number;
   postOk: boolean; postWon: boolean; postHp: number; thin: number; reduced: boolean; error?: string;
+  /** A boss game that was won before the gate: seconds from the boss appearing to its defeat. */
+  bossSecs?: number;
+  /** The boss's hit points in the level the gate handed out. */
+  bossHpAfter?: number;
 }
 
 function* grid(): Generator<{ combo: Combo; brief: ShooterBrief }> {
-  for (const intensity of [1, 2, 3, 4, 5]) for (const mix of MIXES) for (const map of SHOOTER_MAPS) {
+  for (const intensity of [1, 2, 3, 4, 5]) for (const boss of BOSSES) for (const mix of MIXES) for (const map of SHOOTER_MAPS) {
     for (const weapon of WEAPONS) for (const health of PLAYER_HEALTHS) for (const seed of SEEDS.slice(0, seedCount)) {
       if (!inSet(mix.name, weapon)) continue;
       const brief = ShooterBriefSchema.parse({
-        version: 'brief-1', healthDrops: 'none', title: 'Calibration', theme: 'zombie-city', map, enemies: mix.enemies, intensity,
+        version: 'brief-1', healthDrops: 'none', boss, title: 'Calibration', theme: 'zombie-city', map, enemies: mix.enemies, intensity,
         playerHealth: health, weapon, goal: GOAL, unsupported: [],
       });
-      yield { combo: { intensity, mix: mix.name, map, weapon, health, seed }, brief };
+      yield { combo: { intensity, boss, mix: mix.name, map, weapon, health, seed }, brief };
     }
   }
 }
@@ -94,11 +101,13 @@ function runShard(index: number, shards: number, preOnly: boolean): Row[] {
     const compiled = compileShooter(brief, combo.seed);
     const pre = playWith(compiled.level);
     const row: Row = { combo, preWon: pre.status === 'won', preHp: pre.hpLeft, postOk: false, postWon: false, postHp: 0, thin: 0, reduced: false };
+    const bossWave = bossWaveOf(compiled.level);
+    if (bossWave && pre.status === 'won') row.bossSecs = pre.seconds - bossWave.atMs / 1000;
     if (!preOnly) {
       try {
         const job = compileAndGate({ brief, seed: combo.seed }, { play: playWith });
         const post = playWith({ ...job.level, seed: job.level.seed + 11 });
-        Object.assign(row, { postOk: true, postWon: post.status === 'won', postHp: post.hpLeft, thin: job.report.thinSteps, reduced: job.report.killReductions > 0 });
+        Object.assign(row, { postOk: true, postWon: post.status === 'won', postHp: post.hpLeft, thin: job.report.thinSteps, reduced: job.report.killReductions > 0, ...(job.report.bossHp !== undefined ? { bossHpAfter: job.report.bossHp } : {}) });
       } catch (error) {
         row.error = error instanceof Error ? error.message : String(error);
       }
@@ -159,6 +168,30 @@ function report(rows: Row[], preOnly: boolean): string {
       lines.push(`- ${weapon}: ${pct(ok.length, set.length).toFixed(1)}% compiled, ${pct(ok.filter((r) => r.postWon).length, ok.length).toFixed(1)}% won, ${set.filter((r) => r.thin > 0).length} thinned of ${set.length}`);
     }
   }
+  if (SET === 'boss') {
+    const bosses = [...new Set(rows.map((row) => row.combo.boss))];
+    const mean = (values: number[]) => (values.length === 0 ? '-' : (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1));
+    lines.push('', 'Boss levels, before the gate: bot wins by boss x intensity:', `| boss | ${[1, 2, 3, 4, 5].map((i) => `I${i}`).join(' | ')} |`, `|---|${'---|'.repeat(5)}`);
+    for (const boss of bosses) lines.push(`| ${boss} | ${[1, 2, 3, 4, 5].map((i) => wins(rows.filter((r) => r.combo.boss === boss && r.combo.intensity === i))).join(' | ')} |`);
+    lines.push('', 'Boss fight length (s from the boss appearing to its defeat, games won before the gate), by boss x weapon (all intensities / intensity 3):', `| boss | ${weapons.join(' | ')} |`, `|---|${'---|'.repeat(weapons.length)}`);
+    for (const boss of bosses) {
+      lines.push(`| ${boss} | ${weapons.map((weapon) => {
+        const set = rows.filter((r) => r.combo.boss === boss && r.combo.weapon === weapon && r.bossSecs !== undefined);
+        const third = set.filter((r) => r.combo.intensity === 3);
+        return `${mean(set.map((r) => r.bossSecs!))} / ${mean(third.map((r) => r.bossSecs!))} (min ${set.length ? Math.min(...set.map((r) => r.bossSecs!)).toFixed(1) : '-'})`;
+      }).join(' | ')} |`);
+    }
+    if (!preOnly) {
+      lines.push('', 'After the gate, by boss x intensity (compiled / bot wins on unused seeds / games thinned of n / mean boss hit points kept):');
+      for (const boss of bosses) {
+        for (const i of [1, 2, 3, 4, 5]) {
+          const set = rows.filter((r) => r.combo.boss === boss && r.combo.intensity === i);
+          const ok = set.filter((r) => r.postOk);
+          lines.push(`- ${boss} I${i}: ${pct(ok.length, set.length).toFixed(1)}% compiled, ${pct(ok.filter((r) => r.postWon).length, ok.length).toFixed(1)}% won, ${set.filter((r) => r.thin > 0).length} thinned of ${set.length}, boss hp ${mean(ok.filter((r) => r.bossHpAfter !== undefined).map((r) => r.bossHpAfter!))}`);
+        }
+      }
+    }
+  }
   return lines.join('\n');
 }
 
@@ -172,6 +205,8 @@ function applyTune() {
   const ranged = ENEMY_TYPES.spitter.ranged as unknown as Record<string, number>;
   const shotgun = WEAPON_PRESETS.shotgun as Record<string, number | undefined>;
   const piercing = WEAPON_PRESETS.piercing as Record<string, number | undefined>;
+  const crusherCharge = (ENEMY_TYPES.crusher.boss as unknown as { charge: { cycleMs: number; telegraphMs: number; speedScale: number } }).charge;
+  const gunnerVolleys = (ENEMY_TYPES.gunner.boss as unknown as { volleys: Array<{ cooldownMs: number; bulletSpeed: number }> }).volleys;
   const targets: Record<string, () => (value: number) => void> = {
     'spitter.weight': () => (v) => { ENEMY_WEIGHT.spitter = v; },
     'spitter.notbefore': () => (v) => { NOT_BEFORE.spitter = v; },
@@ -190,6 +225,26 @@ function applyTune() {
     'piercing.range': () => (v) => { piercing.range = v; },
     'piercing.pierce': () => (v) => { piercing.pierce = v; },
     'piercing.speed': () => (v) => { piercing.bulletSpeed = v; },
+    // Stage 4C: the bosses (hit points, rush and volley cycles, bullet speeds, when the boss comes)
+    'crusher.hp': () => (v) => { (ENEMY_TYPES.crusher as { hp: number }).hp = v; },
+    'gunner.hp': () => (v) => { (ENEMY_TYPES.gunner as { hp: number }).hp = v; },
+    'crusher.cycle': () => (v) => { crusherCharge.cycleMs = v; },
+    'crusher.telegraph': () => (v) => { crusherCharge.telegraphMs = v; },
+    'crusher.rush': () => (v) => { crusherCharge.speedScale = v; },
+    'gunner.fan': () => (v) => { gunnerVolleys[0]!.cooldownMs = v; },
+    'gunner.ring': () => (v) => { gunnerVolleys[1]!.cooldownMs = v; },
+    'gunner.fanspeed': () => (v) => { gunnerVolleys[0]!.bulletSpeed = v; },
+    'gunner.ringspeed': () => (v) => { gunnerVolleys[1]!.bulletSpeed = v; },
+    'boss.at': () => (v) => { BOSS_TIMING.atShare = v; },
+    // (not part of the allowed limits: only to measure a proposal)
+    'boss.before': () => (v) => { BOSS_TIMING.beforePace = v; },
+    'boss.after': () => (v) => { BOSS_TIMING.afterSeconds = v; },
+    'boss.afterpace': () => (v) => { BOSS_TIMING.afterPace = v; },
+    'bossmult.1': () => (v) => { BOSS_HP_BY_INTENSITY[0] = v; },
+    'bossmult.2': () => (v) => { BOSS_HP_BY_INTENSITY[1] = v; },
+    'bossmult.3': () => (v) => { BOSS_HP_BY_INTENSITY[2] = v; },
+    'bossmult.4': () => (v) => { BOSS_HP_BY_INTENSITY[3] = v; },
+    'bossmult.5': () => (v) => { BOSS_HP_BY_INTENSITY[4] = v; },
   };
   for (const pair of TUNE_TEXT.split(',').filter(Boolean)) {
     const [key, value] = pair.split('=');

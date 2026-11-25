@@ -1,13 +1,13 @@
 // Every sentence the player reads about a shooter level: the goal, the banner at the start, the HUD
 // line and the "Thông tin màn" card. Pure functions of the level (no Phaser, no DOM), so they are
 // tested without a browser and the game and the page always say the same thing.
-import { rangedOf, totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
+import { ENEMY_TYPES, bossOf, bossWaveOf, rangedOf, totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
 
 type Win = ShooterLevel['win'];
 type Weapon = ShooterLevel['weapon'];
 
-/** "Sống sót 60 giây" or "Hạ 40 quái". */
-export const goalSentence = (win: Win): string => (win.type === 'survive' ? `Sống sót ${win.seconds} giây` : `Hạ ${win.count} quái`);
+/** "Sống sót 60 giây", "Hạ 40 quái" or "Hạ boss". */
+export const goalSentence = (win: Win): string => (win.type === 'survive' ? `Sống sót ${win.seconds} giây` : win.type === 'kill' ? `Hạ ${win.count} quái` : 'Hạ boss');
 
 // --- the banner shown for the first seconds of every game (and after every restart) ---
 export const BANNER_MS = 3000;
@@ -47,8 +47,9 @@ export const bannerTextColor = (theme: Pick<ShooterLevel['theme'], 'accent' | 'b
 // --- the HUD line ---
 export interface HudInput { hp: number; maxHp: number; score: number; kills: number; seconds: number }
 
-/** "Sống sót 12/60s" or "Hạ 12/40": the goal with its progress. */
+/** "Sống sót 12/60s", "Hạ 12/40" or "Hạ boss" (the boss bar is its progress): the goal with its progress. */
 export function goalProgress(win: Win, hud: Pick<HudInput, 'kills' | 'seconds'>): string {
+  if (win.type === 'boss') return 'Hạ boss';
   return win.type === 'survive' ? `Sống sót ${Math.min(Math.floor(hud.seconds), win.seconds)}/${win.seconds}s` : `Hạ ${hud.kills}/${win.count}`;
 }
 
@@ -58,6 +59,26 @@ export function hudLine(win: Win, hud: HudInput): string {
   if (win.type === 'survive') parts.push(`Hạ ${hud.kills}`);
   parts.push(goalProgress(win, hud), 'R: chơi lại');
   return parts.join('  ·  ');
+}
+
+// --- the boss bar and the warning when the boss appears ---
+/** The warning "BOSS XUẤT HIỆN!" is shown for 2 s of game time (120 ticks), fading out over the last half second (30 ticks). */
+export const BOSS_WARNING_TICKS = 120;
+export const BOSS_WARNING_FADE_TICKS = 30;
+export const BOSS_WARNING_TEXT = 'BOSS XUẤT HIỆN!';
+
+/** How opaque the warning is `ticksSince` game ticks after the boss appeared: 1, fading to 0 at 120, gone after. */
+export function bossWarningAlpha(ticksSince: number): number {
+  if (!(ticksSince >= 0) || ticksSince >= BOSS_WARNING_TICKS) return 0;
+  const fadeStart = BOSS_WARNING_TICKS - BOSS_WARNING_FADE_TICKS;
+  return ticksSince <= fadeStart ? 1 : (BOSS_WARNING_TICKS - ticksSince) / BOSS_WARNING_FADE_TICKS;
+}
+
+export interface BossBar { share: number; percent: number; label: string; note: string }
+/** The boss bar: how full it is (0 to 1, from hit points over maximum), the label, and "CUỒNG NỘ" once it is enraged. */
+export function bossBar(hp: number, maxHp: number, enraged: boolean): BossBar {
+  const share = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
+  return { share, percent: Math.round(share * 100), label: 'BOSS', note: enraged ? 'CUỒNG NỘ' : '' };
 }
 
 // --- the "Thông tin màn" card ---
@@ -87,5 +108,14 @@ export function levelInfo(level: ShooterLevel): LevelInfo {
   if (level.waves.some((wave) => rangedOf(wave.type) !== undefined)) extras.push('Có quái bắn xa (né đạn của chúng)');
   const drop = level.drops?.healthChancePct ?? 0;
   if (drop > 0) extras.push(`Quái bị hạ có thể rơi vật phẩm hồi máu (${drop}%)`);
+  const bossWave = bossWaveOf(level);
+  const boss = bossWave && bossOf(bossWave.type);
+  if (bossWave && boss) {
+    const hp = level.bossHp ?? ENEMY_TYPES[bossWave.type].hp;
+    // told apart by what the boss does (its data), never by its name
+    if (boss.charge) extras.push(`Boss cuối: quái khổng lồ, lao vào bạn (máu ${hp})`);
+    else if (boss.volleys) extras.push(`Boss cuối: bắn đạn quạt và vòng đạn (máu ${hp})`);
+    else extras.push(`Boss cuối (máu ${hp})`);
+  }
   return { goal: goalSentence(level.win), maxHealth: level.player.hp, maxEnemies: totalScheduledEnemies(level), weapon: weapon.label, weaponDetail: weapon.detail, extras };
 }

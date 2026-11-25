@@ -46,20 +46,62 @@ export const ENEMY_TYPES = {
     // spitters. Tuned in docs/shooter-calibration.md (Stage 4B) to the slowest and rarest the limits allow.
     ranged: { holdRange: 260, sightRange: 460, cooldownMs: 2400, bulletSpeed: 180, bulletDamage: 1, bulletRadius: 5 },
   },
+  /** Boss: a huge brute that stops, shows it is about to rush, then rushes at where you stood. */
+  crusher: {
+    // Starting values: hp 70, cycle 4500 ms. With them the casual bot won 52 / 24 / 8 / 4 / 2% (intensity 1-5); tuned to the
+    // easiest the limits allow (docs/shooter-calibration.md, Stage 4C).
+    code: 5, radius: 34, speed: 60, hp: 40, damage: 2, points: 50,
+    boss: {
+      enrage: { belowHpShare: 0.5, speedScale: 1.25, cooldownScale: 0.75 },
+      charge: { cycleMs: 6000, telegraphMs: 800, durationMs: 600, speedScale: 3.2 },
+    },
+  },
+  /** Boss: keeps its distance and fires a fan of three bullets, and now and then a ring of twelve. */
+  gunner: {
+    // Starting values: hp 50, fan every 2000 ms at 200 px/s, ring every 5000 ms at 150 px/s (tuned like the crusher).
+    code: 6, radius: 30, speed: 55, hp: 30, damage: 1, points: 50,
+    boss: {
+      enrage: { belowHpShare: 0.5, speedScale: 1, cooldownScale: 0.7 },
+      holdRange: 300,
+      volleys: [
+        { shape: 'fan', count: 3, spreadDeg: 24, cooldownMs: 2600, bulletSpeed: 120, bulletDamage: 1, bulletRadius: 6, range: 700 },
+        { shape: 'ring', count: 12, spreadDeg: 360, cooldownMs: 7000, bulletSpeed: 120, bulletDamage: 1, bulletRadius: 6, range: 700 },
+      ],
+    },
+  },
 } as const;
 
 export type EnemyType = keyof typeof ENEMY_TYPES;
-export const ENEMY_TYPE_NAMES = ['runner', 'brute', 'swarmer', 'spitter'] as const satisfies readonly EnemyType[];
+export const ENEMY_TYPE_NAMES = ['runner', 'brute', 'swarmer', 'spitter', 'crusher', 'gunner'] as const satisfies readonly EnemyType[];
 
 /** How a shooting enemy behaves, as data. Only some kinds have it (the older ones do not). Distances in px,
  * bullet speed in px/s: it stops advancing once it is within `holdRange` of the player in plain sight, fires
  * only inside `sightRange` and in plain sight, one bullet every `cooldownMs` straight at where the player is. */
 export interface RangedSpec { holdRange: number; sightRange: number; cooldownMs: number; bulletSpeed: number; bulletDamage: number; bulletRadius: number }
-interface EnemySpec { code: number; radius: number; speed: number; hp: number; damage: number; points: number; ranged?: RangedSpec }
+/** One volley of a boss: `fan` = `count` bullets in a fan `spreadDeg` wide aimed at the player; `ring` = twelve bullets
+ * all round (the fixed table RING_12 in boss.ts; `count` must be 12). Bullet speed in px/s, `range` in px, cooldown in ms. */
+export interface VolleySpec { shape: 'fan' | 'ring'; count: number; spreadDeg: number; cooldownMs: number; bulletSpeed: number; bulletDamage: number; bulletRadius: number; range: number }
+/** A boss, as data (only the boss kinds have it). Below `enrage.belowHpShare` of its maximum hit points it moves
+ * `speedScale` times as fast and its cycles are `cooldownScale` times as long. `holdRange`: it stops advancing within
+ * that many px of the player in plain sight. `charge`: every `cycleMs` it stands still for `telegraphMs`, then rushes
+ * for `durationMs` at `speedScale` times its speed, straight at where the player stood when the rush began. */
+export interface BossSpec {
+  enrage: { belowHpShare: number; speedScale: number; cooldownScale: number };
+  holdRange?: number;
+  charge?: { cycleMs: number; telegraphMs: number; durationMs: number; speedScale: number };
+  volleys?: readonly VolleySpec[];
+}
+interface EnemySpec { code: number; radius: number; speed: number; hp: number; damage: number; points: number; ranged?: RangedSpec; boss?: BossSpec }
 /** The shooting data of a kind, or undefined when it does not shoot. */
 export function rangedOf(type: EnemyType): RangedSpec | undefined {
   const spec: EnemySpec = ENEMY_TYPES[type];
   return spec.ranged;
+}
+
+/** The boss data of a kind, or undefined when it is not a boss. */
+export function bossOf(type: EnemyType): BossSpec | undefined {
+  const spec: EnemySpec = ENEMY_TYPES[type];
+  return spec.boss;
 }
 
 /** Enemy bullets alive at once; a shot over the cap is not fired. */
@@ -80,6 +122,9 @@ export const MAX_ENEMY_RADIUS = 20;
 export const NAV_CELL = 20;
 /** Obstacles are grown by this much before a cell counts as blocked (px). */
 export const NAV_INFLATE = 12;
+/** A boss walks on a grid of its own: obstacles and the field edge are grown by its radius plus this much (px), so that the
+ * whole body, not just the center, fits along the way. */
+export const BOSS_NAV_SLACK = 4;
 /** The flow field is rebuilt at least this often (ticks). */
 export const NAV_REFRESH_TICKS = 20;
 /** Clearance the hand-made levels must give (2 brute radii plus slack, px). */

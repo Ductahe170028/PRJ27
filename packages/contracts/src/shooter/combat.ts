@@ -1,5 +1,5 @@
 ﻿// What hurts what, and how a game ends: steps 8 and 9 of a tick, and the damage an enemy takes.
-import { ENEMY_TYPES, INVULNERABLE_MS, PLAYER_RADIUS, TICK_RATE, msToTicks } from './constants.js';
+import { ENEMY_TYPES, INVULNERABLE_MS, PLAYER_RADIUS, TICK_RATE, bossOf, msToTicks } from './constants.js';
 import { maybeDropHealth } from './pickups.js';
 import type { ShooterEnemy, ShooterState } from './state.js';
 
@@ -11,6 +11,7 @@ export function damageEnemy(state: ShooterState, enemy: ShooterEnemy, amount: nu
     state.kills += 1;
     state.score += ENEMY_TYPES[enemy.type].points;
     maybeDropHealth(state, enemy);
+    if (bossOf(enemy.type)) state.bossDown = true;
   }
 }
 
@@ -36,5 +37,6 @@ export function advanceClock(state: ShooterState, t: number) {
   const { level, player } = state;
   state.tick = t + 1;
   if (player.hp <= 0) state.status = 'lost';
-  else if (level.win.type === 'survive' ? state.tick >= level.win.seconds * TICK_RATE : state.kills >= level.win.count) state.status = 'won';
+  else if (level.win.type === 'survive' ? state.tick >= level.win.seconds * TICK_RATE
+    : level.win.type === 'kill' ? state.kills >= level.win.count : state.bossDown === true) state.status = 'won';
 }

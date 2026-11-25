@@ -4,14 +4,17 @@
 //  - aims with a small random error that it keeps until the next look,
 //  - fires only at a target inside part of the weapon's reach,
 //  - keeps a smaller distance from enemies, enemy bullets and walls than the expert, and has no route planning,
+//  - aims at the boss instead of the nearest enemy when the boss is within the distance it dares to shoot from,
 //  - ignores health pickups on purpose: the gate judges a level as if the player never picked one up, so a level
 //    with health drops is a little EASIER than the gate measured (the safe side).
 // Everything is deterministic: the error comes from this bot's own seeded generator (the game's
 // seed), never from Math.random. The numbers are in CASUAL, ONE place, so they can be tuned
 // without touching the logic. They are an estimate of a casual player, to be tuned with feedback
 // from real players (docs/shooter-calibration.md).
+import { ENEMY_TYPES } from './constants.js';
+import { isBoss } from './boss.js';
 import type { ShooterInput, ShooterState } from './state.js';
-import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer, type BulletPoint, type Point } from './steering.js';
+import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer, type BulletPoint, type EnemyPoint, type Point } from './steering.js';
 
 export interface CasualParams {
   /** Ticks between two looks at the field (60 ticks = 1 s). Reaction delay. */
@@ -63,7 +66,7 @@ export function createCasualBot(seed: number, params: CasualParams = CASUAL): (s
 
   let lastLook = -Infinity;
   /** Where the enemies were at the last look. */
-  let seen: Point[] = [];
+  let seen: EnemyPoint[] = [];
   /** Where the enemy bullets were at the last look. */
   let seenBullets: BulletPoint[] = [];
   let target: Point | undefined;
@@ -74,9 +77,17 @@ export function createCasualBot(seed: number, params: CasualParams = CASUAL): (s
     const { player, level } = state;
     if (state.tick - lastLook >= params.reactionTicks) {
       lastLook = state.tick;
-      seen = state.enemies.map((enemy) => ({ x: enemy.x, y: enemy.y }));
+      // (a boss is remembered with its radius, which makes the bot keep farther from it; no other enemy has the extra key)
+      seen = state.enemies.map((enemy) => (isBoss(enemy.type) ? { x: enemy.x, y: enemy.y, extra: ENEMY_TYPES[enemy.type].radius } : { x: enemy.x, y: enemy.y }));
       seenBullets = state.enemyBullets.map((bullet) => ({ x: bullet.x, y: bullet.y, vx: bullet.vx, vy: bullet.vy }));
-      target = nearestTo(player, seen);
+      // The boss, when it is within the part of the weapon's reach that the bot dares to shoot at, is what it aims at.
+      const range = state.level.weapon.range * params.fireRangeShare;
+      const boss = state.bossIndex === undefined ? undefined : state.enemies.find((enemy) => {
+        const dx = enemy.x - player.x;
+        const dy = enemy.y - player.y;
+        return isBoss(enemy.type) && Math.sqrt(dx * dx + dy * dy) <= range;
+      });
+      target = boss ? { x: boss.x, y: boss.y } : nearestTo(player, seen);
       sideways = (random() * 2 - 1) * errorTan; // one draw per look, enemies or not
     }
     const { moveX, moveY } = steer(player, level, seen, fleeRadius, wallRadius, seenBullets, bulletRadius);

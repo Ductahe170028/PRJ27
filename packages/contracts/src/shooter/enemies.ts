@@ -1,5 +1,6 @@
 ﻿// Step 6 of a tick: enemies move. Every number about a kind comes from ENEMY_TYPES.
-import { ENEMY_TYPES, MAX_ENEMY_RADIUS, NAV_REFRESH_TICKS, PLAYER_RADIUS, TICK_RATE, rangedOf } from './constants.js';
+import { ENEMY_TYPES, NAV_REFRESH_TICKS, PLAYER_RADIUS, TICK_RATE, rangedOf } from './constants.js';
+import { isBoss, moveBoss } from './boss.js';
 import { lineOfSight, resolveCircle, type Rect } from './geometry.js';
 import { GRID_COLS, buildGrid, gridCells, gridCol, gridRow } from './grid.js';
 import { cellOf, flowDistances, flowTarget, type FlowField } from './navigation.js';
@@ -20,7 +21,18 @@ export function moveEnemies(state: ShooterState, t: number, walls: readonly Rect
     }
     return flow;
   };
+  // A boss follows a flow field of its own, built on a grid that is grown by its body (state.bossBlocked).
+  const ensureBossFlow = (): FlowField => {
+    const goal = cellOf(player.x, player.y);
+    let bossFlow = state.bossFlow;
+    if (!bossFlow || bossFlow.goal !== goal || t - bossFlow.atTick >= NAV_REFRESH_TICKS) {
+      bossFlow = { goal, atTick: t, dist: flowDistances(state.bossBlocked ?? state.blocked, goal) };
+      state.bossFlow = bossFlow;
+    }
+    return bossFlow;
+  };
   for (const enemy of enemies) {
+    if (isBoss(enemy.type)) { moveBoss(state, enemy, t, walls, () => ensureBossFlow().dist); continue; }
     const kind = ENEMY_TYPES[enemy.type];
     const stride = kind.speed / TICK_RATE;
     let toPlayer = true;
@@ -55,7 +67,7 @@ function pushApart(state: ShooterState) {
   for (let i = 0; i < enemies.length; i += 1) {
     const a = enemies[i]!;
     const ra = ENEMY_TYPES[a.type].radius;
-    const around = ra + MAX_ENEMY_RADIUS; // farthest center that can still overlap `a`
+    const around = ra + state.maxEnemyRadius; // farthest center that can still overlap `a`
     const c0 = gridCol(a.x - around); const c1 = gridCol(a.x + around);
     const r0 = gridRow(a.y - around); const r1 = gridRow(a.y + around);
     for (let r = r0; r <= r1; r += 1) {
@@ -75,6 +87,12 @@ function pushApart(state: ShooterState) {
           // Exactly on top of each other: split along x, so the result does not depend on luck.
           const nx = distance > 0 ? dx / distance : 1;
           const ny = distance > 0 ? dy / distance : 0;
+          // A boss is not pushed: the ordinary enemy next to it is pushed out, by the whole overlap (still at most 2 px).
+          const aBoss = state.bossIndex !== undefined && isBoss(a.type);
+          const otherBoss = state.bossIndex !== undefined && isBoss(other.type);
+          if (aBoss && otherBoss) continue;
+          if (aBoss) { const full = Math.min(reach - distance, 2); other.x += nx * full; other.y += ny * full; continue; }
+          if (otherBoss) { const full = Math.min(reach - distance, 2); a.x -= nx * full; a.y -= ny * full; continue; }
           a.x -= nx * push; a.y -= ny * push;
           other.x += nx * push; other.y += ny * push;
         }

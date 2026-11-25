@@ -1,6 +1,6 @@
 // The numbers behind the words of a brief. The AI picks a word; these tables are
 // the only place that word becomes a number.
-import type { ShooterLevel } from '@game-creator/contracts';
+import { ENEMY_TYPES, type ShooterLevel } from '@game-creator/contracts';
 import type { ShooterBrief } from './brief.js';
 
 /** Where the player starts, and how fast it runs (px/s), in every compiled level. */
@@ -22,6 +22,14 @@ export const WEAPONS: Record<ShooterBrief['weapon'], ShooterLevel['weapon']> = {
   shotgun: { cooldownMs: 1000, bulletSpeed: 650, damage: 1, range: 320, pellets: 6, spreadDeg: 36 },
   piercing: { cooldownMs: 600, bulletSpeed: 800, damage: 2, range: 800, pierce: 2 },
 };
+
+/** The boss's hit points are its kind's own (ENEMY_TYPES) times this, by intensity 1..5 (calibrated: docs/shooter-calibration.md). */
+// (starting values 0.6, 0.8, 1, 1.2, 1.4: too hard for the casual bot, see docs/shooter-calibration.md, Stage 4C)
+export const BOSS_HP_BY_INTENSITY: number[] = [0.4, 0.45, 0.5, 0.55, 0.6];
+/** The `bossHp` of a level: the boss kind's hit points times the factor of the intensity, a whole number from 10 to 400. */
+export function bossHpFor(boss: Exclude<ShooterBrief['boss'], 'none'>, intensity: number): number {
+  return Math.min(400, Math.max(10, Math.round(ENEMY_TYPES[boss].hp * (BOSS_HP_BY_INTENSITY[intensity - 1] ?? 1))));
+}
 
 /** Chance in percent that a defeated enemy drops a health pickup, by the brief's `healthDrops`. */
 export const HEALTH_DROP_PCT: Record<ShooterBrief['healthDrops'], number> = { none: 0, some: 12, many: 25 };

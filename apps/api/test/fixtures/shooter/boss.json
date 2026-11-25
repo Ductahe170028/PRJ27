@@ -1,0 +1,14 @@
+{
+  "version": "brief-1",
+  "healthDrops": "none",
+  "boss": "crusher",
+  "title": "Base Defense",
+  "theme": "military-base",
+  "map": "pillars",
+  "enemies": [{ "type": "runner", "share": 5 }, { "type": "swarmer", "share": 5 }],
+  "intensity": 2,
+  "playerHealth": "normal",
+  "weapon": "pistol",
+  "goal": { "type": "survive", "seconds": 60 },
+  "unsupported": ["Chưa hỗ trợ bảo vệ căn cứ"]
+}

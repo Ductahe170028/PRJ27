@@ -1,7 +1,17 @@
 import Phaser from 'phaser';
-import { TICK_RATE, createSim, elapsedSeconds, step, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
+import { TICK_RATE, bossOf, createSim, elapsedSeconds, isBoss, isEnraged, step, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
 import { hudLine } from '../lib/shooter-text';
-import { createBanner, createHud, drawBoard, drawState } from './shooter-draw';
+import { createBanner, createBossUi, createHud, drawBoard, drawState } from './shooter-draw';
+
+/** The boss's numbers for the hidden #game-hud (data-boss-*), empty strings when there is no boss on the field. */
+function bossValues(state: ShooterState) {
+  const boss = state.enemies.find((enemy) => isBoss(enemy.type) && enemy.maxHp !== undefined);
+  if (!boss) return { bossHp: '', bossMax: '', bossAt: '', bossPhase: '', bossEnraged: '' };
+  return {
+    bossHp: String(boss.hp), bossMax: String(boss.maxHp), bossAt: `${Math.round(boss.x)},${Math.round(boss.y)}`, bossPhase: boss.bossPhase ?? '',
+    bossEnraged: isEnraged(boss, bossOf(boss.type)!) ? 'yes' : 'no',
+  };
+}
 
 const TICK_MS = 1000 / TICK_RATE;
 /** Ticks run per frame to catch up after a slow frame. Beyond this the lag is dropped. */
@@ -17,6 +27,7 @@ export class ShooterScene extends Phaser.Scene {
   private art!: Phaser.GameObjects.Graphics;
   private hud!: Phaser.GameObjects.Text;
   private banner: ReturnType<typeof createBanner> | undefined;
+  private bossUi: ReturnType<typeof createBossUi>;
   private bannerMs = 0;
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined;
   private keys: Keys | undefined;
@@ -40,7 +51,8 @@ export class ShooterScene extends Phaser.Scene {
     this.art = this.add.graphics().setDepth(5);
     // The goal, for the first 3 seconds of every game (and again after R). The game runs underneath.
     this.banner = createBanner(this, level);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.banner?.dispose());
+    this.bossUi = createBossUi(this, level);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { this.banner?.dispose(); this.bossUi?.dispose(); });
 
     this.setupControls();
     const result = document.getElementById('game-result');
@@ -65,6 +77,7 @@ export class ShooterScene extends Phaser.Scene {
     }
     if (ticks === MAX_TICKS_PER_FRAME) this.accumulator = 0; // too far behind: drop the rest
     this.draw();
+    this.bossUi?.update(this.state);
     this.updateHud();
     this.publishState();
     if (this.state.status !== 'playing') this.finish();
@@ -114,6 +127,7 @@ export class ShooterScene extends Phaser.Scene {
     const values = {
       hp: String(state.player.hp), playerAt: at(state.player), enemyBullets: String(state.enemyBullets.length),
       pickups: String(state.pickups.length), pickupAt: state.pickups.map(at).join(';'),
+      ...bossValues(state),
     };
     const key = Object.values(values).join('|');
     if (key === this.lastPublished) return;
@@ -126,13 +140,14 @@ export class ShooterScene extends Phaser.Scene {
     this.finished = true;
     this.mouseDown = false;
     this.banner?.dispose();
+    this.bossUi?.dispose();
     const { state, level } = this;
     const won = state.status === 'won';
     const result = document.getElementById('game-result');
     const title = document.getElementById('result-title');
     const detail = document.getElementById('result-detail');
     if (result && title && detail) {
-      const how = !won ? 'Bạn đã hết máu.' : level.win.type === 'survive' ? 'Bạn đã sống sót!' : 'Bạn đã hạ đủ quái!';
+      const how = !won ? 'Bạn đã hết máu.' : level.win.type === 'survive' ? 'Bạn đã sống sót!' : level.win.type === 'kill' ? 'Bạn đã hạ đủ quái!' : 'Bạn đã hạ boss!';
       title.textContent = won ? 'Bạn thắng!' : 'Game over';
       detail.textContent = `${how} Điểm: ${state.score}. Hạ: ${state.kills}.`;
       result.hidden = false;

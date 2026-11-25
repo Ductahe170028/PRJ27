@@ -16,7 +16,8 @@ describe('fold', () => {
 describe('keyword notices, one group at a time', () => {
   // each: [group, texts that must trigger it]
   const cases: Array<[string, string[]]> = [
-    ['boss', ['có boss cuối', 'Boss fight', 'quái trùm', 'BOSSES at the end', 'quai trum']],
+    ['boss', ['có nhiều boss', 'hai boss cuối', '2 boss', 'ba con boss', 'multiple bosses', 'two bosses', 'several bosses', 'mini boss', 'mini-bosses', 'boss phụ', 'hai trùm', 'nhiều trùm']],
+    ['boss-summon', ['boss triệu hồi quái', 'boss gọi quái đến', 'trùm triệu hồi', 'a boss that summons minions', 'the boss summons enemies', 'summoner boss']],
     ['vehicle', ['lái xe tăng', 'xe máy', 'có phương tiện', 'phuong tien', 'drive a car', 'vehicles']],
     ['multiplayer', ['multiplayer', 'chế độ co-op', 'co op', 'hai người chơi', 'nhieu nguoi choi', '2 người chơi', 'two players']],
     ['defense', ['bảo vệ căn cứ trước các đợt tấn công', 'bao ve can cu', 'phòng thủ', 'tower defense', 'tower defence', 'defend the base', 'base defense']],
@@ -63,12 +64,12 @@ describe('keyword notices, one group at a time', () => {
   });
 
   it('every group has a fixed Vietnamese sentence of at most 160 characters', () => {
-    expect(NOTICE_GROUPS).toHaveLength(12);
+    expect(NOTICE_GROUPS).toHaveLength(13);
     for (const group of NOTICE_GROUPS) {
       expect(group.notice.length).toBeLessThanOrEqual(NOTICE_MAX_CHARS);
       expect(group.notice.startsWith('Chưa hỗ trợ:')).toBe(true);
     }
-    expect(new Set(NOTICE_GROUPS.map((group) => group.notice)).size).toBe(12);
+    expect(new Set(NOTICE_GROUPS.map((group) => group.notice)).size).toBe(13);
   });
 
   it('adds nothing for ordinary prompts', () => {
@@ -80,14 +81,14 @@ describe('keyword notices, one group at a time', () => {
   });
 
   it('does not repeat a group that the model already reported', () => {
-    expect(keywordNotices('có boss và nâng cấp', ['Chưa có boss'])).toEqual([noticeOf('pickups')]);
-    expect(keywordNotices('có boss và nâng cấp', ['Không có BOSS', 'chưa có nâng cấp'])).toEqual([]);
-    expect(keywordNotices('có boss', ['một điều khác'])).toEqual([noticeOf('boss')]);
+    expect(keywordNotices('có nhiều boss và nâng cấp', ['Chưa có nhiều boss'])).toEqual([noticeOf('pickups')]);
+    expect(keywordNotices('có nhiều boss và nâng cấp', ['Không có NHIỀU BOSS', 'chưa có nâng cấp'])).toEqual([]);
+    expect(keywordNotices('có nhiều boss', ['một điều khác'])).toEqual([noticeOf('boss')]);
   });
 
   it('never copies the prompt into a notice', () => {
     const secret = 'MA-BI-MAT-123';
-    const found = keywordNotices(`boss ${secret} nâng cấp đặt bẫy`, []);
+    const found = keywordNotices(`nhiều boss ${secret} nâng cấp đặt bẫy`, []);
     expect(found.length).toBe(3);
     for (const notice of found) expect(notice).not.toContain(secret);
   });
@@ -127,9 +128,35 @@ describe('explosions', () => {
   });
 });
 
+describe('one final boss is supported now, more than one is not', () => {
+  const sentence = 'Chưa hỗ trợ: nhiều boss. Mỗi màn có tối đa một boss cuối.';
+  it('the sentence is fixed', () => { expect(noticeOf('boss')).toBe(sentence); });
+  it('a single boss says nothing, in any wording', () => {
+    for (const prompt of ['boss cuối', 'có boss cuối', 'trùm cuối', 'quái trùm', 'Boss fight', 'BOSS', 'boss cuối to khổng lồ', 'a final boss', 'one boss at the end', 'the boss is a robot', 'robot chỉ huy là boss cuối']) {
+      expect(keywordNotices(prompt, []), prompt).toEqual([]);
+    }
+  });
+  it('several bosses, mini bosses and secondary bosses are reported, once', () => {
+    for (const prompt of ['có hai boss', 'nhiều boss', '2 boss ở cuối', 'multiple bosses', 'two bosses and a mini boss', 'mini boss', 'boss phụ', 'hạ 30 quái rồi đánh boss, có hai boss và mini boss']) {
+      expect(keywordNotices(prompt, []), prompt).toEqual([sentence]);
+    }
+  });
+  it('a boss that calls enemies is reported with its own sentence', () => {
+    const summon = 'Chưa hỗ trợ: boss triệu hồi quái.';
+    expect(noticeOf('boss-summon')).toBe(summon);
+    for (const prompt of ['boss triệu hồi quái', 'boss gọi quái đến giúp', 'a boss that summons minions', 'trùm triệu hồi lính']) expect(keywordNotices(prompt, []), prompt).toEqual([summon]);
+    expect(keywordNotices('hai boss triệu hồi quái', [])).toEqual([sentence, summon]);
+  });
+  it('the other groups still match as before next to a boss', () => {
+    expect(keywordNotices('bảo vệ căn cứ có boss cuối, tên lửa nổ lan, nhặt vật phẩm tăng tốc', []).sort()).toEqual([
+      noticeOf('defense'), noticeOf('explosion'), noticeOf('pickups'),
+    ].sort());
+  });
+});
+
 describe('collectNotices', () => {
   it('orders: the model, the standard sentences, then what the engine changed', () => {
-    const list = collectNotices({ prompt: 'có boss', unsupported: ['Chưa có nâng cấp'], engine: ['Độ khó được điều chỉnh để màn chơi thắng được.'] });
+    const list = collectNotices({ prompt: 'có nhiều boss', unsupported: ['Chưa có nâng cấp'], engine: ['Độ khó được điều chỉnh để màn chơi thắng được.'] });
     expect(list).toEqual(['Chưa có nâng cấp', noticeOf('boss'), 'Độ khó được điều chỉnh để màn chơi thắng được.']);
   });
 
@@ -139,7 +166,7 @@ describe('collectNotices', () => {
   });
 
   it('keeps at most 8 and at most 160 characters each, dropping standard sentences first', () => {
-    const everything = 'boss xe multiplayer bảo vệ căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy';
+    const everything = 'nhiều boss xe multiplayer bảo vệ căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy';
     const model = ['m1', 'm2', 'm3', 'm4', 'm5'];
     const engine = ['e1', 'e2', 'e3'];
     const list = collectNotices({ prompt: everything, unsupported: model, engine });
@@ -156,12 +183,12 @@ describe('collectNotices', () => {
 });
 
 describe('an `unsupported` entry that only repeats the prompt', () => {
-  const prompt = 'Tạo game zombie ở thành phố, có boss cuối và nâng cấp, sống sót 60 giây';
+  const prompt = 'Tạo game zombie ở thành phố, có nhiều boss cuối và nâng cấp, sống sót 60 giây';
 
   it('isPromptCopy: the same text, or most of it, from 40 characters', () => {
     expect(isPromptCopy(prompt, prompt)).toBe(true);
     expect(isPromptCopy(prompt.toUpperCase(), prompt)).toBe(true);
-    expect(isPromptCopy('tao game zombie o thanh pho co boss cuoi va nang cap song sot 60 giay', prompt)).toBe(true); // no accents, no commas
+    expect(isPromptCopy('tao game zombie o thanh pho co nhieu boss cuoi va nang cap song sot 60 giay', prompt)).toBe(true); // no accents, no commas
     expect(isPromptCopy(`  ${prompt}.  `, prompt)).toBe(true);
     expect(isPromptCopy(prompt.slice(0, -12), prompt)).toBe(true); // a prefix, still >= 80% and >= 40 characters
     expect(isPromptCopy(`${prompt}!!`, prompt)).toBe(true);
@@ -195,7 +222,7 @@ describe('an `unsupported` entry that only repeats the prompt', () => {
   });
 
   it('a short meaningful entry is kept as it is', () => {
-    expect(collectNotices({ prompt, unsupported: ['boss cuối'], engine: [] })).toEqual(['boss cuối', noticeOf('pickups')]); // the model already covers the boss group
+    expect(collectNotices({ prompt, unsupported: ['nhiều boss cuối'], engine: [] })).toEqual(['nhiều boss cuối', noticeOf('pickups')]); // the model already covers the boss group
   });
 
   it('a copy does not hide the standard sentences that the prompt asks for', () => {
@@ -204,7 +231,7 @@ describe('an `unsupported` entry that only repeats the prompt', () => {
   });
 
   it('keeps the order (model, keyword, engine) and the limit of 8, the generic sentence counting as a model entry', () => {
-    const everything = 'boss xe multiplayer bảo vệ căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy và còn nhiều thứ khác nữa';
+    const everything = 'nhiều boss xe multiplayer bảo vệ căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy và còn nhiều thứ khác nữa';
     const list = collectNotices({ prompt: everything, unsupported: ['m1', everything, 'm2'], engine: ['e1'] });
     expect(list).toHaveLength(MAX_NOTICES);
     expect(list.slice(0, 3)).toEqual(['m1', GENERIC_UNSUPPORTED_NOTICE, 'm2']);

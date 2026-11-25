@@ -30,7 +30,17 @@ export const NOTICE_GROUPS: readonly Group[] = [
     pattern: /\bkhong (?:co )?quai\b(?! (?:trau|nhanh|cham|chay|lon|nho|bay|dac biet))|\bhoa binh\b|\bno (?:enemies|enemy|monsters?|zombies?)\b|\bpeaceful\b/,
     notice: 'Chưa hỗ trợ: màn không có quái. Màn chơi luôn có quái xuất hiện.',
   },
-  { id: 'boss', pattern: /\bboss(es)?\b|\btrum cuoi\b|\bquai trum\b|\btrum\b/, notice: 'Chưa hỗ trợ: boss. Màn chơi chỉ có ba loại quái thường.' },
+  {
+    // One final boss is supported now; only MORE than one (or small ones) is not.
+    id: 'boss',
+    pattern: /\b(?:nhieu|hai|ba|2|3|multiple|many|several|two|three) +(?:con +)?(?:boss(?:es)?|trum)\b|\bmini ?boss(?:es)?\b|\bboss phu\b|\bboss con\b/,
+    notice: 'Chưa hỗ trợ: nhiều boss. Mỗi màn có tối đa một boss cuối.',
+  },
+  {
+    id: 'boss-summon',
+    pattern: /\b(?:boss|trum)\b.{0,24}\b(?:trieu hoi|goi quai|goi them quai|summon\w*)\b|\bsummon\w*\b.{0,16}\bboss\b/,
+    notice: 'Chưa hỗ trợ: boss triệu hồi quái.',
+  },
   { id: 'vehicle', pattern: /\bxe\b|\bphuong tien\b|\bvehicles?\b|\b(drive|drives|driving)\b/, notice: 'Chưa hỗ trợ: xe và phương tiện. Người chơi đi bộ.' },
   { id: 'multiplayer', pattern: /\bmulti ?player\b|\bco ?op\b|\bnhieu nguoi choi\b|\bhai nguoi choi\b|\b2 nguoi choi\b|\b(two|2|multiple) players?\b/, notice: 'Chưa hỗ trợ: nhiều người chơi. Game chỉ có một người chơi.' },
   {

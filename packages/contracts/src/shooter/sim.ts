@@ -6,8 +6,9 @@
 //
 // This file only orders the steps of a tick. The state and the generator are in
 // state.ts, and each step has its own file: player.ts, weapons.ts, spawn.ts,
-// enemies.ts, enemy-fire.ts, bullets.ts, pickups.ts, combat.ts (the hash for tests is hash.ts).
+// enemies.ts, enemy-fire.ts, boss.ts, bullets.ts, pickups.ts, combat.ts (the hash for tests is hash.ts).
 import { advanceClock, hurtPlayer } from './combat.js';
+import { bossesFire } from './boss.js';
 import { enemiesShoot, flyEnemyBullets } from './enemy-fire.js';
 import { moveEnemies } from './enemies.js';
 import type { Rect } from './geometry.js';
@@ -26,7 +27,7 @@ import { fireWeapon } from './weapons.js';
  *  5. due enemies spawn (waiting ones stay queued, none is dropped)
  *  6. enemies move (straight at the player in plain sight, else along the flow
  *     field; a shooting enemy stops within its hold range), push each other apart, then leave walls
- *     6b. shooting enemies fire at the player (in plain sight, in range, on their turn)
+ *     6b. shooting enemies fire at the player (in plain sight, in range, on their turn); a boss fires its volleys
  *  7. the player's bullets fly; a swept test finds the first enemy or wall on the way
  *     (a piercing bullet goes on through several enemies)
  *     7b. enemy bullets fly: a wall stops them; they hurt the player unless it is still protected
@@ -45,6 +46,7 @@ export function step(state: ShooterState, input: ShooterInput): void {
   spawnDue(state, t);
   moveEnemies(state, t, walls);
   enemiesShoot(state, t);
+  bossesFire(state, t, walls);
   flyBullets(state, walls);
   flyEnemyBullets(state, t, walls);
   collectPickups(state, t);

@@ -13,6 +13,8 @@ export const EXPERT_WALL_RADIUS = 60;
 export const EXPERT_BULLET_RADIUS = 90;
 
 export interface Point { x: number; y: number }
+/** An enemy as a bot sees it. `extra` (only a boss has it) is added to the distance at which it pushes the bot away: a boss is big. */
+export interface EnemyPoint extends Point { extra?: number }
 /** An enemy bullet as a bot sees it: where it is and which way it flies (px/s). */
 export interface BulletPoint extends Point { vx: number; vy: number }
 
@@ -20,15 +22,16 @@ export interface BulletPoint extends Point { vx: number; vy: number }
  * as -1, 0 or 1 per axis (walls push back too, so fleeing does not pin the bot in a corner).
  * The sums are taken in a fixed order (enemies as given, then enemy bullets, then the edges, then the obstacles). */
 export function steer(
-  player: Point, level: ShooterLevel, enemies: readonly Point[], fleeRadius: number, wallRadius: number,
+  player: Point, level: ShooterLevel, enemies: readonly EnemyPoint[], fleeRadius: number, wallRadius: number,
   bullets: readonly BulletPoint[] = [], bulletRadius = EXPERT_BULLET_RADIUS,
 ): { moveX: -1 | 0 | 1; moveY: -1 | 0 | 1 } {
   let fx = 0;
   let fy = 0;
   for (const enemy of enemies) {
     const distance = dist(enemy.x - player.x, enemy.y - player.y);
-    if (distance < fleeRadius && distance > 0) {
-      const weight = (fleeRadius - distance) / fleeRadius / distance;
+    const reach = fleeRadius + (enemy.extra ?? 0); // (exactly fleeRadius for every enemy that is not a boss)
+    if (distance < reach && distance > 0) {
+      const weight = (reach - distance) / reach / distance;
       fx += (player.x - enemy.x) * weight;
       fy += (player.y - enemy.y) * weight;
     }

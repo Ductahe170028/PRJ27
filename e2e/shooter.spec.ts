@@ -103,7 +103,7 @@ test('an unknown level lists the valid ones', async ({ page }) => {
   await page.goto('/?shooter=khong-ton-tai');
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('khong-ton-tai');
-  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic');
+  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic, boss-crusher, boss-gunner');
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.goto('/?shooter=constructor');
   await expect(page.getByRole('alert')).toContainText('Level hợp lệ');
@@ -230,4 +230,51 @@ test('the level card of the hand-made levels: the shotgun says "Bắn chùm", sp
   await open(page, 'arena');
   await expect(card().locator('[data-info="weapon"]')).toContainText('Bắn từng phát');
   await expect(card().locator('[data-info="extra"]')).toHaveCount(0);
+});
+
+// --- Stage 4C: the boss ---
+
+test('boss-crusher: the warning shows when the boss appears and goes after about 2 seconds; the bar is full; the HUD says "Hạ boss"', async ({ page }) => {
+  test.setTimeout(60_000);
+  const { frame, hud, errors } = await open(page, 'boss-crusher');
+  await expect(hud).toContainText('Hạ boss');
+  await expect(hud).toHaveAttribute('data-boss-hp', '');
+  const warning = frame.locator('#game-boss-warning');
+  await expect(warning).toHaveCount(0); // the boss comes at 9 s, not before
+  await expect(warning).toHaveText('BOSS XUẤT HIỆN!', { timeout: 20_000 });
+  const seen = Date.now();
+  // the bar: full at the maximum (40), and the boss is on the field
+  await expect(hud).toHaveAttribute('data-boss-max', '40');
+  await expect(hud).toHaveAttribute('data-boss-hp', '40');
+  await expect(hud).toHaveAttribute('data-boss-phase', /move|telegraph|charge/);
+  await expect(warning).toHaveCount(0, { timeout: 5000 });
+  expect(Date.now() - seen).toBeLessThan(3600);
+  expect(errors).toEqual([]);
+});
+
+test('boss-gunner: after the boss appears, its bullets are in the air and the game goes on', async ({ page }) => {
+  test.setTimeout(60_000);
+  // The first enemies of this level are few and weak, so a player who only stands there is still alive when the boss fires (first fan 2 s after it appears).
+  const { hud, errors } = await open(page, 'boss-gunner');
+  await expect(hud).toHaveAttribute('data-boss-max', '24', { timeout: 20_000 });
+  await expect.poll(() => num(hud, 'data-enemy-bullets'), { timeout: 15_000, intervals: [100], message: 'the boss fired nothing' }).toBeGreaterThan(0);
+  const before = await hud.textContent();
+  await expect.poll(async () => hud.textContent(), { timeout: 5000 }).not.toBe(before);
+  expect(errors).toEqual([]);
+});
+
+// (Defeating the boss by hand is not an E2E test: a real-time fight with the mouse and keys is not reliable enough to assert on.
+// That a boss falls, that the game is then won, and that the expert bot wins both boss levels are unit tests:
+// shooter-boss ("winning and losing with a boss") and shooter-playable ("the Stage 4C hand-made boss levels are playable").)
+
+test('the level card of the boss levels has a boss line, and "most enemies" counts the boss', async ({ page }) => {
+  const card = () => page.getByRole('region', { name: 'Thông tin màn' });
+  await open(page, 'boss-crusher');
+  await expect(card().locator('[data-info="goal"]')).toHaveText('Hạ boss');
+  await expect(card().locator('[data-info="extra"]')).toHaveText(['Boss cuối: quái khổng lồ, lao vào bạn (máu 40)']);
+  await expect(card().locator('[data-info="enemies"]')).toHaveText('16');
+  await open(page, 'boss-gunner');
+  await expect(card().locator('[data-info="goal"]')).toHaveText('Hạ boss');
+  await expect(card().locator('[data-info="extra"]')).toHaveText(['Boss cuối: bắn đạn quạt và vòng đạn (máu 24)']);
+  await expect(card().locator('[data-info="enemies"]')).toHaveText('9');
 });

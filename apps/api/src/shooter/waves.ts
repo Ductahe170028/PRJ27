@@ -15,7 +15,7 @@ export const INTENSITY_RATE = [0.6, 1.2, 1.7, 2.15, 2.7] as const;
  * per second; the number of enemies is the threat divided by the mix's average
  * weight, so five brutes are not as many as five swarmers. Calibrated together
  * with INTENSITY_RATE. */
-export const ENEMY_WEIGHT: Record<EnemyKind, number> = { swarmer: 0.6, runner: 1, brute: 4, spitter: 4 };
+export const ENEMY_WEIGHT: Record<EnemyKind, number> = { swarmer: 0.6, runner: 1, brute: 4, spitter: 4, crusher: 0, gunner: 0 }; // (a boss is never part of a mix)
 
 /** Average weight of an enemy in the mix, by share. */
 export function meanWeight(enemies: ReadonlyArray<{ type: EnemyKind; share: number }>): number {
@@ -119,11 +119,11 @@ function placeKinds(slices: Slice[], counts: Map<EnemyKind, number>, horizonMs: 
   }
   return waves.sort((a, b) => a.atMs - b.atMs || kindOrder(a.type) - kindOrder(b.type));
 }
-const kindOrder = (type: EnemyKind) => ({ runner: 0, swarmer: 1, brute: 2, spitter: 3 })[type];
+const kindOrder = (type: EnemyKind) => ({ runner: 0, swarmer: 1, brute: 2, spitter: 3, crusher: 4, gunner: 5 })[type];
 
 /** Packs slices into at most 30 waves of at most 40 each: neighbouring slices
  * are merged (same kind, the first one's time) until it fits. */
-function fit(waves: Wave[], slices: Slice[]): Wave[] {
+function fit(waves: Wave[], slices: Slice[], maxWaves = MAX_WAVES): Wave[] {
   const times = slices.map((slice) => slice.startMs);
   for (let bucket = 1; bucket <= times.length; bucket += 1) {
     // One wave per bucket and kind, at the time of the earliest wave really in it
@@ -135,15 +135,47 @@ function fit(waves: Wave[], slices: Slice[]): Wave[] {
       if (known) { known.count += wave.count; known.atMs = Math.min(known.atMs, wave.atMs); } else merged.set(key, { ...wave });
     }
     const out = [...merged.values()].sort((a, b) => a.atMs - b.atMs || kindOrder(a.type) - kindOrder(b.type));
-    if (out.length <= MAX_WAVES && out.every((wave) => wave.count <= MAX_WAVE_COUNT)) return out;
+    if (out.length <= maxWaves && out.every((wave) => wave.count <= MAX_WAVE_COUNT)) return out;
   }
   // Nothing fit (only possible with huge totals): split big waves into the same moment.
   return waves.flatMap((wave) => Array.from({ length: Math.ceil(wave.count / MAX_WAVE_COUNT) }, (_, i) => ({
     ...wave, count: Math.min(MAX_WAVE_COUNT, wave.count - i * MAX_WAVE_COUNT),
-  }))).slice(0, MAX_WAVES);
+  }))).slice(0, maxWaves);
 }
 
 export interface WaveSchedule { waves: Wave[]; horizonSeconds: number }
+
+/** The boss comes out at this share of the brief's length (the survive time, or the kill horizon), rounded to 5 s, at least
+ * 20 s. Before it the ordinary enemies come at `beforePace` of their pace; after it they go on for `afterSeconds` at `afterPace`
+ * of it, then stop: a boss level is about the boss. Mutable only so that the calibration script can try other numbers
+ * (`--tune`); the game never changes them. */
+export const BOSS_TIMING = { atShare: 0.7, beforePace: 0.7, afterSeconds: 20, afterPace: 0.25 };
+
+export interface BossSchedule { waves: Wave[]; bossAtMs: number }
+
+/** The schedule of a level with a boss: the ordinary enemies at `beforePace` of today's pace up to the moment the boss appears, then
+ * `afterPace` of it for `afterSeconds`, then the boss itself (one wave of one). At most 29 other waves and 399 other enemies. A kill
+ * goal only sets how long the first part lasts (70% of the kill horizon): the level is won by defeating the boss. */
+export function scheduleBossWaves(brief: ShooterBrief, rng: Rng): BossSchedule {
+  if (brief.boss === 'none') throw new Error('scheduleBossWaves: the brief has no boss');
+  const lengthSeconds = brief.goal.type === 'survive' ? brief.goal.seconds : scheduleWaves(brief, () => 0).horizonSeconds;
+  const bossAtSeconds = Math.max(20, Math.round((lengthSeconds * BOSS_TIMING.atShare) / 5) * 5);
+  const bossAtMs = bossAtSeconds * 1000;
+  const pace = paceFactor(bossAtSeconds);
+  const rate = (INTENSITY_RATE[brief.intensity - 1]! * pace) / meanWeight(brief.enemies);
+  const before = sliceSchedule(brief, bossAtSeconds, pace * BOSS_TIMING.beforePace);
+  const after: Slice[] = [];
+  for (let start = bossAtMs; start < bossAtMs + BOSS_TIMING.afterSeconds * 1000; start += SLICE_MS) {
+    after.push({ startMs: start, count: Math.max(1, Math.round(rate * (SLICE_MS / 1000) * BOSS_TIMING.afterPace)) });
+  }
+  const slices = capTotal([...before, ...after], MAX_SCHEDULED_ENEMIES - 1);
+  const total = slices.reduce((acc, slice) => acc + slice.count, 0);
+  const turn = Math.floor(rng() * brief.enemies.length);
+  const shares = [...brief.enemies.slice(turn), ...brief.enemies.slice(0, turn)].map((enemy) => ({ type: enemy.type as EnemyKind, share: enemy.share }));
+  const ordinary = fit(placeKinds(slices, allocateByShare(total, shares), bossAtMs), slices, MAX_WAVES - 1);
+  const bossWave: Wave = { atMs: bossAtMs, type: brief.boss, count: 1 };
+  return { waves: [...ordinary, bossWave].sort((a, b) => a.atMs - b.atMs), bossAtMs };
+}
 
 /** The whole schedule for a brief. The shape follows the brief; `rng` only breaks ties. */
 export function scheduleWaves(brief: ShooterBrief, rng: Rng): WaveSchedule {

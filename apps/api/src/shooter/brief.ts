@@ -15,6 +15,8 @@ export const WEAPONS = ['pistol', 'rapid', 'heavy', 'shotgun', 'piercing'] as co
 /** Whether defeated enemies may drop health: none (default), some or many. */
 export const HEALTH_DROPS = ['none', 'some', 'many'] as const;
 export const MAX_BRIEF_ENEMIES = 4;
+/** The final boss of the level: none (default), a huge melee boss (crusher) or a shooting one (gunner). */
+export const BOSSES = ['none', 'crusher', 'gunner'] as const;
 
 export const TITLE_MAX = 40;
 export const UNSUPPORTED_MAX_ITEMS = 5;
@@ -30,6 +32,7 @@ export const ShooterBriefSchema = z.object({
   playerHealth: z.enum(PLAYER_HEALTHS),
   weapon: z.enum(WEAPONS),
   healthDrops: z.enum(HEALTH_DROPS),
+  boss: z.enum(BOSSES),
   goal: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(20, 180) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(10, 200) }).strict(),
@@ -64,6 +67,8 @@ export function normalizeBrief(raw: unknown): unknown {
   // Missing altogether means the user asked for no health drops. This is the ONE value the engine fills in;
   // a value that is present but wrong ("lots", null) is left for the schema to reject, like any other enum.
   if (brief.healthDrops === undefined) brief.healthDrops = 'none';
+  // Likewise a missing boss means the user asked for none.
+  if (brief.boss === undefined) brief.boss = 'none';
 
   if (Array.isArray(brief.enemies)) {
     const merged: unknown[] = [];

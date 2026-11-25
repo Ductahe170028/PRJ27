@@ -3,7 +3,7 @@
 import { z } from '@game-creator/contracts';
 import { providerJsonSchema } from '../services/system-prompt.js';
 import {
-  BRIEF_ENEMY_TYPES, HEALTH_DROPS, MAX_BRIEF_ENEMIES, PLAYER_HEALTHS, SHOOTER_MAPS, SHOOTER_THEMES, ShooterBriefSchema, TITLE_MAX, UNSUPPORTED_MAX_CHARS, UNSUPPORTED_MAX_ITEMS, WEAPONS,
+  BOSSES, BRIEF_ENEMY_TYPES, HEALTH_DROPS, MAX_BRIEF_ENEMIES, PLAYER_HEALTHS, SHOOTER_MAPS, SHOOTER_THEMES, ShooterBriefSchema, TITLE_MAX, UNSUPPORTED_MAX_CHARS, UNSUPPORTED_MAX_ITEMS, WEAPONS,
 } from './brief.js';
 
 /** One line per field, generated from the same lists the schema uses, so the
@@ -19,6 +19,7 @@ export function describeBrief(): string[] {
     `playerHealth: ${PLAYER_HEALTHS.join('|')}`,
     `weapon: ${WEAPONS.join('|')}`,
     `healthDrops: ${HEALTH_DROPS.join('|')}`,
+    `boss: ${BOSSES.join('|')}`,
     'goal: {type:"survive", seconds:int 20..180} OR {type:"kill", count:int 10..200}',
     `unsupported: 0-${UNSUPPORTED_MAX_ITEMS} strings, each up to ${UNSUPPORTED_MAX_CHARS} chars`,
   ];
@@ -35,9 +36,10 @@ enemies: 1-4 kinds, each with a share 1-10 (relative weight). runner fast and fr
 intensity 1-5: how many enemies come and how fast (1 calm, 3 normal, 5 overwhelming). Default 3.
 playerHealth: fragile few hit points, normal, sturdy tanky.
 weapon: pistol default; rapid for fast or automatic fire (machine gun, SMG); heavy for slow powerful shots (cannon, heavy gun); shotgun for a shotgun, scatter or multi-pellet fire; piercing for bullets that pass through enemies (sniper, rifle, laser, railgun, crossbow, armor-piercing).
+boss: none by default; crusher when the user wants a final boss that is big, huge, a monster, a melee boss or a tank; gunner when the boss shoots (a robot, a commander, a gunman, a mage, a boss that fires bullets); when unsure but a boss is wanted, crusher. A level with a boss is won by defeating the boss, whatever goal you pick: still pick survive or kill, it only sets how long the fight before the boss lasts.
 healthDrops: none by default; some when the user asks for health pickups, medkits or healing items; many when the user says many, constant or lots of them.
 goal: use survive when the user says survive, endure or hold out; use kill when the user says kill or destroy N enemies. Default survive 60 seconds.
-The engine has NO bosses, vehicles, multiplayer, base or tower defense, limited ammo or reloading, power-ups or upgrades other than health drops (speed boosts, damage boosts, shields and upgrades are NOT supported), explosions or area damage (rockets, grenades), switching between weapons, crafting, or traps. If the user asks for any of these, or anything else the engine cannot do, choose the nearest supported values and add a short sentence in the user's language to "unsupported". Never pretend it was done.
+The engine has NO vehicles, multiplayer, base or tower defense, limited ammo or reloading, power-ups or upgrades other than health drops (speed boosts, damage boosts, shields and upgrades are NOT supported), explosions or area damage (rockets, grenades), more than one boss, mini-bosses, bosses that summon enemies, switching between weapons, crafting, or traps. If the user asks for any of these, or anything else the engine cannot do, choose the nearest supported values and add a short sentence in the user's language to "unsupported". Never pretend it was done.
 title: short, in the user's language, only letters, numbers, spaces and simple punctuation.
 Schema (all fields required, no other fields; "a..b" limits are inclusive):
 ${describeBrief().join('\n')}`;

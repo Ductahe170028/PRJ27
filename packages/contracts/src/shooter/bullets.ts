@@ -1,11 +1,10 @@
 // Step 7 of a tick: the player's bullets fly and hit. A swept test finds what is on the way.
-import { BULLET_RADIUS, ENEMY_TYPES, FIELD, MAX_ENEMY_RADIUS, TICK_RATE } from './constants.js';
+import { BULLET_RADIUS, ENEMY_TYPES, FIELD, TICK_RATE } from './constants.js';
 import { damageEnemy } from './combat.js';
 import { segmentCircleHit, segmentRectHit, type Rect } from './geometry.js';
 import { buildGrid, gridQuery } from './grid.js';
 import type { ShooterBullet, ShooterEnemy, ShooterState } from './state.js';
 
-const REACH = MAX_ENEMY_RADIUS + BULLET_RADIUS;
 
 /** 7. Bullets fly; a swept test finds the first enemy or wall on the way. A bullet of a piercing weapon
  * goes on through up to `pierce` enemies, nearest first (lowest id on a tie), hitting each only once. */
@@ -14,6 +13,7 @@ export function flyBullets(state: ShooterState, walls: readonly Rect[]) {
   if (state.bullets.length === 0) return;
   buildGrid(enemies);
   const kept: ShooterBullet[] = [];
+  const REACH = state.maxEnemyRadius + BULLET_RADIUS; // 20 + 4 unless the level has a boss
   for (const bullet of state.bullets) {
     const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy);
     const stride = Math.min(speed / TICK_RATE, level.weapon.range - bullet.travelled);
@@ -28,7 +28,7 @@ export function flyBullets(state: ShooterState, walls: readonly Rect[]) {
       if (hit !== undefined && (wallHit === undefined || hit < wallHit)) wallHit = hit;
     }
     if (bullet.pierceLeft !== undefined) {
-      if (passThrough(state, bullet, x0, y0, x1, y1, wallHit)) continue; // spent
+      if (passThrough(state, bullet, x0, y0, x1, y1, wallHit, REACH)) continue; // spent
     } else {
       // First enemy on the way (lowest id on a tie).
       const first: { hit: number; enemy: ShooterEnemy | undefined } = { hit: Infinity, enemy: undefined };
@@ -58,7 +58,7 @@ export function flyBullets(state: ShooterState, walls: readonly Rect[]) {
 
 /** A piercing bullet's tick: hits every enemy not yet hit along the segment, nearest first, until a wall
  * (a wall at the same distance wins) or until it has passed through all it may. True when it is spent. */
-function passThrough(state: ShooterState, bullet: ShooterBullet, x0: number, y0: number, x1: number, y1: number, wallHit: number | undefined): boolean {
+function passThrough(state: ShooterState, bullet: ShooterBullet, x0: number, y0: number, x1: number, y1: number, wallHit: number | undefined, REACH: number): boolean {
   const { enemies } = state;
   const hitIds = bullet.hitIds!;
   const hits: Array<{ t: number; enemy: ShooterEnemy }> = [];

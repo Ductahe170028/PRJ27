@@ -155,8 +155,48 @@ const medic: ShooterLevel = {
   win: { type: 'survive', seconds: 40 },
 };
 
+/** Stage 4C: the huge boss rushes at you (look for the ring that warns you), four pillars to hide behind. Defeat the boss. */
+const bossCrusher: ShooterLevel = {
+  kind: 'shooter-v1', title: 'Boss khổng lồ', seed: 9909, width: 960, height: 540, theme,
+  player: { x: 480, y: 305, speed: 210, hp: 6 },
+  weapon: { cooldownMs: 300, bulletSpeed: 600, damage: 1, range: 600 },
+  obstacles: [
+    { x: 300, y: 210, width: 70, height: 70 }, { x: 660, y: 210, width: 70, height: 70 },
+    { x: 300, y: 400, width: 70, height: 70 }, { x: 660, y: 400, width: 70, height: 70 },
+  ],
+  spawnPoints: edgeSpawns,
+  waves: [
+    { atMs: 2000, type: 'swarmer', count: 6 },
+    { atMs: 5000, type: 'runner', count: 3 },
+    { atMs: 9000, type: 'crusher', count: 1 },
+    { atMs: 14000, type: 'swarmer', count: 6 },
+  ],
+  bossHp: 40,
+  win: { type: 'boss' },
+};
+
+/** Stage 4C: the boss keeps its distance and fires fans and rings of bullets; four pillars to hide behind. Defeat the boss. */
+const bossGunner: ShooterLevel = {
+  kind: 'shooter-v1', title: 'Boss xạ thủ', seed: 1010, width: 960, height: 540, theme,
+  player: { x: 480, y: 305, speed: 210, hp: 8 },
+  weapon: { cooldownMs: 200, bulletSpeed: 650, damage: 1, range: 550 },
+  obstacles: [
+    { x: 300, y: 210, width: 70, height: 70 }, { x: 660, y: 210, width: 70, height: 70 },
+    { x: 300, y: 400, width: 70, height: 70 }, { x: 660, y: 400, width: 70, height: 70 },
+  ],
+  spawnPoints: edgeSpawns,
+  waves: [
+    { atMs: 4000, type: 'runner', count: 2 },
+    { atMs: 7000, type: 'swarmer', count: 3 },
+    { atMs: 9000, type: 'gunner', count: 1 },
+    { atMs: 15000, type: 'runner', count: 3 },
+  ],
+  bossHp: 24,
+  win: { type: 'boss' },
+};
+
 export const SHOOTER_LEVELS = {
-  arena, pillars, wall, 'smoke-win': smokeWin, 'smoke-lose': smokeLose, 'shotgun-pit': shotgunPit, spitters, medic,
+  arena, pillars, wall, 'smoke-win': smokeWin, 'smoke-lose': smokeLose, 'shotgun-pit': shotgunPit, spitters, medic, 'boss-crusher': bossCrusher, 'boss-gunner': bossGunner,
 } as const satisfies Record<string, ShooterLevel>;
 
 export type ShooterLevelName = keyof typeof SHOOTER_LEVELS;

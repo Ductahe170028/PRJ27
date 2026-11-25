@@ -1,6 +1,7 @@
 {
   "version": "brief-1",
   "healthDrops": "none",
+  "boss": "none",
   "title": "Boss Rush",
   "theme": "neon-arena",
   "map": "open-arena",

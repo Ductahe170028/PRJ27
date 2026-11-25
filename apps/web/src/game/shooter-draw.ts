@@ -2,10 +2,10 @@
 // it reads a ShooterState (or a level) and paints it. ShooterScene owns the loop and the input.
 import Phaser from 'phaser';
 import {
-  BULLET_RADIUS, ENEMY_TYPES, FIELD, PLAYER_RADIUS,
-  type EnemyType, type ShooterLevel, type ShooterState,
+  BULLET_RADIUS, ENEMY_TYPES, FIELD, PLAYER_RADIUS, bossOf, bossWaveOf, isBoss, isEnraged,
+  type EnemyType, type ShooterEnemy, type ShooterLevel, type ShooterState,
 } from '@game-creator/contracts';
-import { BANNER_HINT, bannerAlpha, bannerTextColor, bannerTitle } from '../lib/shooter-text';
+import { BANNER_HINT, BOSS_WARNING_TEXT, bannerAlpha, bannerTextColor, bannerTitle, bossBar, bossWarningAlpha } from '../lib/shooter-text';
 
 export const color = (hex: string) => Number.parseInt(hex.slice(1), 16);
 /** Scales each channel of #rrggbb by `factor` (<1 darker, >1 lighter, capped). */
@@ -17,13 +17,16 @@ export function shade(hex: string, factor: number): number {
 
 /** How a kind of enemy looks. One row per kind (a missing row is a compile error): `plain` is a disk,
  * `armored` is a ring with an inner disk that shrinks with its hit points. `shade` darkens (<1) or lightens (>1) the theme color. */
-interface EnemyLook { style: 'plain' | 'armored' | 'diamond'; shade: number }
+interface EnemyLook { style: 'plain' | 'armored' | 'diamond' | 'spiked' | 'turret'; shade: number }
 export const ENEMY_LOOKS: Record<EnemyType, EnemyLook> = {
   runner: { style: 'plain', shade: 1 },
   brute: { style: 'armored', shade: 0.55 },
   swarmer: { style: 'plain', shade: 1.2 },
   // A diamond, not a disk: it reads as "different" even without color. Slightly larger so that its area matches its hit circle.
   spitter: { style: 'diamond', shade: 0.8 },
+  // The two bosses: a big spiked disk (it rushes), and a big disk with a barrel (it shoots).
+  crusher: { style: 'spiked', shade: 0.6 },
+  gunner: { style: 'turret', shade: 0.6 },
 };
 
 /** The ground grid and the obstacles: drawn once per game. */
@@ -46,6 +49,7 @@ export function drawEnemies(g: Phaser.GameObjects.Graphics, state: ShooterState,
   for (const enemy of state.enemies) {
     const kind = ENEMY_TYPES[enemy.type];
     const look = ENEMY_LOOKS[enemy.type];
+    if (look.style === 'spiked' || look.style === 'turret') { drawBoss(g, enemy, state, level, look, kind.radius); continue; }
     if (look.style === 'diamond') {
       const r = kind.radius * 1.2;
       const points = [{ x: enemy.x, y: enemy.y - r }, { x: enemy.x + r, y: enemy.y }, { x: enemy.x, y: enemy.y + r }, { x: enemy.x - r, y: enemy.y }];
@@ -62,6 +66,45 @@ export function drawEnemies(g: Phaser.GameObjects.Graphics, state: ShooterState,
     }
   }
 }
+
+/** A boss: a big disk with a thick rim. The crusher has spikes, and a pulsing ring while it warns that it is about to rush
+ * and a fading trail while it rushes; the gunner has a barrel that points at the player. */
+function drawBoss(g: Phaser.GameObjects.Graphics, enemy: ShooterEnemy, state: ShooterState, level: ShooterLevel, look: EnemyLook, radius: number) {
+  const base = color(level.theme.enemy);
+  if (enemy.bossPhase === 'charge') {
+    const dx = enemy.chargeDx ?? 0;
+    const dy = enemy.chargeDy ?? 0;
+    for (let k = 3; k >= 1; k -= 1) g.fillStyle(base, 0.1 * (4 - k)).fillCircle(enemy.x - dx * 14 * k, enemy.y - dy * 14 * k, radius);
+  }
+  if (enemy.bossPhase === 'telegraph' && Math.floor(state.tick / 6) % 2 === 0) {
+    g.lineStyle(4, 0xffffff, 0.9).strokeCircle(enemy.x, enemy.y, radius + 10);
+  }
+  if (look.style === 'spiked') {
+    // twelve spikes: a triangle every 30 degrees (a table of unit vectors: no trigonometry)
+    for (const [ux, uy] of SPIKES) {
+      g.fillStyle(shade(level.theme.enemy, look.shade), 1).fillTriangle(
+        enemy.x + ux * (radius + 9), enemy.y + uy * (radius + 9),
+        enemy.x + ux * (radius - 4) - uy * 7, enemy.y + uy * (radius - 4) + ux * 7,
+        enemy.x + ux * (radius - 4) + uy * 7, enemy.y + uy * (radius - 4) - ux * 7,
+      );
+    }
+  }
+  g.fillStyle(shade(level.theme.enemy, look.shade), 1).fillCircle(enemy.x, enemy.y, radius);
+  g.lineStyle(5, base, 1).strokeCircle(enemy.x, enemy.y, radius - 2.5);
+  if (look.style === 'turret') {
+    const dx = state.player.x - enemy.x;
+    const dy = state.player.y - enemy.y;
+    const length = Math.sqrt(dx * dx + dy * dy) || 1;
+    g.lineStyle(9, 0xffffff, 0.95).lineBetween(enemy.x, enemy.y, enemy.x + (dx / length) * (radius + 12), enemy.y + (dy / length) * (radius + 12));
+    g.fillStyle(base, 1).fillCircle(enemy.x, enemy.y, radius * 0.4);
+  } else {
+    g.fillStyle(base, 1).fillCircle(enemy.x, enemy.y, radius * 0.35);
+  }
+}
+/** Unit vectors every 30 degrees, for the crusher's spikes. */
+const SPIKES: ReadonlyArray<readonly [number, number]> = [
+  [1, 0], [0.866, 0.5], [0.5, 0.866], [0, 1], [-0.5, 0.866], [-0.866, 0.5], [-1, 0], [-0.866, -0.5], [-0.5, -0.866], [0, -1], [0.5, -0.866], [0.866, -0.5],
+];
 
 export function drawBullets(g: Phaser.GameObjects.Graphics, state: ShooterState, level: ShooterLevel) {
   g.fillStyle(color(level.theme.bullet), 1);
@@ -161,5 +204,48 @@ export function createBanner(scene: Phaser.Scene, level: ShooterLevel): { update
       hint.setAlpha(alpha);
     },
     dispose,
+  };
+}
+
+/** The boss bar under the HUD, and the warning when the boss appears. Everything is read from the state of the game: the
+ * warning's timing counts game ticks from the first tick that a boss is on the field (so a restart starts it again), the
+ * bar is full at the boss's maximum and shows "CUỒNG NỘ" once it is enraged. The same words are in a visually hidden
+ * `#game-boss-warning` while the warning is up (for screen readers and tests). Nothing is drawn in a level without a boss. */
+export function createBossUi(scene: Phaser.Scene, level: ShooterLevel): { update(state: ShooterState): void; dispose(): void } | undefined {
+  if (!bossWaveOf(level)) return undefined;
+  const plate = scene.add.rectangle(480, 83, 488, 20, 0x060d18, 0.72).setDepth(12).setVisible(false);
+  const fill = scene.add.rectangle(240, 83, 480, 12, color(level.theme.enemy), 1).setOrigin(0, 0.5).setDepth(13).setVisible(false);
+  const label = scene.add.text(246, 83, 'BOSS', { fontFamily: 'system-ui', fontSize: '12px', fontStyle: 'bold', color: '#ffffff', stroke: '#060d18', strokeThickness: 3 }).setOrigin(0, 0.5).setDepth(14).setVisible(false);
+  const note = scene.add.text(714, 83, '', { fontFamily: 'system-ui', fontSize: '12px', fontStyle: 'bold', color: '#ffd166', stroke: '#060d18', strokeThickness: 3 }).setOrigin(1, 0.5).setDepth(14).setVisible(false);
+  const warning = scene.add.text(480, 150, BOSS_WARNING_TEXT, { fontFamily: 'system-ui', fontSize: '38px', fontStyle: 'bold', color: '#ffffff', stroke: '#060d18', strokeThickness: 6 }).setOrigin(0.5).setDepth(22).setVisible(false);
+  let note2: HTMLElement | undefined;
+  let seenAt: number | undefined;
+  const hideNote = () => { note2?.remove(); note2 = undefined; };
+  return {
+    update(state) {
+      const boss = state.enemies.find((enemy) => isBoss(enemy.type) && enemy.maxHp !== undefined);
+      const visible = boss !== undefined && boss.hp > 0;
+      for (const part of [plate, fill, label]) part.setVisible(visible);
+      if (boss && visible) {
+        const spec = bossOf(boss.type)!;
+        const bar = bossBar(boss.hp, boss.maxHp!, isEnraged(boss, spec));
+        fill.setDisplaySize(Math.max(0, 480 * bar.share), 12);
+        note.setText(bar.note).setVisible(bar.note !== '');
+        if (seenAt === undefined) seenAt = state.tick;
+      } else note.setVisible(false);
+      const alpha = seenAt === undefined ? 0 : bossWarningAlpha(state.tick - seenAt);
+      warning.setVisible(alpha > 0).setAlpha(alpha);
+      if (alpha > 0 && !note2) {
+        note2 = document.createElement('p');
+        note2.id = 'game-boss-warning';
+        note2.setAttribute('role', 'status');
+        note2.textContent = BOSS_WARNING_TEXT;
+        Object.assign(note2.style, { position: 'absolute', width: '1px', height: '1px', margin: '-1px', padding: '0', overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap' });
+        document.getElementById('game-boss-warning')?.remove();
+        document.body.appendChild(note2);
+      }
+      if (alpha <= 0) hideNote();
+    },
+    dispose() { hideNote(); for (const part of [plate, fill, label, note, warning]) part.destroy(); },
   };
 }

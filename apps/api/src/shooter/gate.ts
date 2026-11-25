@@ -5,7 +5,7 @@
 // level EASIER, never harder: a level that is easy for the bot is not necessarily
 // easy for a person.
 import {
-  ShooterLevelSchema, createCasualBot, playLevel, type PlayResult, type ShooterLevel,
+  ENEMY_TYPES, ShooterLevelSchema, bossOf, bossWaveOf, createCasualBot, playLevel, type PlayResult, type ShooterLevel,
 } from '@game-creator/contracts';
 import { AIError } from '../providers/errors.js';
 import { killTarget } from './waves.js';
@@ -20,6 +20,10 @@ export const MIN_WINS = 2;
  * intensity 5, 13% of the combinations needed a 5th or 6th step). */
 export const MAX_THIN_STEPS = 6;
 export const THIN_FACTOR = 0.8;
+/** Each thinning step also lowers a boss's hit points by this factor (rounded down), never below this share of the
+ * original and never below 10: the boss itself is never removed or reduced in number. */
+export const BOSS_THIN_FACTOR = 0.9;
+export const BOSS_MIN_SHARE = 0.4;
 const MAX_ATMS = 600_000;
 
 export const THINNED_NOTICE = 'Độ khó được điều chỉnh để màn chơi thắng được.';
@@ -34,6 +38,8 @@ export interface GateReport {
   thinSteps: number;
   /** Total enemies scheduled in the level that was kept. */
   scheduled: number;
+  /** Only for a level with a boss: its hit points in the level that was kept. */
+  bossHp?: number;
 }
 
 export interface GateOptions {
@@ -78,10 +84,21 @@ function scaleCounts(waves: ShooterLevel['waves'], factor: number, floorTotal = 
 
 /** Fewer enemies (survive) or the same enemies later (kill: the goal needs them,
  * so only the surplus above 1.3 x the goal is removed, and the schedule is stretched). */
-function thin(level: ShooterLevel): ShooterLevel {
+function thin(level: ShooterLevel, original: ShooterLevel): ShooterLevel {
+  const bossWave = bossWaveOf(level);
+  if (bossWave) {
+    // The ordinary enemies thin out as in a survive level; the boss wave stays whole and its hit points go down a little.
+    const rest = level.waves.filter((wave) => bossOf(wave.type) === undefined);
+    const baseHp = original.bossHp ?? ENEMY_TYPES[bossWave.type].hp;
+    const floorHp = Math.max(10, Math.ceil(baseHp * BOSS_MIN_SHARE));
+    const bossHp = Math.max(floorHp, Math.floor((level.bossHp ?? baseHp) * BOSS_THIN_FACTOR));
+    const waves = [...(rest.length > 0 ? scaleCounts(rest, THIN_FACTOR) : []), bossWave].sort((a, b) => a.atMs - b.atMs);
+    return { ...level, waves, bossHp };
+  }
   if (level.win.type === 'survive') {
     return { ...level, waves: scaleCounts(level.waves, THIN_FACTOR) };
   }
+  if (level.win.type === 'boss') return level; // (a boss win always has a boss wave: handled above)
   // Kill: only the surplus above 1.3 x the goal may go; the rest arrives later instead.
   const waves = scaleCounts(level.waves, THIN_FACTOR, killTarget(level.win.count));
   return { ...level, waves: waves.map((wave) => ({ ...wave, atMs: Math.min(MAX_ATMS, Math.round(wave.atMs / THIN_FACTOR)) })) };
@@ -94,12 +111,12 @@ export function gateLevel(level: ShooterLevel, options: GateOptions = {}): { lev
   let thinSteps = 0;
 
   while (result.wins < MIN_WINS && thinSteps < MAX_THIN_STEPS) {
-    current = ShooterLevelSchema.parse(thin(current));
+    current = ShooterLevelSchema.parse(thin(current, level));
     thinSteps += 1;
     result = evaluate(current, play);
   }
   if (result.wins < MIN_WINS) throw new AIError('unwinnable_level', UNWINNABLE_MESSAGE, 422, undefined, ['goal']);
 
   const notices = thinSteps > 0 ? [THINNED_NOTICE] : [];
-  return { level: current, notices, report: { bot: options.play ? 'custom' : 'casual', runs: GATE_SEEDS, wins: result.wins, hpLeftAvg: Math.round(result.hpLeftAvg * 1000) / 1000, thinSteps, scheduled: total(current) } };
+  return { level: current, notices, report: { bot: options.play ? 'custom' : 'casual', runs: GATE_SEEDS, wins: result.wins, hpLeftAvg: Math.round(result.hpLeftAvg * 1000) / 1000, thinSteps, scheduled: total(current), ...(bossWaveOf(current) ? { bossHp: current.bossHp ?? ENEMY_TYPES[bossWaveOf(current)!.type].hp } : {}) } };
 }
