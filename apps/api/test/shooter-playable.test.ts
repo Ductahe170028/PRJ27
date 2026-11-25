@@ -51,3 +51,15 @@ describe('hand-made levels are playable', () => {
     expect(shooter.status).toBe('won');
   });
 });
+
+// Stage 4B: the three hand-made levels for the new mechanics can be won by the expert bot, and not by standing still.
+describe('the Stage 4B hand-made levels are playable', () => {
+  it.each(['shotgun-pit', 'spitters', 'medic'] as const)('the bot wins %s with at least 7 of 8 seeds', (name) => {
+    const results = SEEDS.map((seed) => play(withSeed(SHOOTER_LEVELS[name], seed), botInput));
+    console.info(`[shooter] bot on ${name}: ${results.map((r) => `${r.status[0]}${r.hp}`).join(' ')}`);
+    expect(results.filter((r) => r.status === 'won').length).toBeGreaterThanOrEqual(7);
+  });
+  it.each(['shotgun-pit', 'spitters', 'medic'] as const)('standing still loses %s every time', (name) => {
+    expect(SEEDS.map((seed) => play(withSeed(SHOOTER_LEVELS[name], seed), () => IDLE).status)).toEqual(SEEDS.map(() => 'lost'));
+  });
+});

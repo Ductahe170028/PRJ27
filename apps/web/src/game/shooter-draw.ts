@@ -17,11 +17,13 @@ export function shade(hex: string, factor: number): number {
 
 /** How a kind of enemy looks. One row per kind (a missing row is a compile error): `plain` is a disk,
  * `armored` is a ring with an inner disk that shrinks with its hit points. `shade` darkens (<1) or lightens (>1) the theme color. */
-interface EnemyLook { style: 'plain' | 'armored'; shade: number }
+interface EnemyLook { style: 'plain' | 'armored' | 'diamond'; shade: number }
 export const ENEMY_LOOKS: Record<EnemyType, EnemyLook> = {
   runner: { style: 'plain', shade: 1 },
   brute: { style: 'armored', shade: 0.55 },
   swarmer: { style: 'plain', shade: 1.2 },
+  // A diamond, not a disk: it reads as "different" even without color. Slightly larger so that its area matches its hit circle.
+  spitter: { style: 'diamond', shade: 0.8 },
 };
 
 /** The ground grid and the obstacles: drawn once per game. */
@@ -44,7 +46,12 @@ export function drawEnemies(g: Phaser.GameObjects.Graphics, state: ShooterState,
   for (const enemy of state.enemies) {
     const kind = ENEMY_TYPES[enemy.type];
     const look = ENEMY_LOOKS[enemy.type];
-    if (look.style === 'armored') {
+    if (look.style === 'diamond') {
+      const r = kind.radius * 1.2;
+      const points = [{ x: enemy.x, y: enemy.y - r }, { x: enemy.x + r, y: enemy.y }, { x: enemy.x, y: enemy.y + r }, { x: enemy.x - r, y: enemy.y }];
+      g.fillStyle(shade(level.theme.enemy, look.shade), 1).fillPoints(points, true);
+      g.lineStyle(2, 0xffffff, 0.9).strokePoints(points, true);
+    } else if (look.style === 'armored') {
       g.fillStyle(shade(level.theme.enemy, look.shade), 1).fillCircle(enemy.x, enemy.y, kind.radius);
       g.lineStyle(3, color(level.theme.enemy), 1).strokeCircle(enemy.x, enemy.y, kind.radius - 1.5);
       // hit points left, as the share of an inner disk
@@ -58,7 +65,30 @@ export function drawEnemies(g: Phaser.GameObjects.Graphics, state: ShooterState,
 
 export function drawBullets(g: Phaser.GameObjects.Graphics, state: ShooterState, level: ShooterLevel) {
   g.fillStyle(color(level.theme.bullet), 1);
-  for (const bullet of state.bullets) g.fillCircle(bullet.x, bullet.y, BULLET_RADIUS);
+  for (const bullet of state.bullets) {
+    if (bullet.pierceLeft === undefined) { g.fillCircle(bullet.x, bullet.y, BULLET_RADIUS); continue; }
+    // a piercing bullet is a short line along its flight, so it looks different at once
+    const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy) || 1;
+    g.lineStyle(4, color(level.theme.bullet), 1).lineBetween(bullet.x - (bullet.vx / speed) * 18, bullet.y - (bullet.vy / speed) * 18, bullet.x, bullet.y);
+  }
+}
+
+/** Bullets of shooting enemies: a lighter disk with a thin white rim, so they are never mistaken for the player's. */
+export function drawEnemyBullets(g: Phaser.GameObjects.Graphics, state: ShooterState, level: ShooterLevel) {
+  for (const bullet of state.enemyBullets) {
+    g.fillStyle(shade(level.theme.enemy, 1.35), 1).fillCircle(bullet.x, bullet.y, bullet.radius);
+    g.lineStyle(1, 0xffffff, 0.9).strokeCircle(bullet.x, bullet.y, bullet.radius);
+  }
+}
+
+/** Health pickups: a green disk with a white plus, blinking in the last 3 seconds before it vanishes. */
+export function drawPickups(g: Phaser.GameObjects.Graphics, state: ShooterState) {
+  for (const pickup of state.pickups) {
+    const blinking = pickup.expiresTick - state.tick < 180 && Math.floor(state.tick / 8) % 2 === 0;
+    const alpha = blinking ? 0.3 : 1;
+    g.fillStyle(0x4ade80, alpha).fillCircle(pickup.x, pickup.y, 10);
+    g.lineStyle(3, 0xffffff, alpha).lineBetween(pickup.x - 5, pickup.y, pickup.x + 5, pickup.y).lineBetween(pickup.x, pickup.y - 5, pickup.x, pickup.y + 5);
+  }
 }
 
 /** The player blinks while protected; the barrel points where it aims. */
@@ -76,7 +106,9 @@ export function drawPlayer(g: Phaser.GameObjects.Graphics, state: ShooterState, 
 /** Everything that moves, in the order it is painted (the barrel is part of the player). */
 export function drawState(g: Phaser.GameObjects.Graphics, state: ShooterState, level: ShooterLevel) {
   g.clear();
+  drawPickups(g, state);
   drawEnemies(g, state, level);
+  drawEnemyBullets(g, state, level);
   drawBullets(g, state, level);
   drawPlayer(g, state, level);
 }

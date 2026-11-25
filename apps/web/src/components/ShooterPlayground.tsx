@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { SHOOTER_LEVEL_NAMES, shooterLevel } from '@game-creator/contracts';
+import { levelInfo } from '../lib/shooter-text';
 import { GamePreview } from './GamePreview';
+import { LevelInfoCard } from './LevelInfoCard';
 
 type Phase = 'loading' | 'playing' | 'error';
 
@@ -12,6 +14,7 @@ export function ShooterPlayground({ name }: { name: string }) {
   const [message, setMessage] = useState('');
   const onStarted = useCallback(() => setPhase('playing'), []);
   const onError = useCallback((text: string) => { setPhase('error'); setMessage(text); }, []);
+  const info = useMemo(() => (level ? levelInfo(level) : undefined), [level]);
   const source = useMemo(() => (level ? { id: `shooter-${name}`, title: level.title, game: level } : undefined), [level, name]);
 
   return <main className="shooter-playground">
@@ -29,6 +32,7 @@ export function ShooterPlayground({ name }: { name: string }) {
       <div className="shooter-stage">
         <GamePreview key={name} source={source} onStarted={onStarted} onError={onError}/>
       </div>
+      {info && <LevelInfoCard info={info}/>}
       {phase === 'error' && <p role="alert" className="shooter-error">{message}</p>}
       <p className="shooter-help">
         <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> hoặc phím mũi tên: di chuyển · chuột: ngắm · giữ chuột trái: bắn · <kbd>R</kbd>: chơi lại.

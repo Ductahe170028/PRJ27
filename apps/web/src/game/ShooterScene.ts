@@ -25,13 +25,14 @@ export class ShooterScene extends Phaser.Scene {
   private pointerSeen = false;
   private finished = false;
   private lastHud = '';
+  private lastPublished = '';
 
   constructor(private readonly level: ShooterLevel, private readonly onStarted: () => void) { super('shooter'); }
 
   create() {
     const { level } = this;
     this.state = createSim(level);
-    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.lastHud = ''; this.bannerMs = 0;
+    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.lastHud = ''; this.lastPublished = ''; this.bannerMs = 0;
     this.cameras.main.setBackgroundColor(level.theme.background);
 
     drawBoard(this, level);
@@ -45,6 +46,7 @@ export class ShooterScene extends Phaser.Scene {
     const result = document.getElementById('game-result');
     if (result) result.hidden = true;
     this.updateHud();
+    this.publishState();
     this.draw();
     this.onStarted();
   }
@@ -64,6 +66,7 @@ export class ShooterScene extends Phaser.Scene {
     if (ticks === MAX_TICKS_PER_FRAME) this.accumulator = 0; // too far behind: drop the rest
     this.draw();
     this.updateHud();
+    this.publishState();
     if (this.state.status !== 'playing') this.finish();
   }
 
@@ -100,6 +103,23 @@ export class ShooterScene extends Phaser.Scene {
     this.hud.setText(text);
     const status = document.getElementById('game-hud');
     if (status) { status.hidden = false; status.textContent = text; }
+  }
+
+  /** Read-only numbers on the hidden #game-hud element (data-*), for tests and assistive tools: the player's
+   * health and place, how many enemy bullets are in the air, and the health pickups with their places. Nothing
+   * reads them back into the game. Written only when they change. */
+  private publishState() {
+    const { state } = this;
+    const at = (p: { x: number; y: number }) => `${Math.round(p.x)},${Math.round(p.y)}`;
+    const values = {
+      hp: String(state.player.hp), playerAt: at(state.player), enemyBullets: String(state.enemyBullets.length),
+      pickups: String(state.pickups.length), pickupAt: state.pickups.map(at).join(';'),
+    };
+    const key = Object.values(values).join('|');
+    if (key === this.lastPublished) return;
+    this.lastPublished = key;
+    const status = document.getElementById('game-hud');
+    if (status) Object.assign(status.dataset, values);
   }
 
   private finish() {

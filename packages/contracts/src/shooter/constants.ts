@@ -39,10 +39,39 @@ export const ENEMY_TYPES = {
   brute: { code: 2, radius: 20, speed: 50, hp: 12, damage: 2, points: 5 },
   /** Small and weak; comes in swarms. */
   swarmer: { code: 3, radius: 9, speed: 95, hp: 1, damage: 1, points: 1 },
+  /** Stands back and shoots slow bullets (the player can dodge them). Touching it still hurts. */
+  spitter: {
+    code: 4, radius: 12, speed: 70, hp: 3, damage: 1, points: 4,
+    // Starting values were cooldown 1800 ms and bullet speed 230: with them the casual bot lost every game against
+    // spitters. Tuned in docs/shooter-calibration.md (Stage 4B) to the slowest and rarest the limits allow.
+    ranged: { holdRange: 260, sightRange: 460, cooldownMs: 2400, bulletSpeed: 180, bulletDamage: 1, bulletRadius: 5 },
+  },
 } as const;
 
 export type EnemyType = keyof typeof ENEMY_TYPES;
-export const ENEMY_TYPE_NAMES = ['runner', 'brute', 'swarmer'] as const satisfies readonly EnemyType[];
+export const ENEMY_TYPE_NAMES = ['runner', 'brute', 'swarmer', 'spitter'] as const satisfies readonly EnemyType[];
+
+/** How a shooting enemy behaves, as data. Only some kinds have it (the older ones do not). Distances in px,
+ * bullet speed in px/s: it stops advancing once it is within `holdRange` of the player in plain sight, fires
+ * only inside `sightRange` and in plain sight, one bullet every `cooldownMs` straight at where the player is. */
+export interface RangedSpec { holdRange: number; sightRange: number; cooldownMs: number; bulletSpeed: number; bulletDamage: number; bulletRadius: number }
+interface EnemySpec { code: number; radius: number; speed: number; hp: number; damage: number; points: number; ranged?: RangedSpec }
+/** The shooting data of a kind, or undefined when it does not shoot. */
+export function rangedOf(type: EnemyType): RangedSpec | undefined {
+  const spec: EnemySpec = ENEMY_TYPES[type];
+  return spec.ranged;
+}
+
+/** Enemy bullets alive at once; a shot over the cap is not fired. */
+export const MAX_ENEMY_BULLETS = 60;
+/** Health pickups on the field at once; a drop over the cap does not appear. */
+export const MAX_PICKUPS = 3;
+/** A pickup stays this long (ticks), then vanishes. */
+export const PICKUP_LIFETIME_TICKS = 600;
+/** Pickup reach: the player takes it when closer than PLAYER_RADIUS + this (px). */
+export const PICKUP_RADIUS = 10;
+/** An enemy bullet flies this many times its owner's sight range before it vanishes. */
+export const ENEMY_BULLET_RANGE_FACTOR = 1.3;
 
 /** Largest enemy radius, used to size spatial queries. */
 export const MAX_ENEMY_RADIUS = 20;

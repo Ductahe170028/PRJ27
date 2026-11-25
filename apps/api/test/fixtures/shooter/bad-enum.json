@@ -1,5 +1,6 @@
 {
   "version": "brief-1",
+  "healthDrops": "none",
   "title": "Pirate Cove",
   "theme": "pirate-cove",
   "map": "open-arena",

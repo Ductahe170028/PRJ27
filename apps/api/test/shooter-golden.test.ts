@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { ENEMY_TYPE_NAMES } from '@game-creator/contracts';
 import { replay, type GoldenCase } from './shooter-golden-record.js';
 
 // The golden master: games recorded from the simulation as it was before the Stage 4A refactor.
@@ -20,7 +19,8 @@ describe('shooter simulation golden master', () => {
     for (const level of ['arena', 'pillars', 'wall', 'smoke-win', 'smoke-lose']) expect(names).toContain(`hand:${level}:expert`);
     expect(golden.cases.filter((c) => c.policy === 'idle').length).toBeGreaterThanOrEqual(4);
     const types = new Set(golden.cases.flatMap((c) => c.level.waves.map((w) => w.type)));
-    for (const type of ENEMY_TYPE_NAMES) expect(types.has(type), type).toBe(true);
+    // the three kinds that existed when it was recorded (Stage 4B added more; the fixture is never regenerated)
+    for (const type of ['runner', 'brute', 'swarmer']) expect(types.has(type as never), type).toBe(true);
     expect(new Set(golden.cases.map((c) => c.level.win.type))).toEqual(new Set(['survive', 'kill']));
     expect(new Set(golden.cases.map((c) => c.level.weapon.cooldownMs)).size).toBeGreaterThanOrEqual(3);
     expect(new Set(golden.cases.map((c) => c.level.player.hp)).size).toBeGreaterThanOrEqual(3);

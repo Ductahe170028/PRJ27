@@ -15,7 +15,16 @@ export const WEAPONS: Record<ShooterBrief['weapon'], ShooterLevel['weapon']> = {
   pistol: { cooldownMs: 300, bulletSpeed: 600, damage: 1, range: 600 },
   rapid: { cooldownMs: 150, bulletSpeed: 650, damage: 1, range: 500 },
   heavy: { cooldownMs: 600, bulletSpeed: 700, damage: 3, range: 700 },
+  // Stage 4B. `pellets` bullets in a fan `spreadDeg` wide; `pierce` enemies per bullet. The older weapons have none of these fields.
+  // Tuned in docs/shooter-calibration.md (Stage 4B); the first numbers (800 ms and 500 ms / pierce 3) won far more often than
+  // the pistol, which the calibration did not allow. The shotgun keeps its 320 px reach on purpose: a spitter holds at 260 px and
+  // the bots only fire inside 85% of the reach, so 300 px (255 px for the bot) could not touch a spitter that stood still.
+  shotgun: { cooldownMs: 1000, bulletSpeed: 650, damage: 1, range: 320, pellets: 6, spreadDeg: 36 },
+  piercing: { cooldownMs: 600, bulletSpeed: 800, damage: 2, range: 800, pierce: 2 },
 };
+
+/** Chance in percent that a defeated enemy drops a health pickup, by the brief's `healthDrops`. */
+export const HEALTH_DROP_PCT: Record<ShooterBrief['healthDrops'], number> = { none: 0, some: 12, many: 25 };
 
 /** Colors per theme. Dark ground with bright player, enemy and bullet: each of
  * those keeps a contrast ratio of at least 3:1 against the background (tested). */

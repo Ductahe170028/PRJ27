@@ -9,13 +9,20 @@ import type { ShooterLevel } from './level.js';
 export const EXPERT_FLEE_RADIUS = 150;
 /** Walls and edges closer than this push the expert bot away (px). */
 export const EXPERT_WALL_RADIUS = 60;
+/** Enemy bullets closer than this push the expert bot away (px). */
+export const EXPERT_BULLET_RADIUS = 90;
 
 export interface Point { x: number; y: number }
+/** An enemy bullet as a bot sees it: where it is and which way it flies (px/s). */
+export interface BulletPoint extends Point { vx: number; vy: number }
 
 /** One step away from `enemies` within `fleeRadius` and from walls and edges within `wallRadius`,
  * as -1, 0 or 1 per axis (walls push back too, so fleeing does not pin the bot in a corner).
- * The sums are taken in a fixed order (enemies as given, then the edges, then the obstacles). */
-export function steer(player: Point, level: ShooterLevel, enemies: readonly Point[], fleeRadius: number, wallRadius: number): { moveX: -1 | 0 | 1; moveY: -1 | 0 | 1 } {
+ * The sums are taken in a fixed order (enemies as given, then enemy bullets, then the edges, then the obstacles). */
+export function steer(
+  player: Point, level: ShooterLevel, enemies: readonly Point[], fleeRadius: number, wallRadius: number,
+  bullets: readonly BulletPoint[] = [], bulletRadius = EXPERT_BULLET_RADIUS,
+): { moveX: -1 | 0 | 1; moveY: -1 | 0 | 1 } {
   let fx = 0;
   let fy = 0;
   for (const enemy of enemies) {
@@ -25,6 +32,24 @@ export function steer(player: Point, level: ShooterLevel, enemies: readonly Poin
       fx += (player.x - enemy.x) * weight;
       fy += (player.y - enemy.y) * weight;
     }
+  }
+  // A bullet that is coming at the player is sidestepped, not run from: the push is across its line of flight, to
+  // the side the player is already on (a bullet is faster than the player, so backing straight away never works).
+  // A bullet that has passed does nothing. Nothing is added when there are no bullets.
+  for (const bullet of bullets) {
+    const rx = player.x - bullet.x;
+    const ry = player.y - bullet.y;
+    const distance = dist(rx, ry);
+    const speed = dist(bullet.vx, bullet.vy);
+    if (distance >= bulletRadius || distance === 0 || speed === 0) continue;
+    const ux = bullet.vx / speed;
+    const uy = bullet.vy / speed;
+    if (rx * ux + ry * uy <= 0) continue; // already past the player
+    const side = rx * -uy + ry * ux; // which side of its path the player is on
+    const sign = side >= 0 ? 1 : -1;
+    const weight = (bulletRadius - distance) / bulletRadius;
+    fx += -uy * sign * weight;
+    fy += ux * sign * weight;
   }
   const edge = (gap: number) => (gap < wallRadius ? (wallRadius - gap) / wallRadius : 0);
   fx += edge(player.x - FIELD.left - PLAYER_RADIUS) - edge(FIELD.right - PLAYER_RADIUS - player.x);

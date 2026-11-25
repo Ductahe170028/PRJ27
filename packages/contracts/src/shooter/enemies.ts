@@ -1,12 +1,13 @@
 ﻿// Step 6 of a tick: enemies move. Every number about a kind comes from ENEMY_TYPES.
-import { ENEMY_TYPES, MAX_ENEMY_RADIUS, NAV_REFRESH_TICKS, PLAYER_RADIUS, TICK_RATE } from './constants.js';
+import { ENEMY_TYPES, MAX_ENEMY_RADIUS, NAV_REFRESH_TICKS, PLAYER_RADIUS, TICK_RATE, rangedOf } from './constants.js';
 import { lineOfSight, resolveCircle, type Rect } from './geometry.js';
 import { GRID_COLS, buildGrid, gridCells, gridCol, gridRow } from './grid.js';
 import { cellOf, flowDistances, flowTarget, type FlowField } from './navigation.js';
 import type { ShooterState } from './state.js';
 
 /** 6. Enemies move (straight at the player in plain sight, else along the flow
- * field), push each other apart, then leave walls. */
+ * field), push each other apart, then leave walls. An enemy that shoots (a `ranged` kind) stands still
+ * once it is within its `holdRange` of the player in plain sight; it never backs away. */
 export function moveEnemies(state: ShooterState, t: number, walls: readonly Rect[]) {
   const { player, enemies } = state;
   if (enemies.length === 0) return;
@@ -25,7 +26,8 @@ export function moveEnemies(state: ShooterState, t: number, walls: readonly Rect
     let toPlayer = true;
     let tx = player.x;
     let ty = player.y;
-    if (!lineOfSight(enemy, player, kind.radius, walls)) {
+    const sight = lineOfSight(enemy, player, kind.radius, walls);
+    if (!sight) {
       const target = flowTarget(state.blocked, ensureFlow().dist, enemy.x, enemy.y);
       if (target) { tx = target.x; ty = target.y; toPlayer = false; }
     }
@@ -33,6 +35,8 @@ export function moveEnemies(state: ShooterState, t: number, walls: readonly Rect
     const dy = ty - enemy.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     if (distance === 0) continue;
+    const ranged = rangedOf(enemy.type);
+    if (ranged && sight && distance <= ranged.holdRange) continue;
     // Chasing the player: stop just inside touching range instead of walking into the center.
     const room = toPlayer ? distance - (PLAYER_RADIUS + kind.radius - 1) : distance;
     const move = Math.min(stride, Math.max(0, room));

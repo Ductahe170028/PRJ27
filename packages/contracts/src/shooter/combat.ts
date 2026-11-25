@@ -1,12 +1,17 @@
 ﻿// What hurts what, and how a game ends: steps 8 and 9 of a tick, and the damage an enemy takes.
 import { ENEMY_TYPES, INVULNERABLE_MS, PLAYER_RADIUS, TICK_RATE, msToTicks } from './constants.js';
+import { maybeDropHealth } from './pickups.js';
 import type { ShooterEnemy, ShooterState } from './state.js';
 
 /** An enemy takes `amount`; at zero hit points it counts as a kill and scores. It leaves the
  * field when the bullet step has finished (enemies with hp <= 0 are filtered out there). */
 export function damageEnemy(state: ShooterState, enemy: ShooterEnemy, amount: number) {
   enemy.hp -= amount;
-  if (enemy.hp <= 0) { state.kills += 1; state.score += ENEMY_TYPES[enemy.type].points; }
+  if (enemy.hp <= 0) {
+    state.kills += 1;
+    state.score += ENEMY_TYPES[enemy.type].points;
+    maybeDropHealth(state, enemy);
+  }
 }
 
 /** 8. One enemy touch hurts the player (the worst one of the tick), unless the player is still protected. */

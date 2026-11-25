@@ -15,7 +15,7 @@ export const INTENSITY_RATE = [0.6, 1.2, 1.7, 2.15, 2.7] as const;
  * per second; the number of enemies is the threat divided by the mix's average
  * weight, so five brutes are not as many as five swarmers. Calibrated together
  * with INTENSITY_RATE. */
-export const ENEMY_WEIGHT: Record<EnemyKind, number> = { swarmer: 0.6, runner: 1, brute: 4 };
+export const ENEMY_WEIGHT: Record<EnemyKind, number> = { swarmer: 0.6, runner: 1, brute: 4, spitter: 4 };
 
 /** Average weight of an enemy in the mix, by share. */
 export function meanWeight(enemies: ReadonlyArray<{ type: EnemyKind; share: number }>): number {
@@ -41,6 +41,10 @@ export const FIRST_SLICE_MS = 2_000;
 export const RAMP_START = 0.5;
 /** A brute does not show up before this share of the horizon, unless it is the only kind. */
 export const BRUTE_NOT_BEFORE = 0.25;
+/** A spitter does not show up before this share of the horizon either, unless it is the only kind. */
+export const SPITTER_NOT_BEFORE = 0.2;
+/** Kinds that wait for part of the horizon before they first appear (unless they are the only kind). */
+export const NOT_BEFORE: Partial<Record<EnemyKind, number>> = { brute: BRUTE_NOT_BEFORE, spitter: SPITTER_NOT_BEFORE };
 /** A kill level schedules this many times the goal, so that missed enemies do not block the win. */
 export const KILL_SURPLUS = 1.3;
 export const MAX_WAVES = 30;
@@ -99,8 +103,9 @@ function placeKinds(slices: Slice[], counts: Map<EnemyKind, number>, horizonMs: 
     const total = counts.get(type)!;
     if (total === 0) continue;
     let eligible = slices; // swarmers come in clusters because a slice holds many; brute has a time rule below
-    if (type === 'brute' && !only) {
-      const late = eligible.filter((slice) => slice.startMs >= horizonMs * BRUTE_NOT_BEFORE);
+    const notBefore = NOT_BEFORE[type];
+    if (notBefore !== undefined && !only) {
+      const late = eligible.filter((slice) => slice.startMs >= horizonMs * notBefore);
       eligible = late.length > 0 ? late : [slices[slices.length - 1]!];
     }
     // Weight each eligible slice by its size, then share `total` out by largest remainder.
@@ -114,7 +119,7 @@ function placeKinds(slices: Slice[], counts: Map<EnemyKind, number>, horizonMs: 
   }
   return waves.sort((a, b) => a.atMs - b.atMs || kindOrder(a.type) - kindOrder(b.type));
 }
-const kindOrder = (type: EnemyKind) => ({ runner: 0, swarmer: 1, brute: 2 })[type];
+const kindOrder = (type: EnemyKind) => ({ runner: 0, swarmer: 1, brute: 2, spitter: 3 })[type];
 
 /** Packs slices into at most 30 waves of at most 40 each: neighbouring slices
  * are merged (same kind, the first one's time) until it fits. */

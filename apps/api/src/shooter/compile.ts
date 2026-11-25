@@ -6,7 +6,7 @@ import {
 } from '@game-creator/contracts';
 import type { ShooterBrief } from './brief.js';
 import { MAP_TEMPLATES, MAX_VARIANTS, SPAWN_CANDIDATES, gapsAreWide, type MapName, type Obstacle } from './maps.js';
-import { HEALTH_HP, PLAYER_SPEED, PLAYER_START, THEMES, WEAPONS } from './presets.js';
+import { HEALTH_DROP_PCT, HEALTH_HP, PLAYER_SPEED, PLAYER_START, THEMES, WEAPONS } from './presets.js';
 import { deriveRng } from './rng.js';
 import { scheduleWaves } from './waves.js';
 
@@ -84,6 +84,8 @@ export function compileShooter(brief: ShooterBrief, seed: number, options: Compi
     weapon: WEAPONS[brief.weapon],
     obstacles: chosen.layout.obstacles, spawnPoints: chosen.layout.spawnPoints,
     waves,
+    // Only a level that has health drops carries the field: every other level stays exactly as it was.
+    ...(brief.healthDrops === 'none' ? {} : { drops: { healthChancePct: HEALTH_DROP_PCT[brief.healthDrops] } }),
     win: brief.goal.type === 'survive' ? { type: 'survive', seconds: brief.goal.seconds } : { type: 'kill', count: brief.goal.count },
   };
   // The schema is the last word. Failing here is a bug in the compiler, never a user error.

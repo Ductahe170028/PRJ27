@@ -1,5 +1,6 @@
 {
   "version": "brief-1",
+  "healthDrops": "none",
   "title": "Last Stand",
   "theme": "military-base",
   "map": "rooms",

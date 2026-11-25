@@ -120,3 +120,14 @@ export function lineOfSight(from: Vec, to: Vec, radius: number, rects: readonly 
   for (const rect of rects) if (segmentRectHit(from.x, from.y, to.x, to.y, rect, radius) !== undefined) return false;
   return true;
 }
+
+/** Radians in one degree. */
+export const RADIANS_PER_DEGREE = Math.PI / 180;
+
+/** tan(x) for |x| up to 30 degrees (0.5236 rad) with + - * only, from the series x + x^3/3 + 2x^5/15 +
+ * 17x^7/315. Every engine rounds these the same way; Math.tan is not guaranteed to. Error at most
+ * 0.0001 up to 30 degrees (0.00007 at 30, under 0.000001 at 12). */
+export function tanSmall(x: number): number {
+  const x2 = x * x;
+  return x * (1 + x2 * (1 / 3 + x2 * (2 / 15 + x2 * (17 / 315))));
+}

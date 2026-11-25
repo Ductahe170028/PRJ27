@@ -5,7 +5,13 @@
 export const MAX_NOTICES = 8;
 export const NOTICE_MAX_CHARS = 160;
 
-interface Group { id: string; pattern: RegExp; notice: string }
+/** `weak` words count only when the text is not also about health drops (which the engine has). */
+interface Group { id: string; pattern: RegExp; weak?: RegExp; notice: string }
+
+/** Words about healing: "nhặt vật phẩm hồi máu" asks for something the engine has, "nhặt vật phẩm tăng tốc" does not. */
+const HEALTH = /\b(?:hoi mau|hop mau|binh mau|health|heal\w*|med ?kits?|first aid)\b/;
+
+const hits = (group: Group, text: string) => group.pattern.test(text) || (group.weak?.test(text) === true && !HEALTH.test(text));
 
 /** Lower case, no accents, hyphens and underscores as spaces: "Hết đạn" and
  * "het-dan" and "HET DAN" all read "het dan". */
@@ -40,8 +46,14 @@ export const NOTICE_GROUPS: readonly Group[] = [
   { id: 'ammo', pattern: /\bhet dan\b|\bnap dan\b|\breload(ing)?\b|\bammo\b|\bammunition\b|\bdan co han\b|\bgioi han dan\b|\blimited bullets\b/, notice: 'Chưa hỗ trợ: giới hạn đạn và nạp đạn. Đạn không giới hạn, có hồi chiêu.' },
   {
     id: 'pickups',
-    pattern: /\bhoi mau\b|\bvat pham\b|\bpower ?ups?\b|\bnang cap\b|\bupgrades?\b|\bhealth ?packs?\b|\bmed ?kits?\b|\bpick ?ups?\b|\bheal(ing)?\b/,
-    notice: 'Chưa hỗ trợ: vật phẩm, hồi máu và nâng cấp.',
+    pattern: /\bpower ?ups?\b|\bnang cap\b|\bupgrades?\b/,
+    weak: /\bvat pham\b|\bpick ?ups?\b/,
+    notice: 'Chưa hỗ trợ: vật phẩm tăng sức mạnh và nâng cấp. Chỉ có vật phẩm hồi máu.',
+  },
+  {
+    id: 'explosion',
+    pattern: /\bno lan\b|\bten lua\b|\brockets?\b|\bgrenades?\b|\bluu dan\b|\bexplosi\w*|\barea damage\b|\bsat thuong lan\b/,
+    notice: 'Chưa hỗ trợ: đạn nổ lan. Mỗi viên đạn chỉ trúng quái nó chạm.',
   },
   {
     id: 'weapons',
@@ -52,14 +64,14 @@ export const NOTICE_GROUPS: readonly Group[] = [
   { id: 'traps', pattern: /\btraps?\b|\bcai bay\b|\bdat bay\b|\bbay (gai|min|lua|sat)\b/, notice: 'Chưa hỗ trợ: bẫy.' },
 ];
 
-const matches = (group: Group, text: string) => group.pattern.test(fold(text));
+const matches = (group: Group, text: string) => hits(group, fold(text));
 
 /** The standard sentence for every group that the prompt mentions and that the
  * model's own `unsupported` entries do not already cover. */
 export function keywordNotices(prompt: string, unsupported: readonly string[]): string[] {
   const text = fold(prompt);
   return NOTICE_GROUPS
-    .filter((group) => group.pattern.test(text) && !unsupported.some((item) => matches(group, item)))
+    .filter((group) => hits(group, text) && !unsupported.some((item) => matches(group, item)))
     .map((group) => group.notice);
 }
 

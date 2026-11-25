@@ -113,7 +113,7 @@ describe('the level card', () => {
     const info = levelInfo(SHOOTER_LEVELS.arena);
     expect(info).toEqual({
       goal: 'Sống sót 60 giây', maxHealth: 5, maxEnemies: totalScheduledEnemies(SHOOTER_LEVELS.arena),
-      weapon: 'Bắn từng phát', weaponDetail: 'mỗi 0,3 giây một phát · sát thương 1 · tầm 600',
+      weapon: 'Bắn từng phát', weaponDetail: 'mỗi 0,3 giây một phát · sát thương 1 · tầm 600', extras: [],
     });
     expect(info.maxEnemies).toBe(103); // 8+6+14+10+18+12+1+20+14
   });
@@ -127,5 +127,47 @@ describe('the level card', () => {
     const level: ShooterLevel = { ...SHOOTER_LEVELS.arena, weapon: weapon(150, { range: 500 }), player: { ...SHOOTER_LEVELS.arena.player, hp: 8 }, win: kill };
     const info = levelInfo(level);
     expect(info).toMatchObject({ goal: 'Hạ 40 quái', maxHealth: 8, weapon: 'Bắn liên tục' });
+  });
+});
+
+describe('the new weapons in words, read from the data', () => {
+  it('pellets above 1: "Bắn chùm", with the number of pellets and damage per pellet', () => {
+    const shotgun = weaponSummary(weapon(800, { range: 320, pellets: 6, spreadDeg: 36, bulletSpeed: 650 }));
+    expect(shotgun.label).toBe('Bắn chùm');
+    expect(shotgun.detail).toBe('6 viên mỗi phát · mỗi 0,8 giây · sát thương 1 mỗi viên · tầm 320');
+    expect(weaponSummary(weapon(700, { pellets: 4, damage: 2 })).detail).toBe('4 viên mỗi phát · mỗi 0,7 giây · sát thương 2 mỗi viên · tầm 600');
+  });
+  it('pierce above 1: "Đạn xuyên", with how many enemies', () => {
+    const piercing = weaponSummary(weapon(500, { damage: 2, range: 800, pierce: 3, bulletSpeed: 800 }));
+    expect(piercing.label).toBe('Đạn xuyên');
+    expect(piercing.detail).toBe('xuyên tối đa 3 quái · mỗi 0,5 giây một phát · sát thương 2 · tầm 800');
+  });
+  it('pellets 1 and pierce 1 (or absent) are the old kinds, by cooldown as before', () => {
+    expect(weaponSummary(weapon(300, { pellets: 1, pierce: 1 })).label).toBe('Bắn từng phát');
+    expect(weaponSummary(weapon(150, { pellets: 1 })).label).toBe('Bắn liên tục');
+    expect(weaponSummary(weapon(600, { pierce: 1 })).label).toBe('Bắn chậm, sát thương lớn');
+  });
+});
+
+describe('the extra lines of the level card', () => {
+  const base = SHOOTER_LEVELS.arena;
+  it('none for a plain level', () => { expect(levelInfo(base).extras).toEqual([]); });
+  it('shooting enemies: one line, whenever the schedule has a kind that shoots', () => {
+    const level: ShooterLevel = { ...base, waves: [...base.waves, { atMs: 5000, type: 'spitter', count: 2 }] };
+    expect(levelInfo(level).extras).toEqual(['Có quái bắn xa (né đạn của chúng)']);
+  });
+  it('health drops: the percentage of that level', () => {
+    expect(levelInfo({ ...base, drops: { healthChancePct: 12 } }).extras).toEqual(['Quái bị hạ có thể rơi vật phẩm hồi máu (12%)']);
+    expect(levelInfo({ ...base, drops: { healthChancePct: 25 } }).extras).toEqual(['Quái bị hạ có thể rơi vật phẩm hồi máu (25%)']);
+    expect(levelInfo({ ...base, drops: { healthChancePct: 0 } }).extras).toEqual([]);
+  });
+  it('both, in that order', () => {
+    const level: ShooterLevel = { ...base, drops: { healthChancePct: 25 }, waves: [{ atMs: 1000, type: 'spitter', count: 1 }] };
+    expect(levelInfo(level).extras).toEqual(['Có quái bắn xa (né đạn của chúng)', 'Quái bị hạ có thể rơi vật phẩm hồi máu (25%)']);
+  });
+  it('the hand-made levels: shotgun-pit says "Bắn chùm", spitters has the shooting line, medic the drop line', () => {
+    expect(levelInfo(SHOOTER_LEVELS['shotgun-pit']).weapon).toBe('Bắn chùm');
+    expect(levelInfo(SHOOTER_LEVELS.spitters).extras).toContain('Có quái bắn xa (né đạn của chúng)');
+    expect(levelInfo(SHOOTER_LEVELS.medic).extras).toEqual(['Quái bị hạ có thể rơi vật phẩm hồi máu (25%)']);
   });
 });

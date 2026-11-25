@@ -6,12 +6,13 @@ import { dist } from './geometry.js';
 import type { ShooterLevel } from './level.js';
 import { step } from './sim.js';
 import { createSim, type ShooterInput, type ShooterState } from './state.js';
-import { EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer } from './steering.js';
+import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer } from './steering.js';
 
 export const IDLE: ShooterInput = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, fire: false };
 
 /** Aims at the nearest enemy, holds fire, and steps away from enemies within
- * 150 px and from walls. It sees every enemy exactly, at every tick. */
+ * 150 px, from enemy bullets within 90 px, and from walls. It sees every enemy and bullet exactly, at every tick.
+ * It does not go for health pickups. */
 export function botInput(state: ShooterState): ShooterInput {
   const { player, enemies, level } = state;
   let nearest: (typeof enemies)[number] | undefined;
@@ -20,7 +21,7 @@ export function botInput(state: ShooterState): ShooterInput {
     const distance = dist(enemy.x - player.x, enemy.y - player.y);
     if (distance < nearestDistance) { nearestDistance = distance; nearest = enemy; }
   }
-  const { moveX, moveY } = steer(player, level, enemies, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS);
+  const { moveX, moveY } = steer(player, level, enemies, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, state.enemyBullets, EXPERT_BULLET_RADIUS);
   return {
     moveX, moveY,
     aimX: nearest ? nearest.x : player.x + 1, aimY: nearest ? nearest.y : player.y,

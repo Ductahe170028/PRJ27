@@ -24,6 +24,9 @@ export const ShooterLevelSchema = z.object({
   player: z.object({ ...point, speed: integer(120, 320), hp: integer(1, 10) }).strict(),
   weapon: z.object({
     cooldownMs: integer(80, 1000), bulletSpeed: integer(300, 900), damage: integer(1, 5), range: integer(200, 1000),
+    /** Bullets per shot (absent = 1), the whole width of their fan in degrees (absent = 0) and how many
+     * enemies one bullet passes through (absent = 1). All optional: a level without them plays as before. */
+    pellets: integer(1, 9).optional(), spreadDeg: integer(0, 60).optional(), pierce: integer(1, 5).optional(),
   }).strict(),
   obstacles: z.array(z.object({
     ...point, width: integer(20, 400), height: integer(20, 400),
@@ -32,6 +35,8 @@ export const ShooterLevelSchema = z.object({
   waves: z.array(z.object({
     atMs: integer(0, 600_000), type: z.enum(ENEMY_TYPE_NAMES), count: integer(1, 40),
   }).strict()).min(1).max(30),
+  /** Chance in percent that a defeated enemy drops a health pickup (absent or 0 = never). */
+  drops: z.object({ healthChancePct: integer(0, 50) }).strict().optional(),
   win: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(10, 300) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(1, 400) }).strict(),

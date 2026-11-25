@@ -1,7 +1,7 @@
 ﻿// Step 5 of a tick: due enemies appear.
-import { ENEMY_TYPES, FIELD, MAX_ENEMIES_ALIVE, SPAWN_MIN_PLAYER_DISTANCE, type EnemyType } from './constants.js';
+import { ENEMY_TYPES, FIELD, MAX_ENEMIES_ALIVE, SPAWN_MIN_PLAYER_DISTANCE, msToTicks, rangedOf, type EnemyType } from './constants.js';
 import { dist, pointRectDistance } from './geometry.js';
-import { random, type ShooterState } from './state.js';
+import { random, type ShooterEnemy, type ShooterState } from './state.js';
 
 const RING_DIRECTIONS: ReadonlyArray<readonly [number, number]> = [
   [1, 0], [0, 1], [-1, 0], [0, -1], [Math.SQRT1_2, Math.SQRT1_2], [-Math.SQRT1_2, Math.SQRT1_2],
@@ -15,12 +15,12 @@ export function spawnDue(state: ShooterState, t: number) {
   while (state.spawned < state.schedule.length) {
     const entry = state.schedule[state.spawned]!;
     if (entry.tick > t || state.enemies.length >= MAX_ENEMIES_ALIVE) return;
-    if (!placeEnemy(state, entry.type)) return; // no free spot now: it waits, in order
+    if (!placeEnemy(state, entry.type, t)) return; // no free spot now: it waits, in order
     state.spawned += 1;
   }
 }
 
-function placeEnemy(state: ShooterState, type: EnemyType): boolean {
+function placeEnemy(state: ShooterState, type: EnemyType, t: number): boolean {
   const { level, player } = state;
   const radius = ENEMY_TYPES[type].radius;
   const distanceToPlayer = (p: { x: number; y: number }) => dist(p.x - player.x, p.y - player.y);
@@ -48,7 +48,12 @@ function placeEnemy(state: ShooterState, type: EnemyType): boolean {
       const x = origin.x + dx * reach;
       const y = origin.y + dy * reach;
       if (!free(x, y)) continue;
-      state.enemies.push({ id: state.nextId, type, x, y, hp: ENEMY_TYPES[type].hp });
+      const enemy: ShooterEnemy = { id: state.nextId, type, x, y, hp: ENEMY_TYPES[type].hp };
+      // A shooting enemy's first shot comes half a cooldown after it appears, shifted by its id so that
+      // enemies that appear together do not all fire at once.
+      const ranged = rangedOf(type);
+      if (ranged) enemy.nextShotTick = t + msToTicks(ranged.cooldownMs / 2 + (enemy.id % 5) * 100);
+      state.enemies.push(enemy);
       state.nextId += 1;
       return true;
     }

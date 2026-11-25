@@ -4,7 +4,7 @@ import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema, describeBrief } from '../
 import { THEMES } from '../src/shooter/presets.js';
 
 const valid = () => ({
-  version: 'brief-1', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [] as unknown[],
 }) as Record<string, any>;
@@ -77,11 +77,14 @@ describe('normalizeBrief clamps, it does not reject', () => {
     expect(parse({ ...valid(), enemies: [{ type: 'runner', share: 4 }, { type: 'runner', share: 3 }] })).toMatchObject({ data: { enemies: [{ type: 'runner', share: 7 }] } });
   });
 
-  it('keeps at most 3 enemy entries', () => {
-    const four = [{ type: 'runner', share: 1 }, { type: 'brute', share: 1 }, { type: 'swarmer', share: 1 }, { type: 'boss', share: 1 }];
-    const normalized = normalizeBrief({ ...valid(), enemies: four }) as { enemies: unknown[] };
-    expect(normalized.enemies).toEqual(four.slice(0, 3));
-    expect(parse({ ...valid(), enemies: four }).success).toBe(true);
+  it('keeps at most 4 enemy entries', () => {
+    const five = [{ type: 'runner', share: 1 }, { type: 'brute', share: 1 }, { type: 'swarmer', share: 1 }, { type: 'spitter', share: 1 }, { type: 'boss', share: 1 }];
+    const normalized = normalizeBrief({ ...valid(), enemies: five }) as { enemies: unknown[] };
+    expect(normalized.enemies).toEqual(five.slice(0, 4));
+    expect(parse({ ...valid(), enemies: five }).success).toBe(true);
+    // four kinds are fine as they are, five that were not cut are refused
+    expect(ShooterBriefSchema.safeParse({ ...valid(), enemies: five.slice(0, 4) }).success).toBe(true);
+    expect(ShooterBriefSchema.safeParse({ ...valid(), enemies: [...five.slice(0, 4), { type: 'runner', share: 2 }] }).success).toBe(false);
   });
 
   it('cuts a long title to 40 characters and trims it', () => {

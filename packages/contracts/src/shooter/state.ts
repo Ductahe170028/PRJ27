@@ -13,9 +13,16 @@ export interface ShooterInput {
   fire: boolean;
 }
 
-export interface ShooterEnemy { id: number; type: EnemyType; x: number; y: number; hp: number }
-/** vx, vy are in px per second. */
-export interface ShooterBullet { id: number; x: number; y: number; vx: number; vy: number; travelled: number }
+/** `nextShotTick` only exists on enemies that shoot (a `ranged` kind). */
+export interface ShooterEnemy { id: number; type: EnemyType; x: number; y: number; hp: number; nextShotTick?: number }
+/** vx, vy are in px per second. `pierceLeft` and `hitIds` only exist on bullets of a piercing weapon:
+ * how many more enemies it may pass through, and the enemies it has already hit (never twice). */
+export interface ShooterBullet { id: number; x: number; y: number; vx: number; vy: number; travelled: number; pierceLeft?: number; hitIds?: number[] }
+
+/** A bullet shot by an enemy. vx, vy are in px per second; `range` is how far it flies before it vanishes. */
+export interface EnemyBullet { id: number; x: number; y: number; vx: number; vy: number; travelled: number; damage: number; radius: number; range: number }
+/** A health pickup dropped by an enemy; it vanishes at `expiresTick`. */
+export interface Pickup { id: number; x: number; y: number; expiresTick: number }
 
 export interface ShooterState {
   tick: number;
@@ -30,6 +37,9 @@ export interface ShooterState {
   };
   enemies: ShooterEnemy[];
   bullets: ShooterBullet[];
+  /** Bullets of shooting enemies and health pickups: empty in every level without such enemies or `drops`. */
+  enemyBullets: EnemyBullet[];
+  pickups: Pickup[];
   // --- internal, but plain data so the state can be cloned and resumed ---
   level: ShooterLevel;
   rng: number;
@@ -61,7 +71,7 @@ export function createSim(level: ShooterLevel): ShooterState {
       x: level.player.x, y: level.player.y, hp: level.player.hp, maxHp: level.player.hp,
       invulnerableUntilTick: 0, nextShotTick: 0, aim: 0,
     },
-    enemies: [], bullets: [],
+    enemies: [], bullets: [], enemyBullets: [], pickups: [],
     level, rng: level.seed | 0, nextId: 1,
     schedule: entries.map(({ tick, type }) => ({ tick, type })), spawned: 0,
     aimX: 1, aimY: 0,

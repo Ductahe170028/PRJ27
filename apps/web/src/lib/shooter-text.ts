@@ -1,7 +1,7 @@
 // Every sentence the player reads about a shooter level: the goal, the banner at the start, the HUD
 // line and the "Thông tin màn" card. Pure functions of the level (no Phaser, no DOM), so they are
 // tested without a browser and the game and the page always say the same thing.
-import { totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
+import { rangedOf, totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
 
 type Win = ShooterLevel['win'];
 type Weapon = ShooterLevel['weapon'];
@@ -68,15 +68,24 @@ export const RAPID_MAX_COOLDOWN_MS = 200;
 export const SLOW_MIN_COOLDOWN_MS = 500;
 
 export function weaponSummary(weapon: Weapon): { label: string; detail: string } {
+  // New weapons are recognised by their data, never by a name.
+  const pellets = weapon.pellets ?? 1;
+  const pierce = weapon.pierce ?? 1;
+  if (pellets > 1) return { label: 'Bắn chùm', detail: `${pellets} viên mỗi phát · mỗi ${seconds(weapon.cooldownMs)} giây · sát thương ${weapon.damage} mỗi viên · tầm ${weapon.range}` };
+  if (pierce > 1) return { label: 'Đạn xuyên', detail: `xuyên tối đa ${pierce} quái · mỗi ${seconds(weapon.cooldownMs)} giây một phát · sát thương ${weapon.damage} · tầm ${weapon.range}` };
   const label = weapon.cooldownMs <= RAPID_MAX_COOLDOWN_MS ? 'Bắn liên tục'
     : weapon.cooldownMs >= SLOW_MIN_COOLDOWN_MS ? 'Bắn chậm, sát thương lớn' : 'Bắn từng phát';
   return { label, detail: `mỗi ${seconds(weapon.cooldownMs)} giây một phát · sát thương ${weapon.damage} · tầm ${weapon.range}` };
 }
 
-export interface LevelInfo { goal: string; maxHealth: number; maxEnemies: number; weapon: string; weaponDetail: string }
+export interface LevelInfo { goal: string; maxHealth: number; maxEnemies: number; weapon: string; weaponDetail: string; extras: string[] }
 
 /** What the card shows, computed from the level alone. */
 export function levelInfo(level: ShooterLevel): LevelInfo {
   const weapon = weaponSummary(level.weapon);
-  return { goal: goalSentence(level.win), maxHealth: level.player.hp, maxEnemies: totalScheduledEnemies(level), weapon: weapon.label, weaponDetail: weapon.detail };
+  const extras: string[] = [];
+  if (level.waves.some((wave) => rangedOf(wave.type) !== undefined)) extras.push('Có quái bắn xa (né đạn của chúng)');
+  const drop = level.drops?.healthChancePct ?? 0;
+  if (drop > 0) extras.push(`Quái bị hạ có thể rơi vật phẩm hồi máu (${drop}%)`);
+  return { goal: goalSentence(level.win), maxHealth: level.player.hp, maxEnemies: totalScheduledEnemies(level), weapon: weapon.label, weaponDetail: weapon.detail, extras };
 }

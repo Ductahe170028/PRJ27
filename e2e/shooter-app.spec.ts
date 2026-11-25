@@ -205,3 +205,17 @@ test('a kill level names its goal on the banner', async ({ page }) => {
   await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
   await expect(page.frameLocator('iframe').locator('#game-banner')).toContainText('MỤC TIÊU: Hạ 20 quái');
 });
+
+// --- Stage 4B: the card of a generated level with the new mechanics ---
+
+test('a brief with the shotgun, spitters and health drops: the card says so, and nothing is reported as unsupported', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'bắn tỉa sa mạc, quái cung thủ, rơi hộp máu [brief:shotgun-spitter]');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  await expect(field(page, 'weapon')).toContainText('Bắn chùm');
+  await expect(field(page, 'weapon')).toContainText('6 viên mỗi phát · mỗi 1 giây · sát thương 1 mỗi viên · tầm 320');
+  await expect(infoCard(page).locator('[data-info="extra"]')).toHaveText(['Có quái bắn xa (né đạn của chúng)', 'Quái bị hạ có thể rơi vật phẩm hồi máu (12%)']);
+  await expect(notices(page)).toHaveCount(0);
+  await expect(page.frameLocator('iframe').locator('#game-hud')).toHaveAttribute('data-pickups', '0');
+});

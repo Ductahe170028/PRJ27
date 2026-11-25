@@ -3,9 +3,10 @@
 //   npm run build            (once; this script imports apps/api/dist)
 //   node scripts/measure-compile-time.mjs [n=40]
 //
-// Three cases, n runs each with different seeds, maps and intensities, one at a time like requests:
-// a 60 s survive level, a 180 s survive level, and the worst case (kill 200, only brutes, intensity 5,
-// fragile player: every thinning step and every goal reduction is used before the level is refused).
+// Four cases, n runs each with different seeds, maps and intensities, one at a time like requests:
+// a 60 s survive level, a 180 s survive level, and two worst cases (kill 200, intensity 5, fragile player: every thinning
+// step and every goal reduction is used before the level is refused): only brutes, and (Stage 4B) all four kinds with the
+// shotgun, which has the most enemy bullets and pellets to simulate.
 // Prints median, p95 and max wall time in seconds, and how many runs ended in a timeout or a refusal.
 import { performance } from 'node:perf_hooks';
 import { compileInWorker, COMPILE_TIMEOUT_MS } from '../dist/shooter/isolated-compile.js';
@@ -18,10 +19,11 @@ const MIXES = [
   [{ type: 'swarmer', share: 5 }],
   [{ type: 'runner', share: 4 }, { type: 'brute', share: 2 }, { type: 'swarmer', share: 4 }],
 ];
-const base = (extra) => ({ version: 'brief-1', title: 'Timing', theme: 'zombie-city', playerHealth: 'normal', weapon: 'pistol', unsupported: [], ...extra });
+const base = (extra) => ({ version: 'brief-1', healthDrops: 'none', title: 'Timing', theme: 'zombie-city', playerHealth: 'normal', weapon: 'pistol', unsupported: [], ...extra });
 const cases = {
   'survive 60 s': (i) => base({ map: MAPS[i % 5], enemies: MIXES[i % 4], intensity: (i % 5) + 1, goal: { type: 'survive', seconds: 60 }, weapon: ['pistol', 'rapid', 'heavy'][i % 3] }),
   'survive 180 s': (i) => base({ map: MAPS[i % 5], enemies: MIXES[i % 4], intensity: (i % 5) + 1, goal: { type: 'survive', seconds: 180 }, weapon: ['pistol', 'rapid', 'heavy'][i % 3] }),
+  'worst 4B: kill 200, all4, shotgun, I5': (i) => base({ map: MAPS[i % 5], enemies: [{ type: 'runner', share: 3 }, { type: 'brute', share: 2 }, { type: 'swarmer', share: 3 }, { type: 'spitter', share: 2 }], intensity: 5, playerHealth: 'fragile', weapon: 'shotgun', goal: { type: 'kill', count: 200 } }),
   'worst: kill 200, brutes, intensity 5': (i) => base({ map: MAPS[i % 5], enemies: [{ type: 'brute', share: 5 }], intensity: 5, playerHealth: 'fragile', goal: { type: 'kill', count: 200 } }),
 };
 const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)];

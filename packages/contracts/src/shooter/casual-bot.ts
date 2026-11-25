@@ -3,13 +3,15 @@
 //  - looks at the field only every `reactionTicks` ticks and acts on what it saw until the next look,
 //  - aims with a small random error that it keeps until the next look,
 //  - fires only at a target inside part of the weapon's reach,
-//  - keeps a smaller distance from enemies and walls than the expert, and has no route planning.
+//  - keeps a smaller distance from enemies, enemy bullets and walls than the expert, and has no route planning,
+//  - ignores health pickups on purpose: the gate judges a level as if the player never picked one up, so a level
+//    with health drops is a little EASIER than the gate measured (the safe side).
 // Everything is deterministic: the error comes from this bot's own seeded generator (the game's
 // seed), never from Math.random. The numbers are in CASUAL, ONE place, so they can be tuned
 // without touching the logic. They are an estimate of a casual player, to be tuned with feedback
 // from real players (docs/shooter-calibration.md).
 import type { ShooterInput, ShooterState } from './state.js';
-import { EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer, type Point } from './steering.js';
+import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer, type BulletPoint, type Point } from './steering.js';
 
 export interface CasualParams {
   /** Ticks between two looks at the field (60 ticks = 1 s). Reaction delay. */
@@ -39,7 +41,9 @@ export const CASUAL: CasualParams = {
 
 const DEGREES = Math.PI / 180;
 /** tan(x) for small x with + - * only (every engine rounds these the same way; Math.tan is not
- * guaranteed to). Error under 0.0001 up to 12 degrees. */
+ * guaranteed to). Error under 0.0001 up to 12 degrees. Kept exactly as it was calibrated: the shared `tanSmall` of
+ * geometry.ts has more terms (it serves the 30 degree pellet fan) and would change this aim by under 1e-6, enough
+ * to move bits of a calibrated game, so this bot keeps its own three terms. */
 const tanSmall = (x: number) => x + (x * x * x) / 3 + (2 * x * x * x * x * x) / 15;
 
 /** A fresh bot for ONE game: it keeps what it last saw. Make one per game, from that game's seed. */
@@ -55,10 +59,13 @@ export function createCasualBot(seed: number, params: CasualParams = CASUAL): (s
   const errorTan = tanSmall(params.aimErrorDeg * DEGREES);
   const fleeRadius = EXPERT_FLEE_RADIUS * params.fleeScale;
   const wallRadius = EXPERT_WALL_RADIUS * params.wallScale;
+  const bulletRadius = EXPERT_BULLET_RADIUS * params.fleeScale;
 
   let lastLook = -Infinity;
   /** Where the enemies were at the last look. */
   let seen: Point[] = [];
+  /** Where the enemy bullets were at the last look. */
+  let seenBullets: BulletPoint[] = [];
   let target: Point | undefined;
   /** The aim error of the last look, as a sideways share of the distance to the target. */
   let sideways = 0;
@@ -68,10 +75,11 @@ export function createCasualBot(seed: number, params: CasualParams = CASUAL): (s
     if (state.tick - lastLook >= params.reactionTicks) {
       lastLook = state.tick;
       seen = state.enemies.map((enemy) => ({ x: enemy.x, y: enemy.y }));
+      seenBullets = state.enemyBullets.map((bullet) => ({ x: bullet.x, y: bullet.y, vx: bullet.vx, vy: bullet.vy }));
       target = nearestTo(player, seen);
       sideways = (random() * 2 - 1) * errorTan; // one draw per look, enemies or not
     }
-    const { moveX, moveY } = steer(player, level, seen, fleeRadius, wallRadius);
+    const { moveX, moveY } = steer(player, level, seen, fleeRadius, wallRadius, seenBullets, bulletRadius);
     if (!target) return { moveX, moveY, aimX: player.x + 1, aimY: player.y, fire: false };
     const dx = target.x - player.x;
     const dy = target.y - player.y;

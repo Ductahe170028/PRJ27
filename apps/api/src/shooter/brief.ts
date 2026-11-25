@@ -9,9 +9,12 @@ const label = (max: number) => z.string().min(1).max(max).regex(/^[\p{L}\p{M}\p{
 
 export const SHOOTER_THEMES = ['zombie-city', 'alien-lab', 'dark-forest', 'desert-ruins', 'ice-base', 'neon-arena', 'hospital', 'military-base'] as const;
 export const SHOOTER_MAPS = ['open-arena', 'pillars', 'cross-corridors', 'rooms', 'ring'] as const;
-export const BRIEF_ENEMY_TYPES = ['runner', 'brute', 'swarmer'] as const;
+export const BRIEF_ENEMY_TYPES = ['runner', 'brute', 'swarmer', 'spitter'] as const;
 export const PLAYER_HEALTHS = ['fragile', 'normal', 'sturdy'] as const;
-export const WEAPONS = ['pistol', 'rapid', 'heavy'] as const;
+export const WEAPONS = ['pistol', 'rapid', 'heavy', 'shotgun', 'piercing'] as const;
+/** Whether defeated enemies may drop health: none (default), some or many. */
+export const HEALTH_DROPS = ['none', 'some', 'many'] as const;
+export const MAX_BRIEF_ENEMIES = 4;
 
 export const TITLE_MAX = 40;
 export const UNSUPPORTED_MAX_ITEMS = 5;
@@ -22,10 +25,11 @@ export const ShooterBriefSchema = z.object({
   title: label(TITLE_MAX),
   theme: z.enum(SHOOTER_THEMES),
   map: z.enum(SHOOTER_MAPS),
-  enemies: z.array(z.object({ type: z.enum(BRIEF_ENEMY_TYPES), share: integer(1, 10) }).strict()).min(1).max(3),
+  enemies: z.array(z.object({ type: z.enum(BRIEF_ENEMY_TYPES), share: integer(1, 10) }).strict()).min(1).max(MAX_BRIEF_ENEMIES),
   intensity: integer(1, 5),
   playerHealth: z.enum(PLAYER_HEALTHS),
   weapon: z.enum(WEAPONS),
+  healthDrops: z.enum(HEALTH_DROPS),
   goal: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(20, 180) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(10, 200) }).strict(),
@@ -57,6 +61,9 @@ export function normalizeBrief(raw: unknown): unknown {
   const brief: Record<string, unknown> = { ...raw };
   if (typeof brief.title === 'string') brief.title = cut(brief.title, TITLE_MAX);
   brief.intensity = clampInt(brief.intensity, 1, 5);
+  // Missing altogether means the user asked for no health drops. This is the ONE value the engine fills in;
+  // a value that is present but wrong ("lots", null) is left for the schema to reject, like any other enum.
+  if (brief.healthDrops === undefined) brief.healthDrops = 'none';
 
   if (Array.isArray(brief.enemies)) {
     const merged: unknown[] = [];
@@ -72,7 +79,7 @@ export function normalizeBrief(raw: unknown): unknown {
       if (typeof entry.type === 'string') byType.set(entry.type, entry);
       merged.push(entry);
     }
-    brief.enemies = merged.slice(0, 3);
+    brief.enemies = merged.slice(0, MAX_BRIEF_ENEMIES);
   }
 
   if (isRecord(brief.goal)) {

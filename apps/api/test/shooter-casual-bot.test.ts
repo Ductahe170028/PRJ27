@@ -26,7 +26,7 @@ const degrees = (radians: number) => (radians * 180) / Math.PI;
 const aimOf = (state: ShooterState, input: ShooterInput) => ({ x: input.aimX - state.player.x, y: input.aimY - state.player.y });
 
 const hardBrief = (seed: number, patch: Record<string, unknown> = {}) => ShooterBriefSchema.parse({
-  version: 'brief-1', title: `Casual ${seed}`, theme: 'zombie-city', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', title: `Casual ${seed}`, theme: 'zombie-city', map: 'pillars',
   enemies: [{ type: 'runner', share: 4 }, { type: 'brute', share: 2 }, { type: 'swarmer', share: 4 }],
   intensity: 4, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [], ...patch,
 });
@@ -240,5 +240,102 @@ describe('a casual player is worse than the expert (that is the point)', () => {
       return playLevel(level, createCasualBot(level.seed)).status === 'won';
     }).length;
     expect(wins).toBeGreaterThanOrEqual(7);
+  });
+});
+
+/** One spitter, in hold range, ready to fire. */
+function place4(state: ShooterState, x: number) {
+  state.enemies.push({ id: 5, type: 'spitter', x, y: 305, hp: 3, nextShotTick: 0 });
+}
+
+describe('dodging enemy bullets (Stage 4B), and nothing changes without them', () => {
+  it('with no enemy bullet both bots decide exactly as before: the bullet list is only ever added to', () => {
+    // enemies and walls only: the inputs match the expert bot's own steering with the bullet list left out
+    const state = withEnemies(quiet({ obstacles: [{ x: 600, y: 305, width: 40, height: 200 }] }), [[560, 330], [420, 300], [500, 210]]);
+    const expert = botInput(state);
+    expect(state.enemyBullets).toEqual([]);
+    expect(expert.moveX === -1 || expert.moveX === 0 || expert.moveX === 1).toBe(true);
+    const clone = structuredClone(state);
+    clone.enemyBullets = [];
+    expect(botInput(clone)).toEqual(expert);
+    expect(createCasualBot(8)(clone)).toEqual(createCasualBot(8)(state));
+  });
+
+  const bulletAt = (x: number, y: number, vx: number, vy = 0) => ({ id: 5, x, y, vx, vy, travelled: 0, damage: 1, radius: 5, range: 600 });
+
+  it('the expert bot sidesteps a bullet that is coming at it (it does not back straight away: the bullet is faster), and ignores a far one', () => {
+    const near = withEnemies(quiet(), []);
+    near.enemyBullets.push(bulletAt(540, 305, -230)); // 60 px to the right, flying left at the player
+    expect(botInput(near)).toMatchObject({ moveX: 0, moveY: -1 });
+    const far = withEnemies(quiet(), []);
+    far.enemyBullets.push(bulletAt(700, 305, -230)); // 220 px
+    expect(botInput(far)).toMatchObject({ moveX: 0, moveY: 0 });
+  });
+
+  it('the sidestep goes to the side of the path that the player is already on', () => {
+    const below = withEnemies(quiet(), []);
+    below.enemyBullets.push(bulletAt(540, 290, -230)); // the path is 15 px above the player's centre line
+    expect(botInput(below).moveY).toBe(1);
+    const above = withEnemies(quiet(), []);
+    above.enemyBullets.push(bulletAt(540, 320, -230));
+    expect(botInput(above).moveY).toBe(-1);
+    const vertical = withEnemies(quiet(), []);
+    vertical.enemyBullets.push(bulletAt(495, 380, 0, -230)); // coming up from below, a little to the right
+    expect(botInput(vertical)).toMatchObject({ moveX: -1, moveY: 0 });
+  });
+
+  it('a bullet that has already passed, or that is not moving, does nothing', () => {
+    const passed = withEnemies(quiet(), []);
+    passed.enemyBullets.push(bulletAt(440, 305, -230)); // 40 px to the left, flying away
+    expect(botInput(passed)).toMatchObject({ moveX: 0, moveY: 0 });
+    const still = withEnemies(quiet(), []);
+    still.enemyBullets.push(bulletAt(520, 305, 0, 0));
+    expect(botInput(still)).toMatchObject({ moveX: 0, moveY: 0 });
+  });
+
+  it('the casual bot dodges with a smaller radius and from what it saw at its last look', () => {
+    const state = withEnemies(quiet(), []);
+    state.enemyBullets.push(bulletAt(570, 305, -230)); // 90 px: the expert's edge
+    expect(botInput(state).moveY).toBe(0);
+    state.enemyBullets[0]!.x = 540; // 60 px
+    const bot = createCasualBot(3);
+    expect(bot(state).moveY).toBe(-1);
+    state.enemyBullets[0]!.x = 700; // gone far away, but the bot has not looked again
+    state.tick = 5;
+    expect(bot(state).moveY).toBe(-1);
+    state.tick = CASUAL.reactionTicks;
+    expect(bot(state).moveY).toBe(0);
+  });
+
+  it('with enemy bullets in the air the bot survives a lone spitter that it could not survive by standing still', () => {
+    const level = { ...quiet(), weapon: { cooldownMs: 300, bulletSpeed: 600, damage: 1, range: 600 } };
+    const idle = createSim(level);
+    place4(idle, 700);
+    for (let i = 0; i < 1500 && idle.status === 'playing'; i += 1) step(idle, { moveX: 0, moveY: 0, aimX: 960, aimY: 305, fire: false });
+    expect(idle.status).toBe('lost');
+    const dodging = createSim(level);
+    place4(dodging, 700);
+    // the same spitter, but the player only sidesteps (no shooting): it lives much longer than standing still
+    const bot = botInput;
+    let hp = dodging.player.hp;
+    for (let i = 0; i < 1500 && dodging.status === 'playing'; i += 1) { const input = bot(dodging); step(dodging, { ...input, fire: false }); hp = dodging.player.hp; }
+    expect(hp).toBeGreaterThan(idle.player.hp);
+    expect(dodging.tick).toBeGreaterThan(idle.tick);
+  });
+
+  it('seeing bullets draws no extra random number: the aim error is the same with and without them', () => {
+    const a = withEnemies(quiet(), [[760, 305]]);
+    const b = withEnemies(quiet(), [[760, 305]]);
+    b.enemyBullets.push({ id: 5, x: 900, y: 100, vx: 0, vy: 0, travelled: 0, damage: 1, radius: 5, range: 600 });
+    expect(createCasualBot(21)(a)).toEqual(createCasualBot(21)(b));
+  });
+
+  it('neither bot walks toward a health pickup', () => {
+    const state = withEnemies(quiet(), []);
+    state.player.hp = 1;
+    const without = botInput(state);
+    state.pickups.push({ id: 6, x: 600, y: 305, expiresTick: 600 });
+    expect(botInput(state)).toEqual(without);
+    expect(createCasualBot(4)(state)).toEqual(createCasualBot(4)(withEnemies(quiet(), [])));
   });
 });

@@ -20,5 +20,11 @@ export function snapshotHash(state: ShooterState): string {
     state.enemies.length, state.bullets.length]) h = mix(h, value);
   for (const e of state.enemies) for (const value of [e.id, ENEMY_TYPES[e.type].code, e.x, e.y, e.hp]) h = mix(h, value);
   for (const b of state.bullets) for (const value of [b.id, b.x, b.y, b.vx, b.vy, b.travelled]) h = mix(h, value);
+  // Added at the end, and only when there is something to add: a level without shooting enemies, piercing
+  // weapons or pickups hashes exactly as it did before they existed.
+  for (const e of state.enemies) if (e.nextShotTick !== undefined) h = mix(h, e.nextShotTick);
+  for (const b of state.bullets) if (b.pierceLeft !== undefined) for (const value of [b.pierceLeft, b.hitIds?.length ?? 0]) h = mix(h, value);
+  for (const b of state.enemyBullets) for (const value of [b.id, b.x, b.y, b.vx, b.vy, b.travelled, b.damage, b.radius, b.range]) h = mix(h, value);
+  for (const p of state.pickups) for (const value of [p.id, p.x, p.y, p.expiresTick]) h = mix(h, value);
   return h.toString(16).padStart(8, '0');
 }

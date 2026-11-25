@@ -103,7 +103,7 @@ test('an unknown level lists the valid ones', async ({ page }) => {
   await page.goto('/?shooter=khong-ton-tai');
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('khong-ton-tai');
-  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose');
+  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic');
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.goto('/?shooter=constructor');
   await expect(page.getByRole('alert')).toContainText('Level hợp lệ');
@@ -135,4 +135,99 @@ test('playground: a kill level shows "Hạ n/total" in the HUD and its goal on t
   await page.keyboard.press('r');
   await expect(banner).toContainText('MỤC TIÊU: Hạ 50 quái');
   expect(errors).toEqual([]);
+});
+
+// --- Stage 4B: the new mechanics are on screen and in the state the page can read ---
+
+/** How many pixels of exactly this color the canvas shows (the game is drawn with the 2D canvas renderer). */
+const countColor = (canvas: Locator, r: number, g: number, b: number) => canvas.evaluate((element, [cr, cg, cb]) => {
+  const c = element as HTMLCanvasElement;
+  const data = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4) if (data[i] === cr && data[i + 1] === cg && data[i + 2] === cb) count += 1;
+  return count;
+}, [r, g, b] as const);
+const num = async (hud: Locator, name: string) => Number((await hud.getAttribute(name)) ?? -1);
+
+test('spitters: shooting enemies fire within seconds, their bullets are drawn, and the game goes on', async ({ page }) => {
+  const { canvas, hud, errors } = await open(page, 'spitters');
+  await expect(hud).toHaveAttribute('data-enemy-bullets', '0');
+  await expect.poll(() => num(hud, 'data-enemy-bullets'), { timeout: 20_000, intervals: [100], message: 'no enemy bullet appeared' }).toBeGreaterThan(0);
+  // theme enemy #f27b91 lightened x1.35: the color of an enemy bullet, which nothing else on screen has
+  await expect.poll(() => countColor(canvas, 255, 166, 196), { timeout: 5000 }).toBeGreaterThan(8);
+  // not hung: the HUD keeps changing while the player is being shot at
+  const before = await hud.textContent();
+  await expect.poll(async () => hud.textContent(), { timeout: 5000 }).not.toBe(before);
+  expect(errors).toEqual([]);
+});
+
+test('medic: defeated enemies drop pickups, they are drawn, and taking one heals a hurt player', async ({ page }) => {
+  test.setTimeout(90_000);
+  const { canvas, hud, errors, frame } = await open(page, 'medic');
+  await canvas.click({ position: { x: 480, y: 120 } }); // focus
+  const box = (await canvas.boundingBox())!;
+  const toPage = (wx: number, wy: number) => ({ x: box.x + (wx / 960) * box.width, y: box.y + (wy / 540) * box.height });
+  const at = async (name: string) => ((await hud.getAttribute(name)) ?? '').split(';').filter(Boolean).map((p) => p.split(',').map(Number) as [number, number]);
+  const held = new Set<string>();
+  const hold = async (key: string, down: boolean) => {
+    if (down && !held.has(key)) { held.add(key); await page.keyboard.down(key); }
+    if (!down && held.has(key)) { held.delete(key); await page.keyboard.up(key); }
+  };
+  const release = async () => { for (const key of ['w', 'a', 's', 'd']) await hold(key, false); };
+  const first = toPage(600, 305);
+  await page.mouse.move(first.x, first.y);
+  await page.mouse.down(); // keep firing; the aim sweeps around the player
+  let angle = 0;
+  let sawPickup = false;
+  let drawn = false;
+  let healed = false;
+  let hp = await num(hud, 'data-hp');
+  const maxHp = hp; // the level starts at full health
+  const trace: string[] = [];
+  const began = Date.now();
+  const deadline = began + 70_000;
+  while (Date.now() < deadline && !(healed && sawPickup && drawn)) { // a pickup is only SEEN while the player has full health (otherwise it is taken at once)
+    if (await frame.locator('#game-result').isVisible()) { trace.push(`game ended at ${((Date.now() - began) / 1000).toFixed(1)}s`); break; }
+    const [player] = await at('data-player-at');
+    angle += 0.2;
+    if (player) { const t = toPage(player[0] + 170 * Math.cos(angle), player[1] + 170 * Math.sin(angle)); await page.mouse.move(t.x, t.y); }
+    const now = await num(hud, 'data-hp');
+    // health only ever goes up by taking a pickup (ignore a read that failed: -1)
+    if (now >= 0 && hp >= 0 && now > hp) { healed = true; trace.push(`healed ${hp}->${now} at ${((Date.now() - began) / 1000).toFixed(1)}s`); }
+    if (now >= 0) hp = now;
+    const pickups = await at('data-pickup-at');
+    if (pickups.length > 0) {
+      sawPickup = true;
+      if (!drawn) drawn = (await countColor(canvas, 74, 222, 128)) > 20; // the pickup's green disk
+    }
+    if (pickups.length > 0 && player && now < maxHp) {
+      // walk to the nearest pickup while hurt
+      const nearest = pickups.reduce((a, b) => (Math.hypot(a[0] - player[0], a[1] - player[1]) <= Math.hypot(b[0] - player[0], b[1] - player[1]) ? a : b));
+      await hold('d', nearest[0] - player[0] > 6); await hold('a', nearest[0] - player[0] < -6);
+      await hold('s', nearest[1] - player[1] > 6); await hold('w', nearest[1] - player[1] < -6);
+    } else await release();
+    await page.waitForTimeout(40);
+  }
+  await release();
+  await page.mouse.up();
+  const summary = `${trace.join('; ')} | last hp ${hp} of ${maxHp}, ${((Date.now() - began) / 1000).toFixed(1)}s`;
+  expect(sawPickup, `no pickup was ever in the state (${summary})`).toBe(true);
+  expect(drawn, 'a pickup was never drawn').toBe(true);
+  expect(healed, 'taking a pickup did not raise the health').toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('the level card of the hand-made levels: the shotgun says "Bắn chùm", spitters have their line, medic its drop line', async ({ page }) => {
+  const card = () => page.getByRole('region', { name: 'Thông tin màn' });
+  await open(page, 'shotgun-pit');
+  await expect(card().locator('[data-info="weapon"]')).toContainText('Bắn chùm');
+  await expect(card().locator('[data-info="weapon"]')).toContainText('6 viên mỗi phát · mỗi 1 giây · sát thương 1 mỗi viên · tầm 320');
+  await expect(card().locator('[data-info="extra"]')).toHaveCount(0);
+  await open(page, 'spitters');
+  await expect(card().locator('[data-info="extra"]')).toHaveText(['Có quái bắn xa (né đạn của chúng)']);
+  await open(page, 'medic');
+  await expect(card().locator('[data-info="extra"]')).toHaveText(['Quái bị hạ có thể rơi vật phẩm hồi máu (25%)']);
+  await open(page, 'arena');
+  await expect(card().locator('[data-info="weapon"]')).toContainText('Bắn từng phát');
+  await expect(card().locator('[data-info="extra"]')).toHaveCount(0);
 });

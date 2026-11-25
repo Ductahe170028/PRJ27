@@ -1,0 +1,13 @@
+{
+  "version": "brief-1",
+  "healthDrops": "some",
+  "title": "Desert Snipers",
+  "theme": "desert-ruins",
+  "map": "pillars",
+  "enemies": [{ "type": "runner", "share": 5 }, { "type": "spitter", "share": 4 }],
+  "intensity": 2,
+  "playerHealth": "normal",
+  "weapon": "shotgun",
+  "goal": { "type": "survive", "seconds": 60 },
+  "unsupported": []
+}

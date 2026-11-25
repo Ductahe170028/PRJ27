@@ -1,11 +1,124 @@
 # Hiệu chỉnh mật độ quái của shooter
 
-Phần "Stage 4A" ngay dưới là số liệu mới nhất (bot bình thường); các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
+Phần "Stage 4B" ngay dưới là số liệu mới nhất (hai súng mới, quái bắn xa, hồi máu); phần "Stage 4A" sau nó là bot bình thường; các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
 
 Lưới: intensity 1-5 x mix quái (runner, brute, swarmer, cả ba) x map (5) x weapon (3) x health (3) x 3 seed; mục tiêu sống sót 60 s.
 "Trước cổng" là bot chơi level đúng như compiler dựng; "sau cổng" là level service sẽ trả (compile + cổng), chơi trên seed mà cổng chưa dùng.
 
-## Stage 4A: cổng dùng bot "người chơi bình thường" (mới nhất)
+## Stage 4B: hai súng mới, quái bắn xa, hồi máu (mới nhất)
+
+Bot bình thường (`CASUAL`, không đổi) là thước đo. `INTENSITY_RATE`, `CASUAL` và các số của quái và súng cũ không đổi. Số liệu từ `npx tsx scripts/calibrate-shooter.ts` (chạy từ `apps/api`); script có thêm `--set=old|new|all` (old = lưới Stage 4A, new = mọi ván có súng hoặc hỗn hợp quái mới), hai hỗn hợp mới (`spitter`: một mình; `all4`: runner 3, brute 2, swarmer 3, spitter 2), hai súng mới, các bảng cắt lát, và `--tune=spitter.weight=4,shotgun.cooldown=1000,...` để thử số khác trong một lần chạy mà không sửa file. Hồi máu giữ `none` trong lưới đo (bot bỏ qua vật phẩm).
+
+### 1. Không thoái lui: `--set=old` giống HỆT bảng Stage 4A
+
+Chạy `--set=old` (3 súng cũ × 4 hỗn hợp cũ, 2700 ván mỗi pha, bot bình thường) SAU khi hoàn tất mọi thay đổi Stage 4B, rồi so từng dòng với bảng Stage 4A phía dưới: 5 dòng intensity (thắng trước cổng, hp còn trước, dựng được sau cổng, bot thắng sau cổng, hp còn sau, số ván bị giảm, số ván bị giảm mục tiêu), 4 dòng theo vũ khí/máu/map/quái và dòng "0 trên 2700 không dựng được": **giống nhau từng ký tự** (so bằng máy, 10 dòng). Thêm một bằng chứng độc lập: 525 lịch quái của brief không có spitter (5 intensity × 5 hỗn hợp × 7 mục tiêu × 3 seed) có digest `a4aa7b68` giống mã `waves.ts` của Stage 4A (test `shooter-4b-brief`).
+
+### 2. Số cuối cùng và những số đã thử
+
+| thứ | khởi điểm (prompt) | cuối cùng | giới hạn cho phép |
+|---|---|---|---|
+| `ENEMY_WEIGHT.spitter` | 2,5 | **4** | 1,5 … 4 |
+| spitter `cooldownMs` | 1800 | **2400** | 1400 … 2400 |
+| spitter `bulletSpeed` | 230 | **180** | 180 … 280 |
+| spitter `holdRange` | 260 | 260 | 200 … 300 |
+| `SPITTER_NOT_BEFORE` | 0,2 | 0,2 | 0,1 … 0,35 |
+| shotgun | 800 ms, 320 px, 6 viên, 36° | **1000 ms**, 320 px, 6 viên, 36° | cooldown ±200, range ±120 |
+| piercing | 500 ms, sát thương 2, tầm 800, xuyên 3 | **600 ms**, sát thương 2, tầm 800, **xuyên 2** | cooldown ±200, xuyên 2…4 |
+
+Ba núm của spitter (trọng số, nhịp bắn, tốc độ đạn) đều nằm ở MÉP dễ nhất của giới hạn. Đó là cái giá của việc bot bình thường ngắm lệch ±12°: nó khó hạ một quái đứng xa 260 px.
+
+**Cách né đạn: sai lệch có chủ đích so với prompt (F.1).** Prompt yêu cầu mỗi viên đạn đẩy bot "ra xa theo cùng công thức trọng số như với quái" (lùi thẳng khỏi viên đạn). Đã làm đúng như vậy trước và đo: đạn (180–230 px/s) nhanh hơn người (210 px/s), nên bot chạy dọc đường bay và bị đuổi kịp. Pistol, intensity 1…5, thắng trước cổng:
+
+| cách né | hỗn hợp | cấu hình spitter | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|---|---|
+| lùi thẳng (theo prompt) | spitter | khởi điểm | 0 | 0 | 0 | 0 | 0 |
+| lùi thẳng | spitter | mọi số dễ nhất cho phép (w4, 2400, 180) | 11 | 11 | 4 | 9 | 0 |
+| lùi thẳng | spitter | + holdRange 200 | 13 | 13 | 4 | 2 | 0 |
+| lùi thẳng | all4 | mọi số dễ nhất cho phép | 80 | 51 | 7 | 0 | 0 |
+| **bước ngang** (vuông góc đường bay) | spitter | khởi điểm | 18 | 2 | 0 | 0 | 0 |
+| **bước ngang** | spitter | w4, 2400, 180 (**cuối**) | **78** | **78** | **62** | **44** | **38** |
+| **bước ngang** | all4 | w4, 2400, 180 (**cuối**) | **100** | **91** | **42** | **24** | **9** |
+| khoảng yêu cầu (±8) | | | ≥ 82 | 62–98 | 42–83 | 22–63 | 7–48 |
+
+Với cách lùi thẳng không có tổ hợp số nào trong giới hạn đưa spitter vào khoảng yêu cầu (đúng tình huống mà prompt bảo dừng và báo cáo). Với cách bước ngang thì được, nên chọn nó. Chỉ thay đổi khi có đạn quái trong không khí, nên màn cũ không đổi (`--set=old` giống hệt). Bot giỏi và bot bình thường cùng dùng cách này (bot bình thường thấy đạn ở lần "nhìn" gần nhất, bán kính né 72 px so với 90 px). Một lần thử thêm tầm giữ (hold 200 / 220 / 230 / 240 / 250 / 300) cho kết quả dao động không theo quy luật (mỗi ô chỉ 45 ván), nên giữ 260 là giá trị thiết kế.
+
+**Súng mới** (thắng trước cổng, mọi hỗn hợp, mọi map, mọi mức máu, 3 seed, bot bình thường):
+
+| súng | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|
+| pistol | 95,6 | 87,8 | 38,5 | 19,6 | 7,8 |
+| rapid | 97,4 | 94,1 | 91,9 | 87,4 | 66,3 |
+| heavy | 97,0 | 77,8 | 51,1 | 28,5 | 9,6 |
+| shotgun, số khởi điểm | 97,0 | 96,7 | 79,6 | 54,1 | 25,2 |
+| piercing, số khởi điểm | 94,8 | 92,2 | 82,6 | 63,3 | 35,2 |
+| shotgun 1000 ms / 260 px / 5 viên / 40° (thử) | 85,6 | 63,3 | 16,7 | 7,0 | 3,0 |
+| piercing 600 ms / xuyên 2 / tầm 700 (thử) | 89,6 | 84,1 | 50,4 | 21,9 | 9,3 |
+| shotgun 900 ms / 300 px / 5 viên (thử) | 90,4 | 77,8 | 35,6 | 15,6 | 5,9 |
+| **shotgun cuối: 1000 ms, 320 px, 6 viên** | **96,3** | **88,9** | **47,8** | **16,7** | **7,0** |
+| **piercing cuối: 600 ms, xuyên 2** | **89,6** | **84,4** | **49,6** | **21,9** | **9,6** |
+
+Mục tiêu: ở intensity 3, mỗi súng mới trong ±15 điểm so với pistol (38,5, tức 23,5–53,5) và nằm giữa 30% và 95%: shotgun 47,8 và piercing 49,6, **đạt** (và cả đường cong 5 mức bám sát pistol: chênh nhiều nhất 11 điểm). Với số khởi điểm hai súng thắng nhiều hơn pistol 41 và 44 điểm ở intensity 3, nên bị giảm. Hai súng mới được làm yếu tới mức tương đương pistol, mà pistol là súng yếu nhất của bot bình thường; rapid vẫn mạnh nhất (91,9 ở intensity 3).
+
+**Điều không thể đạt hoàn toàn: so sánh từng hỗn hợp riêng.** "±15 so với pistol ở cùng hỗn hợp quái" không thể thỏa đồng thời với "từ 30%": pistol ở intensity 3 chỉ thắng 6,7% runner, 13,3% brute, 0% mixed, nhưng 93,3% swarmer. Bảng cắt lát (intensity 3, máu bình thường, 5 map × 3 seed = 15 ván mỗi ô):
+
+| hỗn hợp | pistol | rapid | heavy | shotgun | piercing |
+|---|---|---|---|---|---|
+| runner | 6,7 | 100 | 33,3 | 6,7 | 93,3 |
+| brute | 13,3 | 100 | 100 | 53,3 | 60,0 |
+| swarmer | 93,3 | 100 | 0 | 66,7 | 26,7 |
+| mixed | 0 | 100 | 26,7 | 13,3 | 26,7 |
+| spitter | 66,7 | 80,0 | 86,7 | 60,0 | 66,7 |
+| all4 | 40,0 | 86,7 | 53,3 | 53,3 | 33,3 |
+
+Chọn thỏa tiêu chí ở mức tổng hợp (mọi hỗn hợp). Shotgun và piercing sai khác pistol nhiều ở vài hỗn hợp (shotgun: brute +40, swarmer −27; piercing: runner +87, brute +47, swarmer −67): cơ chế của chúng khác pistol (một viên xuyên rất hợp với runner đi hàng, quạt đạn hợp với quái dày).
+
+**Tầm shotgun 320, không phải 300.** Thử 300 px thì spitter một mình + shotgun hầu như không dựng được (bot chỉ bắn trong 85% tầm = 255 px, mà spitter đứng giữ ở 260 px; bot không bao giờ tiến lại gần). Đưa về 320 (giá trị khởi điểm) thì 9 ván không dựng được còn 1 trên 4050.
+
+### 3. Bảng hiệu chỉnh sau cổng (bot bình thường, survive 60 s)
+
+Hỗn hợp mới và/hoặc súng mới (`--set=new`, 4050 ván mỗi pha, 6 bước giảm mật độ):
+
+| intensity | thắng trước cổng | dựng được sau cổng | bot thắng sau cổng (seed chưa dùng) | ván bị giảm mật độ (trên 810) |
+|---|---|---|---|---|
+| 1 | 92,2% | 100,0% | 95,4% | 39 |
+| 2 | 86,3% | 100,0% | 90,6% | 78 |
+| 3 | 54,4% | 100,0% | 76,8% | 347 |
+| 4 | 29,1% | 99,9% | 69,0% | 562 |
+| 5 | 17,3% | 100,0% | 67,4% | 651 |
+
+1 trên 4050 ván không dựng được (intensity 4, spitter một mình, piercing, máu yếu). Theo hỗn hợp (dựng được / bot thắng sau cổng): runner 100 / 89,2, brute 100 / 86,0, swarmer 100 / 89,3, mixed 100 / 82,0, spitter 99,9 / 76,6, all4 100 / 78,2. Theo súng: pistol 100 / 81,3, rapid 100 / 91,4, heavy 100 / 85,6, shotgun 100 / 77,6, piercing 99,9 / 81,8. Cả lưới (cũ + mới, 6750 ván): dựng được 100 / 100 / 100 / 99,9 / 100%, bot thắng sau cổng 96,8 / 92,9 / 79,7 / 75,1 / 73,3%.
+
+**Đạt:** dựng được ≥ 99% ở mọi mức (thấp nhất 99,9%) và bot thắng ≥ 60% (thấp nhất 67,4%) với survive 60 s; kill 10 dựng được 100% ở cả 5 mức.
+
+**Không đạt (báo cáo đúng số):**
+
+| mục tiêu (phần mới, 1350 ván) | dựng được, intensity 1…5 | yêu cầu | bot thắng sau cổng | phải giảm mục tiêu (trên 270) |
+|---|---|---|---|---|
+| kill 10 | 100 / 100 / 100 / 100 / 100% | ≥ 99 (đạt) | 96,3 / 95,9 / 90,4 / 93,0 / 94,1% | 0 |
+| kill 40 | 98,9 / 100 / **98,5** / 98,9 / 100% | ≥ 99 (**thiếu 0,1–0,5 điểm** ở I1, I3, I4) | 72,3 / 57,4 / 55,6 / 54,3 / 57,4% | 72 / 84 / 84 / 86 / 84 |
+| kill 100 | **80,0 / 77,0 / 77,4 / 74,8 / 78,9%** | ≥ 90 (**không đạt**) | 65,7 / 62,0 / 52,2 / 48,0 / 54,0% | 154 / 152 / 149 / 151 / 165 |
+
+Ván không dựng được tập trung ở một chỗ: spitter một mình với mục tiêu hạ nhiều quái. kill 40: spitter 97,3%, pistol 97,3% (10 trên 1350 ván hỏng). kill 100: spitter một mình chỉ dựng được 33,3% (các hỗn hợp khác: runner 98,0, brute 83,3, swarmer 100, mixed 100, all4 93,6); theo súng: pistol 54,7, rapid 75,3, heavy 79,3, shotgun 82,7, piercing 80,4. Đây là hệ quả của bot bình thường không bao giờ tiến lại gần và ngắm lệch: hạ 100 spitter đứng cách 260 px không thắng nổi dù đã giảm mục tiêu 3 lần, và cổng từ chối đúng cách (`unwinnable_level`). Phần cũ (Stage 4A, 3 súng cũ, 4 hỗn hợp cũ) không đổi: kill 100 dựng được 96,7 / 96,7 / 95,6 / 91,1 / 93,3%. Để nâng kill 100 với spitter lên cần một trong các việc sau (không làm ở stage này, vượt giới hạn cho phép): bot tiến lại gần mục tiêu, hoặc giảm số lượng spitter trong màn kill. Bot giỏi (cùng lưới, trước cổng): 100 / 98,5 / 89,6 / 74,8 / 58,5%, vẫn thắng 100% mọi ván chỉ có spitter.
+
+### 4. Thời gian dựng + cổng qua worker (bản build, `node scripts/measure-compile-time.mjs 40`)
+
+| trường hợp (40 lần, nhiều seed / map / intensity) | median | p95 | lớn nhất |
+|---|---|---|---|
+| survive 60 s | 0,46 s | 0,70 s | 0,95 s |
+| survive 180 s | 0,44 s | 0,68 s | 0,89 s |
+| xấu nhất mới (Stage 4B): kill 200, all4, shotgun, intensity 5, máu yếu (cả 40 lần bị từ chối sau khi dùng hết 6 bước và 3 lần giảm mục tiêu) | 1,56 s | 2,28 s | 2,32 s |
+| xấu nhất cũ: kill 200, toàn quái trâu, intensity 5, máu yếu (cả 40 lần bị từ chối) | 1,37 s | 1,98 s | 2,26 s |
+
+Mọi p95 dưới 5 s; giới hạn 8 s của worker (`COMPILE_TIMEOUT_MS`) không đổi và không lần nào hết giờ.
+
+### 5. Giới hạn đã biết
+
+- Bot bình thường **bỏ qua vật phẩm hồi máu** (cố ý): màn có hồi máu dễ hơn mức cổng đo, phía an toàn. Chưa đo mức "dễ hơn" bao nhiêu.
+- Sáu mục trên dùng `healthDrops: none`; màn có hồi máu được dựng từ cùng lưới nhưng không đo riêng.
+- Các số của spitter ở mép giới hạn dễ nhất: nếu người chơi thật thấy spitter vẫn quá khó, cần đổi thiết kế (bot hoặc luật spitter), không còn dư địa trong giới hạn.
+- Bản chụp vàng mới `golden-sim-4b.json` (22 ván, 951 hash) được sinh từ mã mới nên chỉ chứng minh "không đổi về sau"; tính đúng do test đơn vị (`shooter-weapons-4b`, `shooter-spitter`, `shooter-pickups`) chịu trách nhiệm.
+
+## Stage 4A: cổng dùng bot "người chơi bình thường"
 
 Người chơi thử Stage 3 thấy màn "khó" dù cổng đã chỉnh: bot trong cổng (`botInput`) ngắm chuẩn và phản xạ tức thì nên giỏi hơn người rõ rệt. Từ Stage 4A cổng dùng `createCasualBot(seed)` (`packages/contracts/src/shooter/casual-bot.ts`), mỗi ván một bot mới; `botInput` ("bot giỏi") chỉ còn để test và để so sánh ở đây. Báo cáo cổng ghi `bot: 'casual'`. Mọi số dưới đây là từ `npx tsx scripts/calibrate-shooter.ts` (chạy từ `apps/api`; `--bot=casual|expert`, `--casual=reaction=18,aim=12,flee=0.8,wall=0.5,fire=0.85` để thử số khác mà không sửa mã; `--out=tệp` để lưu bảng). `INTENSITY_RATE` không đổi.
 
