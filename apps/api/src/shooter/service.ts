@@ -7,8 +7,8 @@ import {
 } from '@game-creator/contracts';
 import { AIError, type SpecIssue } from '../providers/errors.js';
 import { diagnosticSink } from '../providers/diagnostic-sink.js';
-import type { GameGenerationService } from '../services/game-generation-service.js';
-import { openStandardDiagnostics, type StandardDiagnostics, type StandardFinish, type StandardRequest } from '../services/standard-diagnostics.js';
+import type { AiGateway } from '../services/ai-gateway.js';
+import { openRunDiagnostics, type RunDiagnostics, type DiagnosticsFinish, type DiagnosticsRequest } from '../services/run-diagnostics.js';
 import { normalizeBrief, ShooterBriefSchema, type ShooterBrief } from './brief.js';
 import { compileInWorker, type CompileRunner } from './isolated-compile.js';
 import { collectNotices } from './notices.js';
@@ -47,19 +47,19 @@ const cancelled = () => new AIError('cancelled', 'Yêu cầu đã bị hủy.', 
 
 export interface ShooterServiceOptions {
   compile?: CompileRunner;
-  openDiagnostics?: (input: StandardRequest) => Promise<StandardDiagnostics>;
+  openDiagnostics?: (input: DiagnosticsRequest) => Promise<RunDiagnostics>;
   /** Test seam: the seed of the compiler (the server draws a random one). */
   seed?: () => number;
 }
 
 export class ShooterService {
   private readonly compile: CompileRunner;
-  private readonly openDiagnostics: (input: StandardRequest) => Promise<StandardDiagnostics>;
+  private readonly openDiagnostics: (input: DiagnosticsRequest) => Promise<RunDiagnostics>;
   private readonly seed: () => number;
 
-  constructor(private readonly generation: GameGenerationService, options: ShooterServiceOptions = {}) {
+  constructor(private readonly gateway: AiGateway, options: ShooterServiceOptions = {}) {
     this.compile = options.compile ?? compileInWorker;
-    this.openDiagnostics = options.openDiagnostics ?? openStandardDiagnostics;
+    this.openDiagnostics = options.openDiagnostics ?? openRunDiagnostics;
     this.seed = options.seed ?? (() => randomInt(2_147_483_648));
   }
 
@@ -72,13 +72,13 @@ export class ShooterService {
   }
 
   async generate(request: GenerateGameRequest & { providerId: string }, client: string, signal: AbortSignal): Promise<ShooterProject> {
-    const { provider, model } = this.generation.registry.resolve(request.providerId, request.modelId);
+    const { provider, model } = this.gateway.registry.resolve(request.providerId, request.modelId);
     if (signal.aborted) throw cancelled();
     const diag = await this.begin({ prompt: request.prompt, provider: provider.id, model: model.id });
     const capture: Capture = { stage: 'provider', validationSuccess: false, issues: [] };
     let raw: string | undefined;
     try {
-      raw = await diagnosticSink.run(diag, () => this.generation.generateArtifact(
+      raw = await diagnosticSink.run(diag, () => this.gateway.generateArtifact(
         { providerId: provider.id, modelId: model.id },
         { prompt: request.prompt, systemPrompt: SHOOTER_BRIEF_SYSTEM_PROMPT, jsonSchema: briefJsonSchema(), maxOutputTokens: BRIEF_MAX_OUTPUT_TOKENS },
         client, signal,
@@ -132,9 +132,9 @@ export class ShooterService {
     return result.data;
   }
 
-  private finish(capture: Capture, outcome: 'completed' | 'failed', raw: string | undefined, error?: unknown): StandardFinish {
+  private finish(capture: Capture, outcome: 'completed' | 'failed', raw: string | undefined, error?: unknown): DiagnosticsFinish {
     const stage = capture.stage;
-    const record: StandardFinish = {
+    const record: DiagnosticsFinish = {
       stage: stage === 'ok' ? 'response' : stage,
       outcome,
       parsed: capture.parsed ?? null,
@@ -155,7 +155,7 @@ export class ShooterService {
     try { await task(); } catch { /* Diagnostics must not change the result. */ }
   }
 
-  private async begin(input: StandardRequest): Promise<StandardDiagnostics> {
+  private async begin(input: DiagnosticsRequest): Promise<RunDiagnostics> {
     try { return await this.openDiagnostics(input); }
     catch { return { async note() {}, async raw() {}, async finish() {} }; }
   }

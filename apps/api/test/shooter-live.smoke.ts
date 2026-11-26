@@ -1,20 +1,20 @@
 // Opt-in diagnostic: real Groq requests through the shooter service (brief ->
 // compiler -> bot gate). Never run by `npm test` or E2E.
 //
-//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3|stage4a|stage4b|stage4c] [--dump=file.json]
+//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3|stage4a|stage4b|stage4c|cleanup] [--dump=file.json]
 //
 // The key is read from apps/api/.env (git-ignored) exactly like the server does,
 // and is never printed or written anywhere. Requests go one after the other and
 // keep to AI_REQUESTS_PER_MINUTE / AI_REQUESTS_PER_DAY; the Groq pacing of
-// GameGenerationService waits when the minute is used up. No retry here: a
+// AiGateway waits when the minute is used up. No retry here: a
 // failed run is reported as it is. If the day's limit is reached the run stops.
 import { readFile, writeFile } from 'node:fs/promises';
 import { parse } from 'dotenv';
 import { createProviderRegistry } from '../src/providers/create-registry.js';
 import { AIError } from '../src/providers/errors.js';
-import { GameGenerationService } from '../src/services/game-generation-service.js';
+import { AiGateway } from '../src/services/ai-gateway.js';
 import { RequestBudget } from '../src/services/request-budget.js';
-import { openStandardDiagnostics, type StandardFinish } from '../src/services/standard-diagnostics.js';
+import { openRunDiagnostics, type DiagnosticsFinish } from '../src/services/run-diagnostics.js';
 import { ShooterService } from '../src/shooter/service.js';
 
 if (!process.argv.includes('--live')) throw new Error('Use --live to explicitly enable real Groq requests.');
@@ -72,21 +72,26 @@ const STAGE4C_PROMPTS: ReadonlyArray<[string, string]> = [
   ['d', 'hạ 30 quái ở rừng rồi đánh boss, có hai boss và mini boss'],
   ['e', 'đấu trường neon, quái bắn xa, súng xuyên, không boss'],
 ];
-const SETS: Record<string, ReadonlyArray<[string, string]>> = { stage3: STAGE3_PROMPTS, stage4a: STAGE4A_PROMPTS, stage4b: STAGE4B_PROMPTS, stage4c: STAGE4C_PROMPTS };
+// --set=cleanup: the two prompts of the check after the removal of the old code (one request each: --rounds=1).
+const CLEANUP_PROMPTS: ReadonlyArray<[string, string]> = [
+  ['a', 'zombie thành phố 60 giây'],
+  ['b', 'bảo vệ căn cứ có boss cuối'],
+];
+const SETS: Record<string, ReadonlyArray<[string, string]>> = { stage3: STAGE3_PROMPTS, stage4a: STAGE4A_PROMPTS, stage4b: STAGE4B_PROMPTS, stage4c: STAGE4C_PROMPTS, cleanup: CLEANUP_PROMPTS };
 const PROMPTS = SETS[arg('set') ?? ''] ?? DEFAULT_PROMPTS;
 // --dump=file.json keeps the generated projects (level + notices, never the key) so a browser can open exactly them.
 const dumpPath = arg('dump');
 const dumped: Record<string, unknown> = {};
 
-const captured: { record: StandardFinish | undefined } = { record: undefined };
+const captured: { record: DiagnosticsFinish | undefined } = { record: undefined };
 const lastRecord = () => captured.record; // read through a function: it is set inside a callback
-const generation = new GameGenerationService(createProviderRegistry(env), new RequestBudget({
+const gateway = new AiGateway(createProviderRegistry(env), new RequestBudget({
   requestsPerMinute: limit('AI_REQUESTS_PER_MINUTE', 5), requestsPerDay: limit('AI_REQUESTS_PER_DAY', 100), maxConcurrent: limit('AI_MAX_CONCURRENT', 2),
 }), limit('AI_TIMEOUT_MS', 45_000));
-const shooter = new ShooterService(generation, {
+const shooter = new ShooterService(gateway, {
   // The real diagnostics (under .local-diagnostics, redacted) plus a copy of the final record for this report.
   openDiagnostics: async (input) => {
-    const real = await openStandardDiagnostics(input);
+    const real = await openRunDiagnostics(input);
     return { note: (exchange) => real.note(exchange), raw: (text) => real.raw(text), finish: (record) => { captured.record = record; return real.finish(record); } };
   },
 });

@@ -1,6 +1,6 @@
 # GameCreator: Deployment Guide cho Ubuntu 24.04 EC2
 
-Tài liệu này là runbook triển khai GameCreator lên một máy EC2 Ubuntu. Nó được viết từ code trong repository (`package.json`, `.env.example`, `server.ts`, `app.ts`, `docker-sandbox.ts`, `deploy/nginx/gamecreator.conf`, `deploy/sandbox/Dockerfile`...) và từ trạng thái máy mà chủ dự án đã cung cấp. Phần nào không có căn cứ thì được đánh dấu rõ, không đoán.
+Tài liệu này là runbook triển khai GameCreator lên một máy EC2 Ubuntu. Nó được viết từ code trong repository (`package.json`, `.env.example`, `server.ts`, `app.ts`, `deploy/nginx/gamecreator.conf`...) và từ trạng thái máy mà chủ dự án đã cung cấp. Phần nào không có căn cứ thì được đánh dấu rõ, không đoán.
 
 **Tài liệu này không có nghĩa ứng dụng đã được deploy.** Ở thời điểm viết, chưa có bước nào trong runbook được chạy trên EC2. Mọi dòng "Kết quả mong đợi" là mong đợi theo code, không phải kết quả đã đo.
 
@@ -14,16 +14,10 @@ Tài liệu này là runbook triển khai GameCreator lên một máy EC2 Ubuntu
 | `[CHƯA]` | Chưa làm, cần làm theo runbook |
 | `[XÁC MINH]` | Không có thông tin. Phải kiểm tra bằng lệnh đã ghi trước khi tiếp tục |
 | `[CẦN DOMAIN]` | Chỉ làm được khi đã có tên miền trỏ về Elastic IP |
-| `[ADVANCED]` | Chỉ làm khi bật Advanced Mode. Hiện **không** làm |
 
-### Hai giai đoạn
+### Phạm vi
 
-| Giai đoạn | Nội dung | Trạng thái |
-| --- | --- | --- |
-| **Giai đoạn 1** | Ứng dụng chạy sau Nginx HTTPS + Basic Auth. **Advanced Mode tắt.** Backend không gọi Docker | Mục tiêu hiện tại |
-| **Giai đoạn 2** | Bật Advanced Mode (code do AI sinh ra chạy trong Docker sandbox) | **Bị chặn.** Xem mục "Blocker" ở cuối tài liệu |
-
-Docker chỉ phục vụ Sandbox Runner của Advanced. Backend, frontend và Nginx **không** chạy trong Docker.
+Ứng dụng chạy sau Nginx HTTPS + Basic Auth. Backend, frontend và Nginx **không** chạy trong Docker, và backend không chạy code do AI sinh ra: AI chỉ trả một bản mô tả ngắn, engine dựng màn. Chế độ cũ cần Docker (Advanced: AI viết code, sandbox) đã bị xóa khỏi repository và nằm ở tag `legacy-standard-v1`. Vì vậy các mục F, D.3, G.4, K.6, K.7, L.2 và M.2 của bản cũ không còn; số các mục còn lại được giữ nguyên để các tham chiếu chéo vẫn đúng.
 
 ### Trạng thái hiện tại của EC2
 
@@ -31,13 +25,10 @@ Docker chỉ phục vụ Sandbox Runner của Advanced. Backend, frontend và Ng
 | --- | --- |
 | Ubuntu 24.04.5 LTS, m7i-flex.large (2 vCPU, 8 GB), EBS gp3 20 GB, Elastic IP `13.238.144.236` | `[ĐÃ XONG]` |
 | Node.js 22.23.5, npm 10.9.9, Git 2.43.0, PM2 7.1.2, Nginx 1.24.0 | `[ĐÃ XONG]` |
-| Docker Engine 29.10.0 (Docker official APT repository), containerd 2.4.2, cgroup v2, `hello-world` chạy được | `[ĐÃ XONG]` |
 | Source tại `/home/ubuntu/PRJ27` | `[ĐÃ XONG]` |
 | `npm ci`, build, `apps/api/.env`, PM2 app, thư mục `/var/www/gamecreator` | `[XÁC MINH]` (chưa có thông tin) |
 | `apache2-utils` (htpasswd), `certbot`, file `/etc/nginx/.htpasswd-gamecreator` | `[XÁC MINH]`, coi như `[CHƯA]` |
 | Tên miền, chứng chỉ TLS, site Nginx của GameCreator | `[CHƯA]` / `[CẦN DOMAIN]` (chưa có thông tin về domain) |
-| Sandbox image, `sandbox:verify`, test tích hợp sandbox **trên EC2** | `[CHƯA]` |
-| Cách cấp quyền Docker cho backend một cách an toàn | `[CHƯA]` (blocker B1, mục F.3) |
 | Security Group đúng quy tắc ở mục J | `[XÁC MINH]` |
 
 ---
@@ -47,8 +38,8 @@ Docker chỉ phục vụ Sandbox Runner của Advanced. Backend, frontend và Ng
 | Thành phần | Yêu cầu | Phân loại | Cơ sở |
 | --- | --- | --- | --- |
 | Ubuntu | 24.04 LTS (máy hiện tại 24.04.5) | Bắt buộc | Mục tiêu của dự án. Nginx 1.24 là bản của 24.04 |
-| CPU / RAM | Tối thiểu 2 vCPU / 2 GB cho Giai đoạn 1. Máy hiện tại 2 vCPU / 8 GB là dư RAM | Bắt buộc | Mặc định trong code được chọn cho 2 vCPU: 1 job, 1 container 1 CPU, 768 MB. **CPU là giới hạn chính**, không phải RAM |
-| Ổ đĩa | 20 GB gp3 (hiện có) | Bắt buộc | `node_modules`, build, log, và (Giai đoạn 2) image Docker cùng build cache. Dung lượng image chưa đo trên EC2: đo bằng `docker image ls` / `docker system df` |
+| CPU / RAM | Tối thiểu 2 vCPU / 2 GB. Máy hiện tại 2 vCPU / 8 GB là dư RAM | Bắt buộc | Mỗi lần tạo game dựng màn trong một worker (tối đa 8 giây, bot chơi thử vài ván) nên **CPU là giới hạn chính**, không phải RAM |
+| Ổ đĩa | 20 GB gp3 (hiện có) | Bắt buộc | `node_modules`, build và log |
 | Node.js | `>=22.0.0` (máy có 22.23.5) | Bắt buộc | `engines` trong `package.json` gốc |
 | npm | `>=10.0.0` (máy có 10.9.9) | Bắt buộc | `engines` trong `package.json` gốc; dùng `package-lock.json` (lockfileVersion 3) |
 | Git | Bất kỳ bản hiện đại (máy có 2.43.0) | Bắt buộc | Clone, cập nhật, rollback |
@@ -57,10 +48,7 @@ Docker chỉ phục vụ Sandbox Runner của Advanced. Backend, frontend và Ng
 | `apache2-utils` | Bất kỳ | Bắt buộc | Lệnh `htpasswd` để tạo `/etc/nginx/.htpasswd-gamecreator` |
 | `certbot` | Bản apt của 24.04 (2.9.0) đủ cho chứng chỉ **domain**. Chứng chỉ **IP** cần Certbot ≥ 5.4 (không có trong apt 24.04, xem I.5b) | Bắt buộc khi bật HTTPS (`[CẦN DOMAIN]`) | Chứng chỉ Let's Encrypt |
 | `curl`, `openssl`, `ss` | Có sẵn trên Ubuntu Server | Bắt buộc cho kiểm tra | Mục K |
-| Docker Engine | 29.10.0 (Docker official repo) | **Chỉ cho Sandbox** `[ADVANCED]` | `docker run` của `DockerSandbox`. Không dùng `docker.io` của Ubuntu |
-| `docker-ce-rootless-extras`, `uidmap`, `dbus-user-session` | Cùng repo Docker | **Chỉ nếu chọn Rootless Docker** `[ADVANCED]` | Mục F.3 |
 | `pm2-logrotate` | Module PM2 | Tùy chọn | Xoay vòng log PM2 |
-| Chromium / Playwright browsers trên host | Không cần | Không cài | Production dùng tester Docker. `ADVANCED_TESTER=local` bị từ chối khi `NODE_ENV=production`. Không chạy `npx playwright install` trên EC2 |
 
 ---
 
@@ -76,17 +64,12 @@ Các thành phần đã cài, không cài lại. Cột "Lệnh kiểm tra" dùng
 | Git | any | Lấy source | `[ĐÃ XONG]` | `git --version` |
 | PM2 | any | Quản lý process backend | `[ĐÃ XONG]` | `pm2 -v` |
 | Nginx | 1.24 | Reverse proxy, static, auth | `[ĐÃ XONG]` | `nginx -v` |
-| Docker Engine | 29.x (official repo) | Sandbox Runner | `[ĐÃ XONG]` | `docker version`, `apt-cache policy docker-ce \| head -3` |
-| containerd | 2.x | Runtime của Docker | `[ĐÃ XONG]` | `containerd --version` |
-| cgroup v2 | v2 | Giới hạn RAM/CPU/PID container | `[ĐÃ XONG]` | `stat -fc %T /sys/fs/cgroup` phải in `cgroup2fs` |
-| Docker chạy được | | | `[ĐÃ XONG]` (`hello-world`) | `sudo docker run --rm hello-world` |
 | Source code | | | `[ĐÃ XONG]` | `git -C /home/ubuntu/PRJ27 status -sb` |
-| Không có gói `docker.io` | | Tránh hai Docker song song | `[XÁC MINH]` | `dpkg -l docker.io 2>/dev/null \| grep ^ii \|\| echo "không có docker.io"` |
 | `apache2-utils` | any | `htpasswd` | `[XÁC MINH]` | `command -v htpasswd` |
 | `certbot` | apt 2.9.0 (chứng chỉ domain). Chứng chỉ IP cần ≥ 5.4 (I.5b) | TLS | `[XÁC MINH]` `[CẦN DOMAIN]` | `certbot --version` |
 | Cài nếu thiếu | | | | `sudo apt-get update && sudo apt-get install -y apache2-utils certbot` |
 
-Kiểm tra PM2 và Node nằm ở đâu (quan trọng khi `pm2 startup` hoặc khi chuyển user ở Giai đoạn 2):
+Kiểm tra PM2 và Node nằm ở đâu (quan trọng khi `pm2 startup` hoặc khi chuyển user):
 
 ```bash
 command -v node pm2
@@ -141,7 +124,6 @@ Vì sao tại thư mục gốc:
 - `@game-creator/contracts` là workspace nội bộ. `npm ci` liên kết nó vào `node_modules/@game-creator/`. Package này xuất ra `dist/` (xem `exports` trong `packages/contracts/package.json`), nên **phải build contracts trước** khi API hoặc web chạy/typecheck. Script `npm run build` ở gốc đã làm đúng thứ tự.
 - `npm ci` xóa `node_modules` rồi cài đúng theo lockfile và **báo lỗi** nếu `package.json` và lockfile lệch nhau. Không dùng `npm install` trên máy chủ (nó có thể sửa lockfile). Nếu `npm ci` lỗi vì lệch lockfile, dừng lại và sửa ở máy phát triển, không tạo lockfile mới trên EC2.
 - Không dùng `--omit=dev`: bước build cần `typescript`, `vite`, `@vitejs/plugin-react`... Riêng `typescript` còn là dependency chạy thật của backend.
-- `npm ci` không tải trình duyệt Playwright (package `playwright` không có postinstall tải browser). Production không cần.
 
 Không có bước nào trong runbook yêu cầu `sudo npm`, và **không chạy `npm run build` bằng root**: nó tạo `dist/` thuộc root, các lần build sau của `ubuntu` sẽ lỗi quyền.
 
@@ -151,7 +133,7 @@ Không có bước nào trong runbook yêu cầu `sudo npm`, và **không chạy
 
 Backend đọc cấu hình từ biến môi trường. `server.ts` nạp `.env` bằng `import 'dotenv/config'` **theo thư mục làm việc hiện tại** của process, nên với PM2 `cwd` phải là `apps/api` để tìm `apps/api/.env`. `dotenv` **không ghi đè** biến đã có trong môi trường process: các biến đặt trong file ecosystem của PM2 (mục G) luôn thắng `.env`.
 
-Tài liệu này **không đọc** và **không in** bất kỳ file `.env` nào. Danh sách dưới đây lấy từ `apps/api/.env.example`, `apps/web/.env.example` và từ code đọc biến (`server.ts`, `app.ts`, `create-agent.ts`, `docker-args.ts`, `trust-proxy.ts`, `create-registry.ts`).
+Tài liệu này **không đọc** và **không in** bất kỳ file `.env` nào. Danh sách dưới đây lấy từ `apps/api/.env.example`, `apps/web/.env.example` và từ code đọc biến (`server.ts`, `app.ts`, `trust-proxy.ts`, `create-registry.ts`, `run-diagnostics.ts`).
 
 ### D.1 Tạo `apps/api/.env` `[XÁC MINH]`
 
@@ -164,17 +146,16 @@ nano apps/api/.env        # điền khóa trong trình soạn thảo, không dù
 
 `.env` bị `.gitignore` chặn. Không commit, không gửi qua chat/issue. Không đặt khóa API trong file ecosystem của PM2 và không `export` khóa trong shell.
 
-### D.2 Biến cho Giai đoạn 1 (Advanced tắt)
+### D.2 Biến của backend (production)
 
 **Đặt trong file ecosystem của PM2 (mục G)**, vì sai một biến là mất lớp bảo vệ:
 
 | Biến | Giá trị trên EC2 | Mặc định trong code | Giải thích |
 | --- | --- | --- | --- |
-| `NODE_ENV` | `production` | không đặt | Tắt Advanced, bật `trust proxy = loopback` mặc định, tắt ghi diagnostics, cấm `ADVANCED_TESTER=local`. **Không đổi thành `development` để mở tính năng** |
+| `NODE_ENV` | `production` | không đặt | Bật `trust proxy = loopback` mặc định và tắt ghi chẩn đoán lên đĩa. **Không đổi thành `development` để mở tính năng** |
 | `HOST` | `127.0.0.1` | `127.0.0.1` | Backend chỉ nghe loopback. Không đặt `0.0.0.0` |
 | `PORT` | `3001` | `3001` | Nginx proxy tới `127.0.0.1:3001`. Số nguyên 1–65535, nếu không backend không khởi động |
 | `TRUST_PROXY` | `loopback` | production: `loopback`; khác: `off` | Chỉ tin `X-Forwarded-For` khi kết nối TCP đến từ loopback (chính Nginx). Giá trị khác `loopback`/`off` làm backend từ chối khởi động |
-| `ADVANCED_AI_ENABLED` | `false` | không đặt (mặc định tắt); `true` để bật khi dev (vẫn bị `NODE_ENV=production` chặn) | Mặc định đã tắt. Production vẫn nên đặt `false` rõ ràng để có hai điều kiện cùng tắt Advanced |
 
 **AI Provider**, đặt trong `apps/api/.env` (bí mật):
 
@@ -197,30 +178,6 @@ nano apps/api/.env        # điền khóa trong trình soạn thảo, không dù
 
 Các hạn mức này nằm trong bộ nhớ một process: khởi động lại là về 0, và chỉ đúng khi chạy **một** instance (PM2 `instances: 1`).
 
-### D.3 Biến cho Advanced `[ADVANCED]` (chưa dùng)
-
-Không đặt các biến này cho tới khi bật Advanced. Mặc định đã an toàn cho 2 vCPU. Với m7i-flex.large (8 GB) giữ nguyên mặc định cho tới khi đo thực tế: CPU mới là giới hạn.
-
-| Biến | Mặc định | Khoảng | Giải thích |
-| --- | --- | --- | --- |
-| `GAME_JOB_CONCURRENCY` | 1 | 1–2 | Số game chạy cùng lúc |
-| `GAME_JOB_MAX_QUEUE` | 2 | 0–10 | Số game được chờ. 0 = bận thì 429 ngay |
-| `GAME_JOB_TIMEOUT_MS` | 240000 | 30000–300000 | Thời gian chạy tối đa một game |
-| `GAME_JOB_MAX_WAIT_MS` | 60000 | 5000–300000 | Thời gian chờ tối đa trong hàng. **`TIMEOUT + MAX_WAIT` không được vượt 300000**, nếu không backend không khởi động (trình duyệt dừng chờ sau 330 s, `proxy_read_timeout` là 300 s) |
-| `GAME_JOB_MAX_PER_IP` | 2 | 1–5 | Chạy + chờ tối đa của một IP |
-| `ADVANCED_TESTER` | `docker` | `docker`/`local` | `local` chạy Chromium trực tiếp trên host, **bị cấm khi `NODE_ENV=production`** |
-| `SANDBOX_IMAGE` | `gamecreator-sandbox:pw1.60.0` | | Phải có tag hoặc digest cụ thể, `:latest` bị từ chối |
-| `SANDBOX_CONCURRENCY` | 1 | 1–2 | Số container cùng lúc |
-| `SANDBOX_MEMORY_MB` | 768 | 256–1536 | RAM (và swap, `--memory-swap` bằng `--memory`) mỗi container |
-| `SANDBOX_CPUS` | 1 | 0.25–2 | CPU mỗi container. Máy có 2 vCPU: đừng đặt 2 |
-| `SANDBOX_PIDS` | 256 | 32–1024 | Số process tối đa |
-| `SANDBOX_TMP_MB` / `SANDBOX_SHM_MB` | 64 / 128 | 8–512 / 16–512 | `/tmp` và `/dev/shm` (tmpfs, `noexec` cho `/tmp`) |
-| `SANDBOX_TIMEOUT_MS` | 45000 | 5000–120000 | Thời gian tối đa một container |
-| `SANDBOX_RECHECK_MS` | 300000 | 30000–3600000 | Chu kỳ tự kiểm tra cách ly. Khi chưa sẵn sàng, kiểm tra lại sau tối đa 60 s (khi có request hỏi trạng thái) |
-| `SANDBOX_DOCKER_BIN` | `docker` | | Đường dẫn Docker CLI. Không có trong `.env.example` nhưng code đọc (`docker-args.ts`) |
-
-Lưu ý quan trọng về hai script kiểm tra sandbox (mục F): `sandbox:verify` chỉ đọc `process.env` của shell (không nạp `.env`), còn `test:sandbox` dùng **cấu hình mặc định** (`readSandboxConfig({})`) và gọi `docker` trên `PATH`. Biến trong `.env` không ảnh hưởng chúng. Nếu muốn kiểm tra giá trị khác mặc định với `sandbox:verify`, đặt biến ngay trước lệnh: `SANDBOX_IMAGE=... npm run sandbox:verify`.
-
 ### D.4 Biến của frontend (lúc build)
 
 | Biến | Giá trị trên EC2 | Giải thích |
@@ -232,8 +189,6 @@ Không tạo `apps/web/.env` trên EC2. Nếu đã có file đó, kiểm tra nó
 
 ### D.5 Biến không được đặt trong production
 
-- `ADVANCED_DIAGNOSTICS`: dev-only. Với `NODE_ENV=production` diagnostics đã tự tắt (`run-diagnostics.ts`). Không bật vì nó ghi prompt/code vào `.local-diagnostics/`.
-- `ADVANCED_TESTER=local`: bị từ chối ở production.
 
 ---
 
@@ -250,178 +205,24 @@ npm run build
 | Bước | Lệnh thật | Output |
 | --- | --- | --- |
 | 1. Contracts | `npm run build:contracts` → `tsc -p tsconfig.json` trong `packages/contracts` | `packages/contracts/dist/` (JS + `.d.ts`) |
-| 2. Backend | `npm run build -w @game-creator/api` → `tsc -p tsconfig.json` (`rootDir src`, `outDir dist`, `module NodeNext`) | `apps/api/dist/`. Entrypoint **`apps/api/dist/server.js`**; runner sandbox trong `apps/api/dist/sandbox/`; worker validator `apps/api/dist/agent/validator-worker.mjs` |
-| 3. Frontend | `npm run build -w @game-creator/web` = `npm run typecheck` → `npm run build:game` → `vite build` | `apps/web/public/runtime/game.js` và `advanced.js` (2 bundle IIFE, **bị gitignore**), rồi **`apps/web/dist/`**: `index.html`, `assets/`, `runtime/` (copy từ `public/`), `favicon.svg` |
+| 2. Backend | `npm run build -w @game-creator/api` → `tsc -p tsconfig.json` (`rootDir src`, `outDir dist`, `module NodeNext`) | `apps/api/dist/`. Entrypoint **`apps/api/dist/server.js`**; worker dựng màn `apps/api/dist/shooter/compile-worker.mjs` |
+| 3. Frontend | `npm run build -w @game-creator/web` = `npm run typecheck` → `npm run build:game` → `vite build` | `apps/web/public/runtime/game.js` (bundle IIFE của Phaser, **bị gitignore**), rồi **`apps/web/dist/`**: `index.html`, `assets/`, `runtime/` (copy từ `public/`), `favicon.svg` |
 
 Có thể chạy từng bước riêng: `npm run build:contracts`, `npm run build -w @game-creator/api`, `npm run build -w @game-creator/web`. Phải theo đúng thứ tự trên.
 
 Ghi chú:
 
 - Cảnh báo Rollup về một comment trong `zod` khi build frontend là cảnh báo từ thư viện bên thứ ba, không phải lỗi (exit code 0).
-- `apps/web/dist/runtime/advanced.js` là script chạy game trong iframe preview và cũng được copy vào image sandbox. Nó có trong build kể cả khi Advanced tắt.
-- **Sandbox image** `[ADVANCED]`: `npm run sandbox:build` = `npm run build` + `docker build -f deploy/sandbox/Dockerfile -t gamecreator-sandbox:pw1.60.0 .`. Context Docker bị giới hạn bằng allow-list trong `.dockerignore` (chỉ `contracts/dist`, `api/dist`, `advanced.js`; không có source, `.env`, test). Xem mục F.
 - Không chạy `npm run test:e2e` trên EC2: nó build rồi mở Chromium của host, thứ mà production không cài.
 
 Kiểm tra đầu ra:
 
 ```bash
-ls apps/api/dist/server.js apps/api/dist/sandbox/runner-main.js
-ls apps/web/dist/index.html apps/web/dist/runtime/game.js apps/web/dist/runtime/advanced.js
+ls apps/api/dist/server.js apps/api/dist/shooter/compile-worker.mjs
+ls apps/web/dist/index.html apps/web/dist/runtime/game.js
 ```
 
-Kiểm tra tùy chọn trước khi deploy `[XÁC MINH]`: `npm test` (vitest, không cần Docker và không cần Chromium vì test tester dùng mock Playwright; các test cần Docker bị bỏ qua nếu không đặt `SANDBOX_INTEGRATION=1`). Kết quả trên Windows máy phát triển: 570 pass, 25 skip. Trên EC2 chưa chạy.
-
----
-
-## F. Sandbox Deployment `[ADVANCED]`
-
-**Mục này không cần làm để chạy Giai đoạn 1.** Với `NODE_ENV=production`, `app.ts` không tạo sandbox, queue hay DockerSandbox, và `server.ts` ghi log `[advanced] tắt ... không có sandbox nào được khởi tạo`. Nhưng bạn nên chạy mục này **trước** khi cân nhắc Giai đoạn 2, vì kết quả trên Docker Desktop (Windows) không thay thế được kiểm thử trên Ubuntu thật.
-
-### F.1 Thiết kế sandbox (tóm tắt, từ code)
-
-Mỗi job chạy một `docker run` với cờ do `apps/api/src/sandbox/docker-args.ts` (hàm `buildRunArgs`) tạo ra:
-
-`--rm --init --pull=never --network=none --user=10001:10001 --cap-drop=ALL --security-opt=no-new-privileges --read-only --memory=768m --memory-swap=768m --cpus=1 --pids-limit=256 --ulimit nofile=1024:1024 --ulimit core=0 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --shm-size=128m --log-driver=none` cùng nhãn `gamecreator.sandbox=1` và ba biến môi trường không bí mật.
-
-- Không có `-v`, `--mount`, `--env-file`, `docker.sock`, `--privileged`, `--cap-add`. Dữ liệu job qua stdin, kết quả qua stdout (tối đa 16 KB).
-- `--pull=never`: backend không tự tải image. Image phải có sẵn **trong đúng daemon mà backend dùng**.
-- Backend gọi Docker CLI bằng `spawn` mảng đối số, `shell: false`, chỉ truyền cho CLI các biến `PATH, HOME, DOCKER_HOST, DOCKER_CONFIG, DOCKER_CONTEXT, DOCKER_TLS_VERIFY, DOCKER_CERT_PATH, XDG_RUNTIME_DIR` (và vài biến Windows). Khóa API của backend không đến được CLI.
-- Backend chỉ dùng bốn lệnh con: `run`, `kill <tên>`, `rm -f`, `ps -aq --filter label=gamecreator.sandbox=1`.
-- Chromium trong container chạy `chromiumSandbox: false` (`GC_CHROMIUM_SANDBOX=0`), vì sandbox của Chromium cần user namespace mà các cờ trên chặn. Ranh giới cách ly là container. Đây là đánh đổi có chủ ý.
-- Tự kiểm tra cách ly: khi khởi động và định kỳ, `probe-main.js` chạy trong container và `evaluateProbe` so với cấu hình: không root, `CapEff/CapBnd` = 0, `NoNewPrivs=1`, có seccomp, root chỉ đọc, `/tmp` đúng cỡ, không có giao diện mạng ngoài loopback, không ra Internet/DNS, không `docker.sock`, không thấy đường dẫn host, không có biến môi trường giống bí mật, **RAM / pids / CPU đúng cấu hình**, không có mount lạ. Lỗi một mục thì Advanced báo không khả dụng.
-- Chính sách lỗi: Docker không chạy / thiếu image / `docker run` trả 125–127 thì job lỗi `tester_unavailable` (503). **Không có fallback chạy trên host.**
-
-### F.2 Kiểm tra Docker trên EC2 `[CHƯA]`
-
-```bash
-docker version                      # nếu "permission denied": user hiện tại không thuộc nhóm docker (xem F.3)
-sudo docker version
-sudo docker info --format 'cgroup={{.CgroupVersion}} driver={{.CgroupDriver}} security={{.SecurityOptions}}'
-```
-
-Kỳ vọng: `cgroup=2`, `seccomp` có trong `security`. Xem cảnh báo cuối `sudo docker info` (ví dụ thiếu giới hạn memory/swap): có cảnh báo thì chưa được coi là đạt cho tới khi hiểu rõ.
-
-```bash
-id -nG                              # ubuntu có trong nhóm docker không?  [XÁC MINH]
-sudo -l                             # ubuntu có sudo NOPASSWD:ALL không?   [XÁC MINH]
-ss -ltnp | grep -E ':2375|:2376' || echo "không có Docker TCP API"
-ls -l /var/run/docker.sock          # mong đợi: srw-rw---- root docker
-```
-
-### F.3 Quyền Docker cho backend: phân tích (BLOCKER)
-
-**Backend là process nhận request từ Internet và (khi Advanced bật) chạy code do AI sinh ra.** Ai điều khiển được Docker daemon rootful thì có quyền root trên host (ví dụ `docker run -v /:/host --privileged ...`). Vì vậy quyền Docker của backend phải được đánh giá, không cấp tùy tiện.
-
-| Phương án | Quyền thực tế mà backend có | Tương thích với runner hiện tại | Kết luận |
-| --- | --- | --- | --- |
-| **1. Thêm user backend vào nhóm `docker`** | Tương đương root (socket cho phép mọi tham số) | Chạy được | **Không dùng** cho backend |
-| **2. `sudoers` cho phép `docker *`** | Tương đương root (cùng lý do: tham số tùy ý). Ngoài ra runner không gọi `sudo`, cần bọc thêm | Cần wrapper | **Không dùng** |
-| **3. `sudoers` + script bọc whitelist** (đặt qua `SANDBOX_DOCKER_BIN`) | Giới hạn được **nếu** script kiểm tra đúng và đủ mọi đối số (chặn `-v`, `--privileged`, `--cap-add`, `--network`, `--pid`, `--device`, `--security-opt`, tên image...) | Runner chỉ dùng 4 lệnh con (kể trên), nhưng sudo xóa môi trường và script phải chuyển stdin/exit code đúng | **Chưa có.** Cần code mới + review bảo mật + test. Không có trong repo, chưa kiểm chứng |
-| **4. Rootless Docker cho một user riêng không có sudo** | Chiếm quyền Docker chỉ cho ra quyền của user đó, không ra root | Tương thích **theo đọc code**: `CLI_ENV` chuyển `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `XDG_RUNTIME_DIR`, `HOME`, `PATH`; cùng 4 lệnh con. **Chưa chạy thử** | **Ứng viên khả dĩ nhất. Chưa kiểm chứng.** Xem điều kiện bên dưới |
-
-Máy hiện tại: user `ubuntu` thường có sudo không cần mật khẩu trên AMI Ubuntu của AWS (`[XÁC MINH]` bằng `sudo -l`). Nếu đúng, **chạy backend bằng `ubuntu` đã tương đương root** dù không thuộc nhóm `docker`. Vì vậy ở Giai đoạn 2 backend phải chạy bằng một user riêng không có sudo.
-
-**Điều kiện và rủi ro của Rootless Docker** (theo tài liệu Docker "Rootless mode" và "Troubleshooting"/"Tips", đối chiếu lại đúng phiên bản khi làm):
-
-1. Cài `docker-ce-rootless-extras`, `uidmap`, `dbus-user-session` (cùng Docker official repo). `/etc/subuid` và `/etc/subgid` phải có ít nhất 65536 id cho user.
-2. Ubuntu 24.04 chặn user namespace không đặc quyền bằng AppArmor. Với gói deb `docker-ce-rootless-extras`, profile AppArmor cho `rootlesskit` đã đi kèm. Nếu cài bằng script `get.docker.com/rootless` thì phải tự tạo profile.
-3. **Giới hạn tài nguyên chỉ hoạt động với cgroup v2 + systemd**, và theo mặc định chỉ hai controller `memory` và `pids` được ủy quyền cho user thường. `--cpus` cần ủy quyền thêm `cpu` qua `/etc/systemd/system/user@.service.d/delegate.conf` (`Delegate=cpu cpuset io memory pids`) rồi `sudo systemctl daemon-reload`. Nếu thiếu, cờ bị bỏ qua và `sandbox:verify` sẽ **fail** ở mục "Giới hạn CPU không đúng cấu hình".
-4. AppArmor profile mặc định của container không được hỗ trợ trong rootless; seccomp vẫn có (`docker info` hiển thị `seccomp`, `rootless`, `cgroupns`). Đây là một lớp cách ly ít hơn rootful, cần chấp nhận có ý thức.
-5. Daemon rootless chạy bằng `systemctl --user` của user đó, cần `sudo loginctl enable-linger <user>` để tự chạy sau reboot. Chạy rootless như service hệ thống không được hỗ trợ.
-6. Kho image của rootless **tách riêng** với rootful. Image phải build bằng chính daemon rootless (`DOCKER_HOST` trỏ vào socket của nó), nếu không `--pull=never` sẽ báo thiếu image.
-7. Process PM2 khởi động từ systemd hệ thống không có `XDG_RUNTIME_DIR`/`DOCKER_HOST` tự động. Phải đặt trong `env` của ecosystem (mục G.4).
-8. Sandbox dùng `--network=none` nên không phụ thuộc network driver của rootless. Việc **build** image cần Internet (kéo `mcr.microsoft.com/playwright`, `npm install`).
-
-**Kết luận: blocker B1.** Chưa có giải pháp quyền Docker đã kiểm chứng. Không bật Advanced cho tới khi một phương án được chạy và đạt cả `sandbox:verify` lẫn test tích hợp **bằng đúng daemon và đúng user mà backend sẽ dùng**.
-
-### F.4 Build image
-
-Image dựa trên `mcr.microsoft.com/playwright:v1.60.0-noble` (tag cố định). Phiên bản Playwright phải trùng ở bốn nơi (xem mục M.2).
-
-Thử nghiệm nghiệm thu một lần, do người vận hành chạy tại terminal (không phải cấp quyền cho backend). Dùng **rootful daemon** bằng `sudo`. Tách `build` (user thường) khỏi `docker build` (sudo) để `dist/` không bị thuộc root:
-
-```bash
-cd /home/ubuntu/PRJ27
-npm run build                                                  # user thường
-sudo docker build -f deploy/sandbox/Dockerfile -t gamecreator-sandbox:pw1.60.0 .
-```
-
-Hai dòng trên tương đương `npm run sandbox:build` (script gốc: `npm run build && docker build -f deploy/sandbox/Dockerfile -t gamecreator-sandbox:pw1.60.0 .`). Nếu user hiện tại đã dùng được `docker` không cần sudo thì chạy thẳng `npm run sandbox:build`. Build cần Internet ra `mcr.microsoft.com` và npm registry.
-
-### F.5 Đặt tag cố định và kiểm tra image
-
-Tag `gamecreator-sandbox:pw1.60.0` gắn với **phiên bản Playwright**, không gắn với code runner; build lại sẽ ghi đè tag. Vì runner trong image chứa `apps/api/dist` tại thời điểm build, nên thêm một tag bất biến theo commit:
-
-```bash
-REV=$(git rev-parse --short HEAD)
-sudo docker tag gamecreator-sandbox:pw1.60.0 gamecreator-sandbox:pw1.60.0-$REV
-sudo docker image inspect gamecreator-sandbox:pw1.60.0-$REV \
-  --format 'id={{.Id}} user={{.Config.User}} entrypoint={{.Config.Entrypoint}} labels={{.Config.Labels}}'
-sudo docker image ls gamecreator-sandbox
-```
-
-Kỳ vọng: `user=10001:10001`, `entrypoint=[node /opt/gc/apps/api/dist/sandbox/runner-main.js]`, nhãn `playwright.version:1.60.0`. Ghi lại dung lượng image. Khi bật Advanced, đặt `SANDBOX_IMAGE=gamecreator-sandbox:pw1.60.0-<rev>` (regex trong `readSandboxConfig` chấp nhận tag dạng này). Digest `@sha256:` chỉ dùng được với image có RepoDigest từ registry, image build cục bộ thì dùng tag theo commit.
-
-Lưu ý: `test:sandbox` luôn dùng tên mặc định `gamecreator-sandbox:pw1.60.0`, nên **giữ cả hai tag**.
-
-### F.6 `sandbox:verify`
-
-Chạy runner thật và so sánh cách ly với cấu hình. Thoát 0 chỉ khi mọi mục đạt:
-
-```bash
-# rootful qua sudo, không dùng npm dưới sudo để tránh file/cache thuộc root:
-sudo env PATH="$PATH" "$(command -v node)" apps/api/dist/sandbox/verify-main.js
-# nếu user hiện tại dùng được docker không cần sudo:
-npm run sandbox:verify
-```
-
-Kết quả mong đợi (đã thấy trên Docker Desktop, **chưa thấy trên EC2**): `[sandbox] OK: container isolation matches the configuration.` Báo cáo JSON: `uid 10001`, `capEff/capBnd` toàn 0, `noNewPrivs 1`, `seccomp 2`, `rootWritable false`, `tmpBytes 67108864`, `externalAddresses []`, `networkReachable false`, `dnsResolves false`, `dockerSocketPresent false`, `hostPathsReadable []`, `secretEnvNames []`, `memoryMaxBytes 805306368`, `pidsMax 256`, `cpuQuota 100000/100000`, `unexpectedMounts []`.
-
-Nếu `FAILED`: đọc từng dòng lỗi. Mỗi dòng ứng với một điều kiện của `evaluateProbe`. Không sửa ngưỡng để cho qua.
-
-### F.7 Test tích hợp sandbox
-
-```bash
-sudo env SANDBOX_INTEGRATION=1 PATH="$PATH" "$(command -v node)" node_modules/vitest/vitest.mjs run apps/api/test/sandbox-integration.test.ts
-# hoặc, nếu user dùng được docker không cần sudo:
-SANDBOX_INTEGRATION=1 npm run test:sandbox
-```
-
-25 test: tự kiểm tra cách ly và negative control (container thiếu cờ hardening phải bị phát hiện), không root/setuid, không mạng/DNS/metadata, không `docker.sock`/FS host/env host, root chỉ đọc, `/tmp` tmpfs `noexec`, fork bomb, hết RAM, vòng lặp vô hạn (timeout), giới hạn CPU, tràn output, hủy job, dọn container cũ, ký tự shell trong dữ liệu job, và Playwright thật trong container (game chuẩn, lỗi JS, game treo, timeout, hủy, song song, `concurrency=1`, fail-closed khi thiếu `docker`/thiếu image). Mất khoảng 90 giây trên Docker Desktop.
-
-Ghi chú:
-
-- Chạy `vitest` dưới `sudo` có thể tạo `node_modules/.vite` thuộc root; nếu `npm test` sau đó báo `EACCES`, chạy `sudo chown -R "$USER": node_modules/.vite`. `[XÁC MINH]`
-- Đã quan sát kiểm tra game có flake (khoảng 2/76 lần trên Docker Desktop: "vượt ngân sách vòng lặp/CPU mỗi frame", "đạn không xuất hiện"). Nếu một test Playwright thất bại, **ghi lại tên test và lỗi, chạy lại một lần để phân loại flake**, không bỏ qua test và không nới điều kiện.
-- Kết quả bằng rootful daemon **không** chứng minh phương án rootless. Nếu chọn rootless, lặp lại F.4 đến F.7 bằng daemon và user rootless.
-
-### F.8 Kiểm tra giới hạn tài nguyên
-
-- `sandbox:verify` đã so `memory.max`, `pids.max`, `cpu.max` đo **bên trong** container với cấu hình. Đó là bằng chứng chính.
-- Test fork bomb / OOM / CPU / output flood chứng minh giới hạn có tác dụng.
-- Trong lúc test chạy, ở terminal khác: `sudo docker stats --no-stream` và `free -m`. Máy phải còn RAM trống và không dùng swap liên tục.
-
-### F.9 Kiểm tra dọn dẹp
-
-```bash
-sudo docker ps -a --filter label=gamecreator.sandbox=1     # phải rỗng sau khi test xong
-sudo docker ps -a                                          # chỉ còn container không liên quan (nếu có)
-sudo docker system df
-```
-
-### F.10 Bảng nghiệm thu Sandbox trên EC2
-
-| Hạng mục | Trạng thái |
-| --- | --- |
-| `docker info` (cgroup v2, seccomp, không cảnh báo giới hạn) | `[CHƯA]` |
-| Build image | `[CHƯA]` |
-| `sandbox:verify` thoát 0 | `[CHƯA]` |
-| `test:sandbox` 25/25 | `[CHƯA]` |
-| Không còn container `gamecreator.sandbox=1` | `[CHƯA]` |
-| Phương án quyền Docker cho backend đã chọn và kiểm chứng | `[CHƯA]` (blocker B1) |
-| Kiểm thử đường backend → queue → sandbox (mục K.7) | `[CHƯA]` |
-
-**Chỉ khi toàn bộ bảng trên là đạt (kèm kết quả ghi lại) mới được nói sandbox đã được kiểm thử trên Ubuntu EC2.** Ngay cả khi đó, đây vẫn là cách ly bằng container dùng chung kernel (mục M.3).
+Kiểm tra tùy chọn trước khi deploy `[XÁC MINH]`: `npm test` (vitest, không cần Docker và không cần Chromium). Trên EC2 chưa chạy.
 
 ---
 
@@ -431,12 +232,11 @@ sudo docker system df
 
 **Rủi ro khi chạy backend bằng `ubuntu`.** User `ubuntu` trên AMI Ubuntu của AWS thường có sudo không cần mật khẩu (`[XÁC MINH]` bằng `sudo -l`). Backend là process nhận request từ Internet. Nếu có lỗ hổng thực thi mã trong backend hay trong một dependency của nó, kẻ tấn công chạy lệnh với quyền của `ubuntu`, và vì `sudo` không cần mật khẩu nên chạy được lệnh với quyền **root**. Khi đó họ đọc được `/etc/nginx/.htpasswd-gamecreator`, khóa riêng TLS trong `/etc/letsencrypt`, khóa API, và điều khiển cả máy. Việc chạy backend bằng `ubuntu` cũng cho nó đọc/ghi toàn bộ thư mục home (SSH key, source, lịch sử).
 
-- **Giai đoạn 1 (Advanced tắt):** khuyến nghị chạy bằng **user riêng không có sudo** (mục G.1b). Giữ `ubuntu` chỉ là phương án tạm, chấp nhận rủi ro nêu trên, nên dùng khi đang thử trong mạng riêng và **chưa mở 80/443 ra Internet**. Backend ở Giai đoạn 1 không gọi Docker và không chạy code do AI sinh ra, nên không cần quyền Docker.
-- **Giai đoạn 2:** user riêng không có sudo và không thuộc nhóm `docker` là **bắt buộc**, cùng quyền Docker theo phương án đã kiểm chứng (mục F.3, blocker B1).
+- Khuyến nghị chạy bằng **user riêng không có sudo** (mục G.1b). Giữ `ubuntu` chỉ là phương án tạm, chấp nhận rủi ro nêu trên, nên dùng khi đang thử trong mạng riêng và **chưa mở 80/443 ra Internet**. Backend không chạy code do AI sinh ra và không cần quyền Docker.
 
-### G.1b Tạo user dịch vụ không có sudo `[CHƯA]` (khuyến nghị cho Giai đoạn 1)
+### G.1b Tạo user dịch vụ không có sudo `[CHƯA]` (khuyến nghị)
 
-Chưa chạy thử trên EC2. Nguyên tắc: user dịch vụ chỉ **đọc** code và file môi trường, không **ghi**, không có sudo, không đọc được home của `ubuntu`, không vào nhóm `docker`. Mọi lệnh chạy bằng `ubuntu` (quản trị) với `sudo`.
+Chưa chạy thử trên EC2. Nguyên tắc: user dịch vụ chỉ **đọc** code và file môi trường, không **ghi**, không có sudo, không đọc được home của `ubuntu`. Mọi lệnh chạy bằng `ubuntu` (quản trị) với `sudo`.
 
 **Bước 0: kiểm tra Node.js và PM2 nằm ở đâu.** Đây là điều kiện tiên quyết:
 
@@ -446,17 +246,16 @@ stat -c '%a %U' /home/ubuntu
 ```
 
 - Nếu cả hai nằm ngoài `/home/ubuntu` (ví dụ dưới `/usr/bin`, `/usr/local/bin`, `/usr/lib/node_modules`) thì mọi user chạy được: tiếp tục.
-- Nếu nằm dưới `/home/ubuntu` (ví dụ `/home/ubuntu/.nvm/...`) thì user dịch vụ **không** chạy được. Đây là **blocker B8**: chưa có phương án đã kiểm chứng trong tài liệu này (cần cài Node/PM2 ở vị trí dùng chung hoặc cài riêng cho user dịch vụ; chưa chọn). **Không** giải quyết bằng cách mở quyền thư mục `/home/ubuntu`, thêm user dịch vụ vào nhóm của `ubuntu` hoặc vào nhóm `sudo`/`docker`.
+- Nếu nằm dưới `/home/ubuntu` (ví dụ `/home/ubuntu/.nvm/...`) thì user dịch vụ **không** chạy được. Đây là **blocker B8**: chưa có phương án đã kiểm chứng trong tài liệu này (cần cài Node/PM2 ở vị trí dùng chung hoặc cài riêng cho user dịch vụ; chưa chọn). **Không** giải quyết bằng cách mở quyền thư mục `/home/ubuntu`, thêm user dịch vụ vào nhóm của `ubuntu` hoặc vào nhóm `sudo`.
 
 **Bước 1: tạo user.** Tài khoản thường (không phải `--system`), shell `nologin`, không mật khẩu (nên bị khóa), không nhóm đặc quyền:
 
 ```bash
 sudo useradd --create-home --shell /usr/sbin/nologin gamecreator
-id gamecreator                      # chỉ nhóm gamecreator; không có sudo, docker
+id gamecreator                      # chỉ nhóm gamecreator; không có sudo
 sudo -l -U gamecreator              # mong đợi: "is not allowed to run sudo"
 ```
 
-Chọn tài khoản thường để Giai đoạn 2 (Rootless Docker cần `/etc/subuid` và `/etc/subgid`) không phải tạo lại user. Việc đó chưa kiểm chứng.
 
 **Bước 2: đặt bản build ở nơi root sở hữu, user dịch vụ chỉ đọc.** Build ở `/home/ubuntu/PRJ27` như mục E (bằng `ubuntu`), rồi sao chép sang `/opt/gamecreator/app`. Không để user dịch vụ chạy trực tiếp trong `/home/ubuntu/PRJ27`:
 
@@ -569,7 +368,6 @@ module.exports = {
       HOST: '127.0.0.1',
       PORT: '3001',
       TRUST_PROXY: 'loopback',
-      ADVANCED_AI_ENABLED: 'false',
     },
   }],
 };
@@ -578,7 +376,7 @@ EOF
 
 File này không chứa bí mật. Khóa API nằm trong `apps/api/.env` (mục D.1).
 
-**Về `max_memory_restart: '1G'`:** đây là giá trị **tạm thời** (`pm2 monit`/`pm2 describe` dưới đây chạy bằng đúng user đang chạy backend, xem G.1b), đặt như một chốt chặn chống rò rỉ bộ nhớ. Nó **chưa được đo trên EC2 8 GB RAM** và không được coi là mức tối ưu: chưa có số đo RSS của backend dưới tải thật. Khi RSS vượt ngưỡng, PM2 khởi động lại backend, làm đứt request đang chạy và mất hàng đợi (mục G.6). Cách hiệu chỉnh: sau khi chạy với tải thật nhiều ngày, theo dõi `pm2 monit` hoặc `pm2 describe gamecreator-api` (mức bộ nhớ), rồi đặt ngưỡng cao hơn mức dùng bình thường; xem lại khi bật Advanced.
+**Về `max_memory_restart: '1G'`:** đây là giá trị **tạm thời** (`pm2 monit`/`pm2 describe` dưới đây chạy bằng đúng user đang chạy backend, xem G.1b), đặt như một chốt chặn chống rò rỉ bộ nhớ. Nó **chưa được đo trên EC2 8 GB RAM** và không được coi là mức tối ưu: chưa có số đo RSS của backend dưới tải thật. Khi RSS vượt ngưỡng, PM2 khởi động lại backend, làm đứt request đang chạy và mất hàng đợi (mục G.6). Cách hiệu chỉnh: sau khi chạy với tải thật nhiều ngày, theo dõi `pm2 monit` hoặc `pm2 describe gamecreator-api` (mức bộ nhớ), rồi đặt ngưỡng cao hơn mức dùng bình thường.
 
 Mẫu này viết cho user `ubuntu` (đường dẫn `/home/ubuntu/...`). Nếu dùng user dịch vụ riêng (mục G.1b, khuyến nghị) thì đường dẫn, quyền file và lệnh `pm2` khác, theo G.1b.
 
@@ -591,7 +389,7 @@ pm2 status
 pm2 logs gamecreator-api --lines 30 --nostream
 ```
 
-Log khởi động mong đợi: `[api] http://127.0.0.1:3001 ...` và `[advanced] tắt (mặc định; chỉ bật khi ADVANCED_AI_ENABLED=true và NODE_ENV khác production): ...`. Nếu thấy lỗi `PORT`/`AI_*`/`TRUST_PROXY phải là...`, đó là kiểm tra biến môi trường.
+Log khởi động mong đợi: `[api] http://127.0.0.1:3001 ...`. Nếu thấy lỗi `PORT`/`AI_*`/`TRUST_PROXY phải là...`, đó là kiểm tra biến môi trường.
 
 Tự chạy sau reboot (PM2 in ra một lệnh `sudo` cần chạy nguyên văn):
 
@@ -603,10 +401,6 @@ systemctl status pm2-ubuntu --no-pager
 ```
 
 Nếu Node cài qua nvm, lệnh `pm2 startup` in ra đường dẫn Node tương ứng; dùng đúng dòng đó. Kiểm chứng bằng reboot thật (mục K.8).
-
-### G.4 Cho Giai đoạn 2 với Rootless Docker `[ADVANCED]` `[CHƯA]`
-
-Process PM2 do systemd hệ thống khởi động không có `XDG_RUNTIME_DIR` và `DOCKER_HOST`. Nếu dùng rootless, thêm vào `env` của ecosystem (thay `<UID>` bằng `id -u` của user dịch vụ): `DOCKER_HOST: 'unix:///run/user/<UID>/docker.sock'`, `XDG_RUNTIME_DIR: '/run/user/<UID>'`, cùng các biến `SANDBOX_*`/`GAME_JOB_*` (mục D.3). Hai biến này nằm trong danh sách CLI được phép (`docker-sandbox.ts`). Daemon rootless phải chạy trước. Nếu backend khởi động trước daemon, sandbox báo chưa sẵn sàng và kiểm tra lại sau tối đa 60 s; nếu vẫn chưa, restart bằng đúng daemon của user đang chạy backend (`pm2 restart gamecreator-api` cho `ubuntu`, `sudo -u gamecreator -H pm2 restart gamecreator-api` cho `gamecreator`). `[XÁC MINH]`
 
 ### G.5 Vận hành hằng ngày
 
@@ -625,7 +419,7 @@ Log PM2 nằm ở `~/.pm2/logs/` **của user đang chạy backend**: `/home/ubu
 
 ### G.6 Graceful shutdown
 
-`server.ts` bắt `SIGINT` và `SIGTERM` (PM2 gửi `SIGINT` rồi `SIGKILL` sau `kill_timeout`): dừng nhận job, hủy job đang chờ, cho job đang chạy 2 giây, hủy phần còn lại và dừng container, rồi đóng HTTP và `closeIdleConnections()`. Cưỡng chế thoát với mã 1 sau 8 giây. Hàng đợi nằm trong bộ nhớ nên **job đang chờ hoặc đang chạy mất khi khởi động lại**, client thấy stream kết thúc và phải gửi lại.
+`server.ts` bắt `SIGINT` và `SIGTERM` (PM2 gửi `SIGINT` rồi `SIGKILL` sau `kill_timeout`): đóng HTTP và `closeIdleConnections()`, cưỡng chế thoát với mã 1 sau 8 giây. Một lần tạo game đang chạy bị cắt khi khởi động lại; client phải gửi lại.
 
 Kiểm chứng (bằng đúng daemon của user đang chạy backend): `pm2 restart gamecreator-api` rồi `pm2 logs` không thấy `SIGKILL`/timeout; `pm2 status` quay lại `online`.
 
@@ -660,7 +454,7 @@ ls -l /var/www/gamecreator /var/www/gamecreator/runtime
 
 Quyền: root sở hữu, thư mục 755, file 644. Nginx (user `www-data`, xem `grep -E '^user' /etc/nginx/nginx.conf`) chỉ cần đọc. Không đặt file bí mật hay `.env` ở đây. Cấu hình Nginx đã chặn mọi đường dẫn bắt đầu bằng dấu chấm (`location ~ /\.`).
 
-Kiểm tra tính toàn vẹn: `/var/www/gamecreator/index.html`, `assets/*.js`, `runtime/game.js` và `runtime/advanced.js` phải tồn tại. Thiếu `runtime/*` thì preview game không chạy.
+Kiểm tra tính toàn vẹn: `/var/www/gamecreator/index.html`, `assets/*.js`, `runtime/game.js` phải tồn tại. Thiếu `runtime/*` thì preview game không chạy.
 
 ---
 
@@ -676,7 +470,7 @@ Nginx 1.24.0 đã cài `[ĐÃ XONG]`. File mẫu `deploy/nginx/gamecreator.conf`
 4. **File tĩnh**: `root /var/www/gamecreator`, `try_files $uri $uri/ /index.html`, kể cả `/runtime/` đều sau mật khẩu.
 5. **Header chuyển tiếp**: `Host $server_name` (không phải Host client gõ), `Origin $http_origin`, `X-Real-IP` và `X-Forwarded-For` = `$remote_addr`, `X-Forwarded-Proto $scheme`; **xóa** `Authorization`, `Proxy-Authorization`, `X-Forwarded-Host`, `Forwarded`.
 6. **Rate limit**: `/api/` 30 request/phút mỗi IP, burst 10, tối đa 8 kết nối đồng thời; phần còn lại của site 120 request/phút, burst 40; vượt mức trả `429`. Request sai mật khẩu vẫn được tính. `limit_req` chạy trước kiểm tra mật khẩu nên request không có mật khẩu tới `/api/` cũng bị tính vào hạn mức.
-7. **Streaming**: `proxy_buffering off`, `proxy_read_timeout 300s`, `proxy_send_timeout 300s` cho NDJSON.
+7. **Thời gian chờ**: `proxy_read_timeout 90s` và `proxy_send_timeout 90s`. Một lần tạo game chờ AI tối đa 50 giây, cộng thời gian chờ quota của Groq và dựng màn; trình duyệt bỏ cuộc sau 60 giây.
 8. **Giới hạn body**: `client_max_body_size 16k` (Express cũng giới hạn 16 KB; vượt thì 413).
 9. **Log**: `/var/log/nginx/gamecreator.access.log`, `/var/log/nginx/gamecreator.error.log`. Nginx không ghi header `Authorization` vào log.
 
@@ -829,11 +623,10 @@ Tài liệu **không** thay đổi cấu hình AWS. Kiểm tra Security Group c�
 | 443 (HTTPS) | Mở khi có domain và chứng chỉ | Điểm vào ứng dụng |
 | 3001 (backend) | **Không mở** | Backend nghe `127.0.0.1` |
 | 5173 (Vite) | **Không mở** | Không chạy Vite trong production |
-| 2375/2376 (Docker API) | **Không mở** | Daemon chỉ dùng Unix socket; kiểm tra `ss -ltnp` |
 
-Khuyến nghị khác (không bắt buộc cho runbook, `[XÁC MINH]`): yêu cầu IMDSv2 cho instance. Sandbox dùng `--network=none` nên container không tới được metadata, nhưng bản thân backend/host vẫn tới được.
+Khuyến nghị khác (không bắt buộc cho runbook, `[XÁC MINH]`): yêu cầu IMDSv2 cho instance.
 
-Outbound cần: Internet cho `git`, npm registry, `apt`, Docker/MCR (build image), Let's Encrypt, và API của Groq/Gemini (backend gọi). Không giới hạn outbound ở Security Group nếu chưa kiểm tra đủ các đích đó.
+Outbound cần: Internet cho `git`, npm registry, `apt`, Let's Encrypt, và API của Groq/Gemini (backend gọi). Không giới hạn outbound ở Security Group nếu chưa kiểm tra đủ các đích đó.
 
 Khi **Stop/Start** instance, Elastic IP được giữ nguyên (public DNS mặc định đổi). Domain trỏ vào Elastic IP nên không phải cập nhật DNS.
 
@@ -841,7 +634,7 @@ Khi **Stop/Start** instance, Elastic IP được giữ nguyên (public DNS mặc
 
 ## K. Verification
 
-Chạy sau khi triển khai Giai đoạn 1. Dùng `curl -u friends` để curl tự hỏi mật khẩu (không đưa mật khẩu vào dòng lệnh). `DOMAIN` là domain thật. Không chạy các bài thử rate limit liên tiếp: bạn sẽ bị chặn IP của chính mình tới khi hết cửa sổ (khoảng một phút).
+Chạy sau khi triển khai. Dùng `curl -u friends` để curl tự hỏi mật khẩu (không đưa mật khẩu vào dòng lệnh). `DOMAIN` là domain thật. Không chạy các bài thử rate limit liên tiếp: bạn sẽ bị chặn IP của chính mình tới khi hết cửa sổ (khoảng một phút).
 
 ### K.1 Backend
 
@@ -850,8 +643,8 @@ Chạy sau khi triển khai Giai đoạn 1. Dùng `curl -u friends` để curl t
 pm2 status                                       # gamecreator-api: online
 curl -s http://127.0.0.1:3001/api/health         # {"status":"ok","service":"ai-game-creator-api","mode":"multi-provider"}
 ss -ltnp | grep 3001                             # 127.0.0.1:3001
-curl -s http://127.0.0.1:3001/api/agent/config   # "enabled":false  (Advanced tắt)
-pm2 logs gamecreator-api --lines 20 --nostream   # có dòng "[advanced] tắt ..."
+curl -s http://127.0.0.1:3001/api/health    # {"status":"ok","service":"ai-game-creator-api","mode":"multi-provider"}
+pm2 logs gamecreator-api --lines 20 --nostream   # có dòng "[api] http://127.0.0.1:3001 ..."
 ```
 
 ### K.2 Nginx và Basic Auth `[CẦN DOMAIN]`
@@ -860,10 +653,10 @@ pm2 logs gamecreator-api --lines 20 --nostream   # có dòng "[advanced] tắt .
 sudo nginx -t
 curl -sI "http://$DOMAIN/"                       # 301, Location https://..., KHÔNG có WWW-Authenticate
 curl -sI "https://$DOMAIN/"                      # 401 + WWW-Authenticate: Basic realm="GameCreator"
-for p in / /index.html /runtime/advanced.js /api/health /nope; do
+for p in / /index.html /runtime/game.js /api/health /nope; do
   printf '%s ' "$p"; curl -s -o /dev/null -w '%{http_code}\n' "https://$DOMAIN$p"
 done                                             # tất cả 401
-for p in /api/games/generate /api/ai/test-connection /api/agent/generate; do
+for p in /api/shooter/generate /api/ai/test-connection; do
   printf 'POST %s ' "$p"; curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' -d '{}' "https://$DOMAIN$p"
 done                                             # tất cả 401
 curl -s -o /dev/null -w '%{http_code}\n' -u friends:sai-mat-khau "https://$DOMAIN/"   # 401
@@ -910,62 +703,17 @@ curl -s -u friends -H 'X-Forwarded-For: 1.2.3.4' -H 'X-Real-IP: 1.2.3.4' -H 'Hos
 
 Mong đợi ở cửa sổ 1: `Host` là domain thật (không phải `localhost`); `X-Forwarded-For` và `X-Real-IP` là IP thật của bạn (không phải `1.2.3.4`); **không** có `Authorization`, `Proxy-Authorization`, `Forwarded`, `X-Forwarded-Host`. Nếu `tcpdump` chưa có: `sudo apt-get install -y tcpdump`.
 
-### K.6 Advanced phải tắt
-
-```bash
-curl -s -u friends "https://$DOMAIN/api/agent/config"          # "enabled":false
-curl -s -u friends -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' \
-  -H 'Host: localhost' -H 'Origin: http://localhost' -d '{"providerId":"groq","modelId":"openai/gpt-oss-20b","prompt":"test"}' \
-  "https://$DOMAIN/api/agent/generate"                          # 403
-```
-
-### K.7 Docker, Sandbox, Playwright `[ADVANCED]`
-
-Chỉ khi chuẩn bị bật Advanced. Mục F.2–F.9 là kiểm tra Docker, sandbox, Playwright-trong-container. Để kiểm thử đường **backend → hàng đợi → sandbox** mà không đổi gate production, chạy tạm một backend thứ hai ở **chế độ không production**, loopback, cổng khác, và gọi từ chính EC2 (Host `127.0.0.1:3002` thỏa `advancedAllowed`). Dùng khóa Groq thật nên tốn quota. `[CHƯA]`, chưa chạy thử.
-
-**Quy tắc bắt buộc: chạy bằng đúng user, đúng daemon Docker, đúng image store và đúng file môi trường mà production sẽ dùng.** Hai daemon (rootful và rootless) có kho image riêng, nên image build ở daemon này không tồn tại ở daemon kia (`--pull=never` báo thiếu image). Chạy test K.7 bằng `ubuntu` với `sudo docker`, hoặc với nhóm `docker`, chỉ chứng minh được đường code, **không** chứng minh mô hình quyền sẽ dùng ở production, nên **không** được dùng làm căn cứ nghiệm thu cho phương án Rootless/user riêng.
-
-Điều kiện để chạy theo mô hình user riêng và Rootless Docker (F.3, G.1b, G.4), tất cả phải đạt trước:
-
-- Daemon rootless của `gamecreator` đang chạy và socket `/run/user/<UID>/docker.sock` tồn tại (cần `loginctl enable-linger gamecreator`).
-- Image `gamecreator-sandbox:pw1.60.0` đã được build **bằng chính daemon đó** (kiểm tra bằng `rdocker image ls gamecreator-sandbox`, hàm `rdocker` ở L.4).
-- `sandbox:verify` và `test:sandbox` (F.6, F.7) đã đạt bằng daemon đó.
-
-Backend tạm chạy bằng `gamecreator`, **từ thư mục `apps/api` trong `/opt`** (`dotenv` đọc `.env` theo thư mục làm việc, và user `gamecreator` không đọc được thư mục `ubuntu` đang đứng):
-
-```bash
-SUID=$(id -u gamecreator)
-cd /opt/gamecreator/app/apps/api
-sudo -u gamecreator -H env \
-  XDG_RUNTIME_DIR="/run/user/$SUID" DOCKER_HOST="unix:///run/user/$SUID/docker.sock" \
-  NODE_ENV=development ADVANCED_AI_ENABLED=true ADVANCED_DIAGNOSTICS=0 HOST=127.0.0.1 PORT=3002 \
-  node dist/server.js
-# ADVANCED_DIAGNOSTICS=0 để không ghi prompt/code vào .local-diagnostics
-# Xem G.4: XDG_RUNTIME_DIR và DOCKER_HOST nằm trong danh sách biến mà backend chuyển cho Docker CLI.
-```
-
-Ở terminal khác:
-
-```bash
-curl -s http://127.0.0.1:3002/api/agent/config     # "enabled":true khi sandbox sẵn sàng
-curl -sN -H 'Content-Type: application/json' \
-  -d '{"providerId":"groq","modelId":"openai/gpt-oss-20b","prompt":"một game bắn máy bay đơn giản"}' \
-  http://127.0.0.1:3002/api/agent/generate        # luồng NDJSON
-```
-
-Sau đó Ctrl+C backend tạm và kiểm tra container sót bằng **cùng daemon** (`rdocker ps -a --filter label=gamecreator.sandbox=1`, phải rỗng; xem L.4). Ghi lại user (`ps -eo user:20,cmd | grep '[d]ist/server.js'`), daemon (`rdocker info --format '{{.SecurityOptions}}'` phải có `rootless`) và kết quả của lần chạy này vào bảng F.10.
-
 ### K.8 PM2 và reboot
 
 ```bash
 sudo reboot
 # đăng nhập lại sau ~1-2 phút. pm2 trần = daemon của ubuntu.
 pm2 status                                       # gamecreator-api: online (không cần chạy lại lệnh thủ công)
-systemctl is-active nginx docker pm2-ubuntu
+systemctl is-active nginx pm2-ubuntu
 curl -s http://127.0.0.1:3001/api/health
 ```
 
-Dùng user `gamecreator`: `sudo -u gamecreator -H pm2 status` và `systemctl is-active nginx docker pm2-gamecreator`. Hai lệnh này kiểm tra daemon khác với hai lệnh ở trên; chỉ chạy bộ lệnh của user đang chạy backend.
+Dùng user `gamecreator`: `sudo -u gamecreator -H pm2 status` và `systemctl is-active nginx pm2-gamecreator`. Hai lệnh này kiểm tra daemon khác với hai lệnh ở trên; chỉ chạy bộ lệnh của user đang chạy backend.
 
 ### K.9 Security Group từ bên ngoài
 
@@ -988,14 +736,13 @@ sudo grep -ciE 'authorization|gsk_|AIza|password' /var/log/nginx/gamecreator.*.l
 ```bash
 free -m ; swapon --show ; df -h / ; uptime
 pm2 monit                                        # q để thoát. gamecreator: sudo -u gamecreator -H pm2 monit
-sudo docker system df                            # [ADVANCED]
 ```
 
 ---
 
 ## L. Maintenance và Troubleshooting
 
-### L.1 Cập nhật và build lại (Giai đoạn 1)
+### L.1 Cập nhật và build lại
 
 Phần `git`/`npm` luôn chạy trong bản làm việc `/home/ubuntu/PRJ27` bằng `ubuntu`. **Restart thì theo user đang chạy backend** (xem "Hai daemon PM2 tách biệt" ở G.1b): `pm2` trần là daemon của `ubuntu`.
 
@@ -1028,19 +775,6 @@ sudo -u gamecreator -H pm2 restart gamecreator-api           # daemon của game
 
 Backend của `gamecreator` chạy từ `/opt/gamecreator/app`, nên thiếu bước sao chép này thì nó tiếp tục chạy bản cũ.
 
-### L.2 Rebuild Sandbox image `[ADVANCED]`
-
-Image chứa `apps/api/dist` và `advanced.js` tại thời điểm build, và runner trong image chạy `PlaywrightGameTester`. **Mỗi khi pull code đổi `apps/api/src/agent`, `apps/api/src/sandbox`, `packages/contracts` hoặc runtime web, phải build lại image**, nếu không phía host và phía container lệch nhau.
-
-```bash
-docker tag gamecreator-sandbox:pw1.60.0 gamecreator-sandbox:pw1.60.0-prev   # giữ bản cũ (dùng sudo nếu cần)
-npm run sandbox:build                                                        # hoặc 2 lệnh ở F.4
-# chạy lại F.6 (sandbox:verify), F.7 (test:sandbox), F.9
-# nếu hỏng: docker tag gamecreator-sandbox:pw1.60.0-prev gamecreator-sandbox:pw1.60.0
-```
-
-Dọn image/cache cũ khi ổ đĩa đầy: `docker image prune`, `docker builder prune` (xem `docker system df` trước; đừng xóa image đang dùng).
-
 ### L.3 Rollback
 
 `pm2 restart` trần nói chuyện với daemon của `ubuntu`. Dùng `gamecreator` thì thay bằng `sudo -u gamecreator -H pm2 restart gamecreator-api` và **sao chép lại `/opt/gamecreator/app`** (các lệnh `tar`/`chown`/`ln` ở L.1), vì process của `gamecreator` chạy từ đó chứ không chạy từ `/home/ubuntu/PRJ27`:
@@ -1055,31 +789,14 @@ sudo rm -rf /var/www/gamecreator.bad && sudo mv /var/www/gamecreator /var/www/ga
 pm2 restart gamecreator-api     # daemon của ubuntu. gamecreator: xem đoạn trên
 ```
 
-Khôi phục `/var/www/gamecreator.prev` chỉ lùi được **một** bản. Muốn lùi xa hơn thì build lại từ commit cũ rồi copy lại (mục H). Với Advanced thì khôi phục cả image (L.2). Không dùng `git reset --hard` trên máy chủ nếu chưa biết bản nào đang chạy.
+Khôi phục `/var/www/gamecreator.prev` chỉ lùi được **một** bản. Muốn lùi xa hơn thì build lại từ commit cũ rồi copy lại (mục H). Không dùng `git reset --hard` trên máy chủ nếu chưa biết bản nào đang chạy.
 
-### L.4 Kiểm tra RAM/CPU và container sót
+### L.4 Kiểm tra RAM/CPU
 
 ```bash
 free -m ; uptime ; top -bn1 | head -15
 ps -eo pid,user,%mem,%cpu,cmd --sort=-%mem | head
-sudo docker ps -a --filter label=gamecreator.sandbox=1     # phải rỗng khi không có job
-# dọn: xargs -r (--no-run-if-empty) không chạy docker rm khi danh sách rỗng, nên không lỗi
-sudo docker ps -aq --filter label=gamecreator.sandbox=1 | xargs -r sudo docker rm -f
 ```
-
-Chỉ dọn container có nhãn của sandbox. Backend cũng tự dọn container sót khi khởi động (Advanced bật).
-
-**Phải dọn đúng daemon.** `sudo docker` nói chuyện với daemon **rootful**. Daemon rootful và rootless là hai daemon riêng, mỗi cái có danh sách container và kho image riêng. Nếu backend dùng Rootless Docker của user `gamecreator` (mục F.3, G.4) thì lệnh trên **không thấy** container của nó. Dùng hàm sau, trỏ vào socket của daemon rootless (`[CHƯA]`, chưa chạy thử):
-
-```bash
-SUID=$(id -u gamecreator)
-rdocker() { sudo -u gamecreator -H env XDG_RUNTIME_DIR="/run/user/$SUID" DOCKER_HOST="unix:///run/user/$SUID/docker.sock" docker "$@"; }
-rdocker ps -a --filter label=gamecreator.sandbox=1          # phải rỗng khi không có job
-ids=$(rdocker ps -aq --filter label=gamecreator.sandbox=1)
-if [ -n "$ids" ]; then rdocker rm -f $ids; fi                # không chạy gì khi danh sách rỗng
-```
-
-Hàm `rdocker` dùng lại cho `docker image ls`, `docker info` ở các mục F, K.7 khi chạy với rootless. Muốn dùng nó ở phiên mới, khai báo lại hai dòng đầu.
 
 ### L.5 Out Of Memory
 
@@ -1089,13 +806,11 @@ sudo journalctl -k --since "1 hour ago" | grep -iE 'oom|killed process' | tail
 pm2 status ; pm2 logs gamecreator-api --lines 100 --nostream   # daemon của ubuntu. gamecreator: sudo -u gamecreator -H pm2 ...
 ```
 
-- Một container sandbox bị OOM-killed (`SANDBOX_MEMORY_MB`) làm game đó nhận lỗi "Sandbox dừng game vì...", không phải lỗi hệ thống.
 - Backend bị kernel OOM-kill thì PM2 khởi động lại nó (`autorestart`); kiểm tra `max_memory_restart` và RAM thật bằng `free -m`.
-- Chưa đo RAM thực tế của một job Advanced trên EC2. Đo bằng `docker stats --no-stream` trong lúc chạy trước khi tăng `GAME_JOB_CONCURRENCY`/`SANDBOX_CONCURRENCY`.
 
 ### L.6 Stop/Start EC2
 
-Stop rồi Start: Elastic IP giữ nguyên; `nginx`, `docker` tự khởi động (systemd); backend tự chạy lại nếu `pm2 startup` + `pm2 save` đã làm (mục G.3). Sau Start chạy lại K.1, K.2, K.8. Container sandbox không còn sau reboot (có `--rm`); backend dọn phần sót khi khởi động.
+Stop rồi Start: Elastic IP giữ nguyên; `nginx` tự khởi động (systemd); backend tự chạy lại nếu `pm2 startup` + `pm2 save` đã làm (mục G.3). Sau Start chạy lại K.1, K.2, K.8.
 
 ### L.7 Lỗi thường gặp
 
@@ -1106,63 +821,40 @@ Stop rồi Start: Elastic IP giữ nguyên; `nginx`, `docker` tự khởi độn
 | `502 Bad Gateway` ở `/api/` | Backend chưa chạy hoặc không nghe `127.0.0.1:3001` | `pm2 status` (daemon của `ubuntu`; `gamecreator`: `sudo -u gamecreator -H pm2 status`), `ss -ltnp \| grep 3001`, `pm2 logs` |
 | `401` mãi dù mật khẩu đúng | File htpasswd sai quyền hoặc sai nhóm | `ls -l /etc/nginx/.htpasswd-gamecreator` (root:www-data, 640) |
 | `429` khi duyệt bình thường | Vượt `limit_req` hoặc `AI_REQUESTS_PER_MINUTE` | Chờ ~1 phút; nhiều người sau cùng một NAT dùng chung hạn mức |
-| Backend không khởi động, lỗi `... phải là số nguyên từ ... đến ...` | Giá trị biến `AI_*`/`GAME_JOB_*`/`SANDBOX_*` ngoài khoảng | Sửa theo bảng ở mục D |
-| Backend báo `Cổng 3001 đang được sử dụng` | Một process khác (hoặc backend tạm ở K.7) đang giữ cổng | `ss -ltnp \| grep 3001` |
-| `permission denied` khi chạy `docker` | User không thuộc nhóm `docker` (đúng thiết kế) | Mục F.3, F.4. Không thêm backend vào nhóm `docker` |
-| `sandbox:verify` báo "Giới hạn CPU không đúng cấu hình" | Controller `cpu` không được ủy quyền (rootless) hoặc cgroup v1 | Mục F.3 điểm 3 |
-| Sandbox báo thiếu image | Image build ở daemon khác (rootful vs rootless) hoặc tag khác `SANDBOX_IMAGE` | `docker image ls gamecreator-sandbox` bằng đúng daemon |
+| Backend không khởi động, lỗi `... phải là số nguyên từ ... đến ...` | Giá trị biến `AI_*` ngoài khoảng | Sửa theo bảng ở mục D |
+| Backend báo `Cổng 3001 đang được sử dụng` | Một process khác đang giữ cổng | `ss -ltnp \| grep 3001` |
 | Trang trắng hoặc preview game không chạy | Thiếu `runtime/*.js` trong `/var/www/gamecreator` | Build lại (mục E) và copy lại (mục H) |
 
 ---
 
 ## M. Phụ lục
 
-### M.1 Địa chỉ client sau Nginx và hàng đợi job
+### M.1 Địa chỉ client sau Nginx
 
-Nginx ghi đè `X-Forwarded-For` và `X-Real-IP` bằng `$remote_addr`; Express chỉ tin header đó khi TCP peer là loopback (`TRUST_PROXY=loopback`). `advancedAllowed` không đọc `req.ip`: nó dùng `socket.remoteAddress` cùng kiểm tra `Host`/`Origin`, nên header giả không mở được Advanced. Không dùng IP/Host/Origin để quyết định ai được vào site.
+Nginx ghi đè `X-Forwarded-For` và `X-Real-IP` bằng `$remote_addr`; Express chỉ tin header đó khi TCP peer là loopback (`TRUST_PROXY=loopback`). Không dùng IP/Host/Origin để quyết định ai được vào site: việc đó là của Basic Auth.
 
-Hàng đợi job Advanced nằm trong bộ nhớ (không Redis). Hàng đầy hoặc backend đang tắt: `POST /api/agent/generate` trả 429 (kèm `Retry-After`) hoặc 503 **trước khi** stream. Đang chờ: stream NDJSON mở ngay và nhận sự kiện `status` ("Đang chờ đến lượt: vị trí N..."); hợp đồng NDJSON không đổi. Hết hạn chạy: `failed/timeout`; chờ quá lâu: `failed/rate_limit`; tắt máy: `failed/shutting_down`. Job đang chờ và đang chạy **mất khi khởi động lại**.
-
-### M.2 Cập nhật Playwright
-
-Phiên bản Playwright phải trùng ở bốn nơi; `apps/api/test/deploy-config.test.ts` kiểm tra và test đỏ nếu lệch:
-
-1. `package-lock.json` (và `apps/api/package.json`, `package.json` gốc cho `@playwright/test`).
-2. `ARG PLAYWRIGHT_VERSION` (và tag `FROM`) trong `deploy/sandbox/Dockerfile`.
-3. `SANDBOX_PLAYWRIGHT_VERSION` trong `apps/api/src/sandbox/docker-args.ts`.
-4. `SANDBOX_IMAGE` trong `.env` và `.env.example`. Tên image trong script `sandbox:build` (`package.json` gốc) cũng chứa phiên bản.
-
-Quy trình (ở máy phát triển, rồi deploy): nâng Playwright, `npm install`, sửa các chỗ trên, `npm test`, `npm run sandbox:build`, `npm run sandbox:verify`, `SANDBOX_INTEGRATION=1 npm run test:sandbox`, commit, rồi trên EC2 làm theo mục L.1–L.2 và đặt `SANDBOX_IMAGE` mới. Giữ image cũ cho tới khi image mới đạt kiểm tra.
 
 ### M.3 Rủi ro còn lại
 
-- Container dùng chung kernel với host: lỗ hổng kernel hoặc runtime container vẫn có thể thoát ra. Giữ Ubuntu và Docker được cập nhật bảo mật.
-- Quyền Docker của backend chưa giải quyết xong (blocker B1).
-- Chromium chạy `--no-sandbox` trong container (đánh đổi có chủ ý, mục F.1).
-- Hạn mức IP, hàng đợi và tin cậy proxy nằm trong bộ nhớ một process: mất khi khởi động lại, không dùng nhiều instance.
-- Kiểm tra game bằng Playwright phụ thuộc thời gian (khoảng 2/76 lần báo lỗi trên Docker Desktop). Chưa đo baseline với Chromium chạy trực tiếp.
+- Hạn mức IP và tin cậy proxy nằm trong bộ nhớ một process: mất khi khởi động lại, không dùng nhiều instance.
 - Mật khẩu dùng chung, không định danh từng người, không thu hồi riêng lẻ. Trình duyệt nhớ Basic Auth tới khi realm hoặc mật khẩu đổi; ứng dụng không có nút đăng xuất.
 - `Origin` của trình duyệt được chuyển tiếp nguyên vẹn (theo thiết kế).
 - Thiếu header bảo mật cho trang tĩnh ngoài HSTS (mục I.2).
-- Basic Auth chỉ kiểm soát ai vào được website. Nó **không** cách ly code do AI sinh ra.
 
 ---
 
-## Blocker trước Production và Advanced
+## Blocker trước Production
 
 | # | Blocker | Ảnh hưởng | Cần làm |
 | --- | --- | --- | --- |
-| B1 | Chưa có giải pháp quyền Docker cho backend đã kiểm chứng | Chặn Giai đoạn 2 | Chọn và chạy thử Rootless Docker (hoặc wrapper có review) bằng đúng user và daemon; đạt F.6 và F.7 |
-| B2 | Sandbox chưa được kiểm thử trên Ubuntu EC2 | Chặn Giai đoạn 2 | Mục F.2–F.10 |
-| B3 | **Advanced bị khóa ở production bởi code.** `app.ts` tắt khi `NODE_ENV=production`; `advancedAllowed` (`routes.ts`) chỉ cho loopback với `Host`/`Origin` là localhost; qua Nginx thì `Host` là domain nên luôn bị từ chối | Dù sandbox đạt, **không thể dùng Advanced qua domain nếu không có một thay đổi code riêng** | Ngoài phạm vi tài liệu này. Không đổi `NODE_ENV` hay `Host` để vượt qua |
 | B4 | Chưa có domain/chứng chỉ (theo thông tin hiện có) | Chặn bật site Nginx và mở 80/443 | Có domain: mục I.5 (khuyến nghị). Không có domain: B7 |
-| B5 | Chưa có `htpasswd`, ecosystem PM2 chưa được tạo/chạy thử | Chặn Giai đoạn 1 | Mục I.3, G |
+| B5 | Chưa có `htpasswd`, ecosystem PM2 chưa được tạo/chạy thử | Chặn việc chạy backend | Mục I.3, G |
 | B6 | Header bảo mật cho trang tĩnh còn thiếu | Rủi ro, không chặn | Thiết kế và thử riêng (mục I.2) |
 | B7 | **Chứng chỉ IP:** cần Certbot ≥ 5.4 (apt 24.04 chỉ có 2.9.0) và quy trình gia hạn tự động cho chứng chỉ 160 giờ chưa được xác minh trên EC2. Tài liệu không có lệnh cấp chứng chỉ IP | Chặn HTTPS trực tiếp trên Elastic IP (chỉ áp dụng nếu không dùng domain) | Dùng domain (I.5), hoặc xử lý I.5b như một thay đổi riêng có kiểm chứng gia hạn |
-| B8 | **User dịch vụ không sudo:** chưa biết Node/PM2 cài ở đâu. Nếu nằm dưới `/home/ubuntu` (nvm) thì user `gamecreator` không chạy được và chưa có phương án đã kiểm chứng. G.1b chưa chạy thử | Chặn việc chạy backend bằng user riêng (khuyến nghị cho Giai đoạn 1, bắt buộc cho Giai đoạn 2). Nếu chưa xong, chỉ chạy bằng `ubuntu` khi **chưa** mở Internet | `readlink -f "$(command -v node)" "$(command -v pm2)"` (G.1b bước 0), rồi chọn và kiểm chứng cách cài |
+| B8 | **User dịch vụ không sudo:** chưa biết Node/PM2 cài ở đâu. Nếu nằm dưới `/home/ubuntu` (nvm) thì user `gamecreator` không chạy được và chưa có phương án đã kiểm chứng. G.1b chưa chạy thử | Chặn việc chạy backend bằng user riêng (khuyến nghị). Nếu chưa xong, chỉ chạy bằng `ubuntu` khi **chưa** mở Internet | `readlink -f "$(command -v node)" "$(command -v pm2)"` (G.1b bước 0), rồi chọn và kiểm chứng cách cài |
 | B9 | **Security Group SSH 22** chưa được xác minh chỉ cho IP quản trị | Chặn mở 80/443 ra Internet | Cảnh báo ở mục J; kiểm tra trên AWS Console, không do tài liệu này thay đổi |
 
-## Thứ tự lệnh cần làm tiếp (Giai đoạn 1)
+## Thứ tự lệnh cần làm tiếp
 
 1. Xác minh trạng thái hiện có: mục B (các lệnh kiểm tra), `git -C /home/ubuntu/PRJ27 status -sb`, `id -nG`, `sudo -l`.
 2. `cd /home/ubuntu/PRJ27 && npm ci && npm run build` (mục C.3, E).
@@ -1170,6 +862,5 @@ Quy trình (ở máy phát triển, rồi deploy): nâng Playwright, `npm instal
 4. Khuyến nghị: tạo user dịch vụ không sudo và chạy PM2 bằng user đó (mục G.1b, cần giải quyết B8 trước); nếu chưa, chỉ dùng `ubuntu` khi chưa mở Internet. `pm2 start ...`, `pm2 save`, `pm2 startup` (mục G.3 hoặc G.1b); kiểm tra K.1.
 5. Copy frontend vào `/var/www/gamecreator` (mục H).
 6. `apache2-utils` + `htpasswd` (mục I.3).
-7. Kiểm tra Security Group: SSH 22 chỉ cho IP quản trị (cảnh báo ở mục J). Có domain: DNS → Security Group mở 80/443 → certbot → cài Nginx (mục I.5) → K.2 đến K.6.
+7. Kiểm tra Security Group: SSH 22 chỉ cho IP quản trị (cảnh báo ở mục J). Có domain: DNS → Security Group mở 80/443 → certbot → cài Nginx (mục I.5) → K.2 đến K.5.
 8. Reboot thử (K.8) và kiểm tra Security Group từ bên ngoài (K.9).
-9. Chỉ sau đó cân nhắc Giai đoạn 2: B1, B2, B3.

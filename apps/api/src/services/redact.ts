@@ -1,5 +1,4 @@
-/** Secret redaction for diagnostics. Shared by Standard and Advanced, so it
- * lives outside both: Standard must not depend on `agent/` or `sandbox/`. */
+/** Secret redaction for the run diagnostics. */
 
 /** Where a diagnostics writer puts its files (replaceable in tests). */
 export interface DiagnosticIO {

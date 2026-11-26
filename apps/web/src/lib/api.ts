@@ -1,4 +1,4 @@
-import { GenerateGameResponseSchema, GenerateShooterResponseSchema, HealthResponseSchema, ProvidersResponseSchema, TestConnectionResponseSchema, type ProviderSelection } from '@game-creator/contracts';
+import { GenerateShooterResponseSchema, HealthResponseSchema, ProvidersResponseSchema, TestConnectionResponseSchema, type ProviderSelection } from '@game-creator/contracts';
 import { fetchJson, requestSelection } from './api-client';
 export { ApiRequestError, describeError } from './api-client';
 export type { ApiIssue } from './api-client';
@@ -7,17 +7,6 @@ export async function checkHealth(signal: AbortSignal) {
   const result = HealthResponseSchema.safeParse(await fetchJson('/api/health', {}, signal));
   if (!result.success) throw new Error('Phản hồi health check không hợp lệ.');
   return result.data;
-}
-
-export async function generateGame(prompt: string, selection: ProviderSelection, signal: AbortSignal) {
-  const body = await fetchJson('/api/games/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, ...requestSelection(selection) }),
-  }, signal);
-  const result = GenerateGameResponseSchema.safeParse(body);
-  if (!result.success) throw new Error('Dữ liệu game không hợp lệ. Hãy kiểm tra backend và thử lại.');
-  return result.data.data;
 }
 
 /** The shooter: the prompt becomes a level on the server (brief, compiler, bot gate). */

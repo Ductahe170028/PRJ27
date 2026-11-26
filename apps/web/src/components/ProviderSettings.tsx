@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Settings2, LoaderCircle } from 'lucide-react';
-import { AUTO_MODEL_ID, SelectionPreferenceSchema, type ProviderInfo, type ProviderSelection } from '@game-creator/contracts';
+import { AUTO_MODEL_ID, type ProviderInfo, type ProviderSelection } from '@game-creator/contracts';
 import { describeError, getProviders, testConnection } from '../lib/api';
-
-const STORAGE_KEY = 'game-creator.provider.v1';
-const DEMO: ProviderSelection = { providerId: 'demo', modelId: 'platformer-v1' };
+import { DEMO, DEMO_TITLE, STORAGE_KEY, isDemoSelection, loadSelection } from '../lib/provider-selection';
 
 function reasonCopy(provider: ProviderInfo) {
   const prefix = provider.id.toUpperCase();
@@ -16,17 +14,8 @@ function reasonCopy(provider: ProviderInfo) {
   }
 }
 
-function loadSelection(): ProviderSelection {
-  try {
-    const parsed = SelectionPreferenceSchema.safeParse(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
-    if (!parsed.success) return DEMO;
-    // Older versions stored '' when no model was chosen yet.
-    return parsed.data.modelId === '' ? { ...parsed.data, modelId: AUTO_MODEL_ID } : parsed.data;
-  } catch { return DEMO; }
-}
-
 export function useProviderSettings() {
-  const [selection, setSelection] = useState(loadSelection);
+  const [selection, setSelection] = useState(() => loadSelection());
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -85,7 +74,7 @@ export function useProviderSettings() {
   const provider = providers.find((item) => item.id === selection.providerId);
   const automatic = selection.modelId === AUTO_MODEL_ID;
   const model = provider?.models.find((item) => item.id === (automatic ? provider.defaultModelId : selection.modelId));
-  const isDemo = selection.providerId === 'demo' && selection.modelId === 'platformer-v1';
+  const isDemo = isDemoSelection(selection);
   const available = isDemo || Boolean(!loading && !loadError && provider?.available && model);
   const message = isDemo ? 'Demo cục bộ · Không gọi AI'
     : loading ? 'Đang đọc cấu hình backend…' : loadError || (!provider ? 'Provider đã lưu không còn được hỗ trợ.'
@@ -95,7 +84,9 @@ export function useProviderSettings() {
   return { selection, providers, provider, model, automatic, available, isDemo, message, loading, loadError, testing, testMessage, testError, select, refresh, test };
 }
 
-export function ProviderSettings({ settings, disabled, advanced = false }: { settings: ReturnType<typeof useProviderSettings>; disabled: boolean; advanced?: boolean }) {
+export type ProviderSettingsState = ReturnType<typeof useProviderSettings>;
+
+export function ProviderSettings({ settings, disabled }: { settings: ProviderSettingsState; disabled: boolean }) {
   const [open, setOpen] = useState(false);
   const { selection, provider, model, providers, isDemo } = settings;
   const defaultModel = provider?.models.find((item) => item.id === provider.defaultModelId);
@@ -103,7 +94,7 @@ export function ProviderSettings({ settings, disabled, advanced = false }: { set
     <button className="settings-toggle" type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="provider-settings">
       <Settings2 size={17}/><span>Settings</span><span className="settings-current">{isDemo ? 'Demo' : provider?.name ?? selection.providerId}</span>
     </button>
-    <p className="settings-summary">{isDemo ? 'Moonlight Run' : model ? `${model.id}${settings.automatic ? ' · tự động' : ''}` : 'Chưa chọn model'}<span className={settings.available ? 'available' : 'unavailable'}>{settings.available ? 'Sẵn sàng' : 'Unavailable'}</span></p>
+    <p className="settings-summary">{isDemo ? DEMO_TITLE : model ? `${model.id}${settings.automatic ? ' · tự động' : ''}` : 'Chưa chọn model'}<span className={settings.available ? 'available' : 'unavailable'}>{settings.available ? 'Sẵn sàng' : 'Unavailable'}</span></p>
     {open && <div id="provider-settings" className="settings-content">
       <label className="field-label" htmlFor="provider">AI Provider</label>
       <select id="provider" value={selection.providerId} disabled={disabled || settings.loading} onChange={(event) => {
@@ -116,14 +107,14 @@ export function ProviderSettings({ settings, disabled, advanced = false }: { set
       </select>
       <label className="field-label" htmlFor="model">Model</label>
       <select id="model" value={selection.modelId} disabled={disabled || isDemo || !provider?.models.length} onChange={(event) => settings.select({ ...selection, modelId: event.target.value })}>
-        {isDemo ? <option value="platformer-v1">Moonlight Run (demo)</option> : <>
+        {isDemo ? <option value={DEMO.modelId}>{DEMO_TITLE} (demo)</option> : <>
           <option value={AUTO_MODEL_ID}>{defaultModel ? `Tự động — ${defaultModel.name} (khuyến nghị)` : 'Tự động'}</option>
           {!settings.automatic && !model && <option value={selection.modelId}>{selection.modelId || 'Chưa chọn'} — không còn hỗ trợ</option>}
           {provider?.models.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.id})</option>)}
         </>}
       </select>
       <p className={settings.available ? 'settings-info' : 'settings-info settings-warning'}>{settings.message}</p>
-      {!isDemo && model && <p className="settings-info">{advanced ? 'AI viết cơ chế chơi · Kiểm tra và sửa lỗi tự động' : `${model.capabilities.outputMode === 'json_schema' ? 'Structured output (JSON schema)' : 'JSON mode + kiểm tra Zod'} · Platformer / Top-down`}</p>}
+      {!isDemo && model && <p className="settings-info">{model.capabilities.outputMode === 'json_schema' ? 'Structured output (JSON schema)' : 'JSON mode + kiểm tra Zod'}</p>}
       <div className="settings-actions">
         <button type="button" onClick={() => void settings.test()} disabled={disabled || settings.testing || !settings.available || isDemo}>
           {settings.testing && <LoaderCircle size={13} className="spin"/>}{settings.testing ? 'Đang kiểm tra…' : 'Test connection'}

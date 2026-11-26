@@ -7,7 +7,7 @@ Quyết định chốt sau Standard 1A–1C. Cập nhật khi có quyết địn
 - **Top-down Survival Shooter**: một engine, nhiều game tùy biến bằng prompt (bối cảnh, quái, tốc độ, độ khó).
 - Không còn hứa "tạo mọi thể loại". Yêu cầu ngoài khả năng engine được báo rõ, không làm im lặng.
 
-## Đóng băng
+## Đóng băng (đã xong: phần này bị xóa, xem mục "Dọn nhà" ở cuối)
 
 - Platformer, Top-down Dodge/Collect (GameSpec v1) và Advanced Mode: giữ nguyên code, không phát triển thêm, không chạy mặc định (Advanced tắt, UI không hiện nút chọn chế độ).
 - Tag `legacy-standard-v1` giữ nguyên bản chạy được. Phần đặc thù platformer sẽ xóa sau khi shooter qua benchmark.
@@ -99,3 +99,11 @@ Bảo vệ căn cứ, pickup đạn, mobile/cảm ứng, chỉnh game bằng pro
 - **Bài đo thành test lâu dài** (`shooter-boss-reach.test.ts`): người chơi đứng yên bất tử, boss phải tới trong `max(140, holdRange + 40)` px trong 120 s ở mọi cặp boss × map. 300/300 trên 30 seed, 2000/2000 trên 200 seed, 0% bản đồ bị đơn giản hóa.
 - **Màn boss là về boss.** Quái thường nhẹ nhịp hơn trước boss (`beforePace` 0,7) và rất ít sau khi boss ra (20 s, `afterPace` 0,25). Bot bình thường trước cổng: 94,6 / 83,5 / 67,9 / 44,4 / 27,7% (intensity 1…5), đạt mọi khoảng mục tiêu; số màn boss bị cổng giảm mật độ ở intensity 3–5 giảm từ 70/79/90% xuống 33/57/74%.
 - **Chưa làm:** người chơi vẫn có thể đứng ở chỗ lưới của boss không nối tới (ví dụ lối vừa khít 68 px) và ra ngoài tầm với của boss (đo: 3 trên 2772 ván thử vị trí khác).
+
+## Dọn nhà: shooter là sản phẩm duy nhất
+
+- **Đã xóa** phần cũ từng bị đóng băng: "Standard" (GameSpec v1: platformer, Dodge/Collect, màn "Moonlight Run", route `/api/games/generate`, app `/?legacy=standard`, các dịch vụ sửa vị trí và mô phỏng nhảy) và "Advanced Mode" (AI Code Agent, sandbox Docker, hàng đợi job, các route `/api/agent/*`, biến `ADVANCED_AI_ENABLED`, `vitest.advanced*`). Bản cũ vẫn lấy lại được bằng tag **`legacy-standard-v1`** (`git checkout legacy-standard-v1`) và toàn bộ lịch sử git; không giữ gì "để phòng hờ" trong cây làm việc.
+- **Cấu trúc mới.** `packages/contracts/src/shooter/` (lõi mô phỏng thuần + schema màn), `packages/contracts/src/{index,ai}.ts` (hợp đồng API và nhà cung cấp), `apps/api/src/shooter/` (brief, compiler, cổng bot, dịch vụ), `apps/api/src/{providers,services,http}/` (hạ tầng AI dùng chung: nhà cung cấp, `AiGateway`, ngân sách yêu cầu, chẩn đoán trên đĩa), `apps/web/src/` (App, các thành phần nhỏ, ShooterScene vẽ). Bốn route còn lại: `GET /api/health`, `GET /api/ai/providers`, `POST /api/ai/test-connection`, `POST /api/shooter/generate`.
+- **Nguyên tắc.** Shooter là sản phẩm duy nhất; mô phỏng không biết Phaser, DOM, đồng hồ hay `Math.random` (test chặn); `apps/api` không import `apps/web` và ngược lại (có test); hạ tầng AI không biết gì về game. Muốn thêm một thể loại khác thì làm lại từ lõi, không nối vào đây.
+- **Đổi nhỏ khi dọn:** lựa chọn "demo" của giao diện là `demo` / `shooter-arena` (trình duyệt đã lưu `demo` / `platformer-v1` được đọc thành demo mới); chẩn đoán trên đĩa đổi tên kiểu và hàm (`RunDiagnostics`, `openRunDiagnostics`) nhưng giữ nguyên biến môi trường `STANDARD_DIAGNOSTICS(_DIR)`, thư mục `.local-diagnostics/` và dạng file; trường `genres` của `capabilities` trong `/api/ai/providers` đã bỏ.
+- Số liệu hiệu chỉnh và các bản chụp vàng không đổi một byte: [shooter-calibration.md](shooter-calibration.md); nhà cung cấp và giới hạn: [providers.md](providers.md).

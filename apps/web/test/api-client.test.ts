@@ -1,71 +1,59 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { generateGame, ApiRequestError, describeError } from '../src/lib/api';
-import { generateAdvanced, getAgentConfig } from '../src/lib/agent-api';
+import { ApiRequestError, describeError, generateShooter, getProviders, testConnection } from '../src/lib/api';
 
 const selection = { providerId: 'groq', modelId: 'auto' };
 const signal = () => new AbortController().signal;
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+// The error handling every call shares (the shooter-specific answers are in shooter-api.test.ts).
 describe('shared API error handling', () => {
-  const modes = [
-    { name: 'Standard', run: () => generateGame('game', selection, signal()) },
-    { name: 'Advanced', run: () => generateAdvanced('game', selection, signal(), vi.fn()) },
-  ];
-  it.each(modes)('$name validates malformed HTTP errors instead of trusting cast fields', async ({ run }) => {
+  it('does not trust the fields of a malformed HTTP error', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { message: { secret: 'bad' }, code: [], retryAfterSeconds: -5 } }, { status: 502 })));
-    await expect(run()).rejects.toMatchObject({ message: expect.stringContaining('HTTP 502'), code: undefined, retryAfterSeconds: undefined });
+    await expect(generateShooter('game', selection, signal())).rejects.toMatchObject({ message: expect.stringContaining('HTTP 502'), code: undefined, retryAfterSeconds: undefined });
   });
-  it.each(modes)('$name preserves structured errors and sends auto selection without a model ID', async ({ run }) => {
+
+  it('preserves a structured error and sends "auto" without a model id', async () => {
     const fetch = vi.fn(async () => Response.json({ error: { code: 'rate_limit', message: 'Hết quota', retryAfterSeconds: 60 } }, { status: 429 }));
     vi.stubGlobal('fetch', fetch);
-    await expect(run()).rejects.toEqual(new ApiRequestError('Hết quota', 'rate_limit', 60));
+    await expect(generateShooter('game', selection, signal())).rejects.toEqual(new ApiRequestError('Hết quota', 'rate_limit', 60));
     const options = (fetch.mock.calls as unknown as Array<[string, RequestInit]>)[0]![1];
     expect(JSON.parse(String(options.body))).toEqual({ prompt: 'game', providerId: 'groq' });
     expect(fetch).toHaveBeenCalledOnce();
   });
-  it('keeps GameSpec issues with path, code and message', async () => {
-    const issues = [
-      { path: 'title', code: 'invalid_format', message: 'Invalid string' },
-      'collectibles.0',
-    ];
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
-      error: {
-        code: 'invalid_game_spec',
-        message: 'Dữ liệu màn chơi không hợp lệ hoặc không thể chơi an toàn. Hãy đơn giản hóa mô tả rồi thử lại.',
-        issues,
-      },
-    }, { status: 422 })));
-    const error = await generateGame('game', selection, signal()).catch((cause: unknown) => cause);
-    expect(error).toMatchObject({ code: 'invalid_game_spec', issues });
-    expect(describeError(error, 'fallback').issues).toEqual(issues);
+
+  it('keeps issues with path, code and message, and adds the retry time to the text shown', async () => {
+    const issues = [{ path: 'theme', code: 'invalid_value', message: 'Giá trị không hợp lệ.' }, 'goal'];
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'invalid_brief', message: 'Không hợp lệ.', issues, retryAfterSeconds: 3 } }, { status: 422 })));
+    const error = await generateShooter('game', selection, signal()).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({ code: 'invalid_brief', issues });
+    expect(describeError(error, 'fallback')).toEqual({ message: 'Không hợp lệ. Có thể thử lại sau khoảng 3 giây.', code: 'invalid_brief', issues });
+    expect(describeError('not an error', 'fallback')).toEqual({ message: 'fallback', code: '', issues: [] });
   });
-  it('bounds the Advanced configuration request with the shared timeout', async () => {
+
+  it('bounds every request with the shared 60 s timeout and says so', async () => {
     const timeout = new AbortController();
     vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
     vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => new Promise((_resolve, reject) => {
       options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
     })));
-    const pending = getAgentConfig(signal());
+    const pending = getProviders(signal());
     timeout.abort(new DOMException('Timed out', 'TimeoutError'));
     await expect(pending).rejects.toThrow('phản hồi quá lâu');
     expect(AbortSignal.timeout).toHaveBeenCalledWith(60_000);
   });
-  it('keeps the longer timeout for Advanced generation', async () => {
-    const timeout = new AbortController();
-    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal);
+
+  it('tells the user when the backend cannot be reached', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
+    await expect(testConnection(selection, signal())).rejects.toThrow('Không kết nối được backend');
+  });
+
+  it('passes a cancellation by the caller through unchanged', async () => {
+    const controller = new AbortController();
     vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => new Promise((_resolve, reject) => {
       options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
     })));
-    const pending = generateAdvanced('game', selection, signal(), vi.fn());
-    timeout.abort(new DOMException('Timed out', 'TimeoutError'));
-    await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
-    expect(AbortSignal.timeout).toHaveBeenCalledWith(330_000);
-  });
-  it('cancels a response with the wrong streaming content type', async () => {
-    const cancel = vi.fn();
-    const body = new ReadableStream<Uint8Array>({ cancel });
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { headers: { 'content-type': 'text/html' } })));
-    await expect(generateAdvanced('game', selection, signal(), vi.fn())).rejects.toThrow('không hợp lệ');
-    expect(cancel).toHaveBeenCalledOnce();
+    const pending = generateShooter('game', selection, controller.signal);
+    controller.abort(new DOMException('Cancelled', 'AbortError'));
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

@@ -18,7 +18,7 @@ export interface AIProvider {
   readonly id: string;
   readonly name: string;
   generate(request: AIRequest): Promise<string>;
-  /** Advanced-only pacing, outside the per-network-request timeout/budget. */
+  /** Pacing of a provider with strict rate limits (Groq), outside the per-network-request timeout/budget. */
   prepare?(request: AIRequest): Promise<() => void>;
   testConnection(model: ModelInfo, signal: AbortSignal): Promise<void>;
 }

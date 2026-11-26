@@ -4,6 +4,7 @@
 export * from './constants.js';
 export * from './geometry.js';
 export * from './level.js';
+export { intBetween, labelOf } from './schema-helpers.js';
 export * from './navigation.js';
 export { createSim, elapsedSeconds, totalScheduledEnemies } from './state.js';
 export type { EnemyBullet, Pickup, ShooterBullet, ShooterEnemy, ShooterInput, ShooterState } from './state.js';

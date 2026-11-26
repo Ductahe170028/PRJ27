@@ -1,8 +1,8 @@
-import { AUTO_MODEL_ID, ApiErrorSchema, type GameSpecIssue, type ProviderSelection } from '@game-creator/contracts';
+import { AUTO_MODEL_ID, ApiErrorSchema, type ErrorIssue, type ProviderSelection } from '@game-creator/contracts';
 
 export const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
-export type ApiIssue = string | GameSpecIssue;
+export type ApiIssue = string | ErrorIssue;
 
 /** Backend error with its normalized code (e.g. rate_limit, missing_key). */
 export class ApiRequestError extends Error {

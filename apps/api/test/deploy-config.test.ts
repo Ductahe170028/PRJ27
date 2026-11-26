@@ -2,10 +2,8 @@
 // live checks in deploy/README.md, but they stop silent drift between files.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SANDBOX_IMAGE, SANDBOX_ENTRY_DIR, SANDBOX_PLAYWRIGHT_VERSION, SANDBOX_USER } from '../src/sandbox/docker-args.js';
 
 const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
-const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, { version?: string }> };
 
 /** Returns the text of the top-level `server { ... }` blocks. */
 function serverBlocks(conf: string): string[] {
@@ -84,10 +82,11 @@ describe('deploy/nginx/gamecreator.conf', () => {
     expect(directives(https!)).toContain('limit_req zone=gc_site burst=40 nodelay;');
   });
 
-  it('streams NDJSON unbuffered and waits longer than the longest silent gap', () => {
-    expect(apiLocation).toContain('proxy_buffering off;');
+  it('waits for the AI longer than the browser does (60 s), and no longer than a request can run', () => {
     const timeout = Number(/proxy_read_timeout (\d+)s;/.exec(apiLocation)?.[1]);
-    expect(timeout).toBeGreaterThanOrEqual(300);
+    expect(timeout).toBeGreaterThan(60);
+    expect(timeout).toBeLessThanOrEqual(120);
+    expect(conf).not.toMatch(/NDJSON|agent|sandbox|advanced/i);
   });
 
   it('denies dotfiles and uses modern TLS only', () => {
@@ -96,54 +95,19 @@ describe('deploy/nginx/gamecreator.conf', () => {
   });
 });
 
-describe('sandbox image definition', () => {
-  const dockerfile = read('deploy/sandbox/Dockerfile');
-  const defaultArg = /^ARG PLAYWRIGHT_VERSION=(\S+)/m.exec(dockerfile)?.[1];
-
-  it('pins one Playwright version everywhere: Dockerfile, lockfile, API package and default image tag', () => {
-    const api = JSON.parse(read('apps/api/package.json')) as { dependencies: Record<string, string> };
-    expect(defaultArg).toBe(SANDBOX_PLAYWRIGHT_VERSION);
-    expect(lock.packages['node_modules/playwright']?.version).toBe(SANDBOX_PLAYWRIGHT_VERSION);
-    expect(lock.packages['node_modules/playwright-core']?.version).toBe(SANDBOX_PLAYWRIGHT_VERSION);
-    expect(lock.packages['node_modules/@playwright/test']?.version).toBe(SANDBOX_PLAYWRIGHT_VERSION);
-    expect(api.dependencies.playwright).toMatch(new RegExp(`^\\^?${SANDBOX_PLAYWRIGHT_VERSION.replace(/\./g, '\\.')}$`));
-    expect(DEFAULT_SANDBOX_IMAGE).toBe(`gamecreator-sandbox:pw${SANDBOX_PLAYWRIGHT_VERSION}`);
-  });
-
-  it('uses the pinned Playwright base image, not latest', () => {
-    expect(dockerfile).toMatch(/^FROM mcr\.microsoft\.com\/playwright:v\$\{PLAYWRIGHT_VERSION\}-noble$/m);
-    expect(dockerfile).not.toMatch(/:latest|jammy|focal/);
-  });
-
-  it('installs the exact zod version the contracts package resolves', () => {
-    const zod = /^ARG ZOD_VERSION=(\S+)/m.exec(dockerfile)?.[1];
-    expect(zod).toBe(lock.packages['packages/contracts/node_modules/zod']?.version ?? lock.packages['node_modules/zod']?.version);
-  });
-
-  it('drops to the same unprivileged user the run command uses and starts the runner', () => {
-    expect(dockerfile).toContain(`USER ${SANDBOX_USER}`);
-    expect(dockerfile).toContain(`ENTRYPOINT ["node", "${SANDBOX_ENTRY_DIR}/runner-main.js"]`);
-    expect(dockerfile).toMatch(/chmod -R a=rX \/opt\/gc/);
-  });
-
-  it('copies only built artefacts and keeps secrets out of the build context', () => {
-    const copies = [...dockerfile.matchAll(/^COPY (\S+)/gm)].map((match) => match[1]);
-    expect(copies).toEqual(['packages/contracts/package.json', 'packages/contracts/dist', 'apps/api/package.json', 'apps/api/dist', 'apps/web/public/runtime/advanced.js']);
-    const ignore = read('.dockerignore');
-    expect(ignore.split('\n')).toContain('*'); // allow-list: everything is excluded unless re-included
-    expect(ignore).toMatch(/^\*\*\/\.env$/m);
-    const instructions = dockerfile.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n');
-    expect(instructions).not.toMatch(/\.env|GROQ|GEMINI|API_KEY|COPY \. /);
-  });
-});
-
 describe('environment template', () => {
-  it('documents every variable the backend reads for the queue, proxy and sandbox, with no secret values', () => {
-    const sample = read('apps/api/.env.example');
-    for (const name of ['TRUST_PROXY', 'GAME_JOB_CONCURRENCY', 'GAME_JOB_MAX_QUEUE', 'GAME_JOB_TIMEOUT_MS', 'GAME_JOB_MAX_WAIT_MS', 'GAME_JOB_MAX_PER_IP',
-      'ADVANCED_TESTER', 'SANDBOX_IMAGE', 'SANDBOX_CONCURRENCY', 'SANDBOX_MEMORY_MB', 'SANDBOX_CPUS', 'SANDBOX_PIDS', 'SANDBOX_TMP_MB', 'SANDBOX_SHM_MB', 'SANDBOX_TIMEOUT_MS', 'SANDBOX_RECHECK_MS']) {
+  const sample = read('apps/api/.env.example');
+  it('documents every variable the backend reads, with no secret values', () => {
+    for (const name of ['HOST', 'PORT', 'CLIENT_ORIGINS', 'GEMINI_API_KEY', 'GROQ_API_KEY', 'GEMINI_ALLOWED_MODELS', 'GROQ_ALLOWED_MODELS',
+      'AI_REQUESTS_PER_MINUTE', 'AI_REQUESTS_PER_DAY', 'AI_MAX_CONCURRENT', 'AI_TIMEOUT_MS', 'TRUST_PROXY']) {
       expect(sample, name).toMatch(new RegExp(`^#?\\s*${name}=`, 'm'));
     }
     expect(sample).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z]{20,}/);
+    expect(sample).toMatch(/^GEMINI_API_KEY=$/m);
+    expect(sample).toMatch(/^GROQ_API_KEY=$/m);
+  });
+
+  it('says nothing of the removed code agent, its queue or its sandbox', () => {
+    expect(sample).not.toMatch(/ADVANCED|SANDBOX|GAME_JOB|agent|Docker/i);
   });
 });

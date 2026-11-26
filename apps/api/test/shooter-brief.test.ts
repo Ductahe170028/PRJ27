@@ -143,7 +143,7 @@ describe('the prompt for the model', () => {
     expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toContain(describeBrief().join('\n'));
   });
 
-  it('gives the provider a structure without min/max, as Standard does', () => {
+  it('gives the provider a structure without min/max', () => {
     const text = JSON.stringify(briefJsonSchema());
     expect(text).not.toMatch(/"(minimum|maximum|minLength|maxLength|minItems|maxItems|pattern)"/);
     expect(text).toContain('"additionalProperties":false');

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PROMPT_MAX_LENGTH } from '@game-creator/contracts';
 import { promptLimitWarning, promptToSend } from '../src/lib/prompt-draft';
 
-describe('standard prompt draft', () => {
+describe('prompt draft', () => {
   it('keeps a 2496-character paste intact and blocks generate', () => {
     const pasted = 'A'.repeat(2496);
     expect(pasted).toHaveLength(2496);
@@ -16,7 +16,7 @@ describe('standard prompt draft', () => {
   it('sends an in-limit prompt verbatim, including surrounding spaces', () => {
     const exact = 'B'.repeat(PROMPT_MAX_LENGTH);
     expect(promptToSend(exact)).toBe(exact);
-    const spaced = '  top-down collector  ';
+    const spaced = '  zombie city  ';
     expect(promptToSend(spaced)).toBe(spaced);
     expect(promptToSend(`${spaced}${'C'.repeat(PROMPT_MAX_LENGTH)}`)).toBeNull();
     expect(promptToSend('   ')).toBeNull();

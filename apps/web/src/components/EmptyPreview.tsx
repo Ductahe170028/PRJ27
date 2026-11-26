@@ -1,7 +1,7 @@
 import { Gamepad2, ArrowUpRight } from 'lucide-react';
 
-/** The empty stage. The defaults are the Standard app's; the shooter app passes its own words. */
-export function EmptyPreview({ hint = 'để khởi chạy game mẫu đầu tiên.', tag = 'Moonlight Run' }: { hint?: string; tag?: string }) {
+/** The empty stage, before the first game. */
+export function EmptyPreview({ hint = 'để dựng màn bắn quái đầu tiên.', tag = 'Top-down Shooter' }: { hint?: string; tag?: string }) {
   return <div className="empty-preview">
     <svg className="preview-art" viewBox="0 0 960 540" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
       <defs>

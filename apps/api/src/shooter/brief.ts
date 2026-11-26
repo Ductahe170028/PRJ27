@@ -1,11 +1,6 @@
 // What the AI writes: meaning only. No coordinate, size or physics number ever
 // comes from the model; the compiler decides all of that.
-import { z } from '@game-creator/contracts';
-
-const integer = (min: number, max: number) => z.number().int().min(min).max(max);
-// Same rule as the labels of GameSpec v1 and of ShooterLevel: letters, marks,
-// numbers, dashes and simple title punctuation. No markup, URLs or code.
-const label = (max: number) => z.string().min(1).max(max).regex(/^[\p{L}\p{M}\p{N}\p{Pd} .,!?"'():]+$/u);
+import { intBetween as integer, labelOf as label, z } from '@game-creator/contracts';
 
 export const SHOOTER_THEMES = ['zombie-city', 'alien-lab', 'dark-forest', 'desert-ruins', 'ice-base', 'neon-arena', 'hospital', 'military-base'] as const;
 export const SHOOTER_MAPS = ['open-arena', 'pillars', 'cross-corridors', 'rooms', 'ring'] as const;

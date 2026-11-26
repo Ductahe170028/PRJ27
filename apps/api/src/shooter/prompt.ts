@@ -1,7 +1,7 @@
 // What the model is told, and the schema it must fill. The model picks words
 // from fixed lists; it never writes a coordinate or a number of the physics.
 import { z } from '@game-creator/contracts';
-import { providerJsonSchema } from '../services/system-prompt.js';
+import { providerJsonSchema } from '../services/provider-schema.js';
 import {
   BOSSES, BRIEF_ENEMY_TYPES, HEALTH_DROPS, MAX_BRIEF_ENEMIES, PLAYER_HEALTHS, SHOOTER_MAPS, SHOOTER_THEMES, ShooterBriefSchema, TITLE_MAX, UNSUPPORTED_MAX_CHARS, UNSUPPORTED_MAX_ITEMS, WEAPONS,
 } from './brief.js';
@@ -44,8 +44,8 @@ title: short, in the user's language, only letters, numbers, spaces and simple p
 Schema (all fields required, no other fields; "a..b" limits are inclusive):
 ${describeBrief().join('\n')}`;
 
-/** JSON schema for the provider: structure only, like Standard (min/max are
- * stripped, the strict schema and normalizeBrief enforce them). */
+/** JSON schema for the provider: structure only (min/max are stripped, the
+ * strict schema and normalizeBrief enforce them). */
 export function briefJsonSchema(): Record<string, unknown> {
   return providerJsonSchema(z.toJSONSchema(ShooterBriefSchema, { target: 'draft-7' }));
 }

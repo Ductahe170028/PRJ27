@@ -1,17 +1,15 @@
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentOrchestrator } from '../src/agent/orchestrator.js';
 import { createApp } from '../src/app.js';
 import { clientKey } from '../src/http/client-key.js';
 import { resolveTrustProxy } from '../src/http/trust-proxy.js';
-import { GameGenerationService } from '../src/services/game-generation-service.js';
+import { AiGateway } from '../src/services/ai-gateway.js';
 import { RequestBudget } from '../src/services/request-budget.js';
 import { mockProvider, mockRegistry } from './fixtures.js';
 
 const selection = { providerId: 'gemini', modelId: 'gemini-3.5-flash-lite' };
 function appWith(budget: RequestBudget, trustProxy: 'loopback' | false) {
-  const service = new GameGenerationService(mockRegistry([mockProvider()]), budget);
-  return createApp({ generationService: service, trustProxy, advancedEnabled: false });
+  return createApp({ gateway: new AiGateway(mockRegistry([mockProvider()]), budget), trustProxy });
 }
 const probe = (app: ReturnType<typeof createApp>, forwarded?: string) => {
   const call = request(app).post('/api/ai/test-connection').send(selection);
@@ -86,32 +84,9 @@ describe('client address when no proxy is trusted (local development)', () => {
   });
 });
 
-describe('Host, Origin and forwarded headers are not proof of anything', () => {
-  const agent = () => {
-    const service = new GameGenerationService(mockRegistry([mockProvider('groq')]));
-    return createApp({ generationService: service, agent: new AgentOrchestrator(service, { test: async () => ({ errors: [] }) }), advancedEnabled: true, trustProxy: 'loopback' });
-  };
-  const body = { providerId: 'groq', prompt: 'Tạo game bắn máy bay' };
-
-  it.each([
-    ['public Host', { Host: 'game.example.com' }],
-    ['public Host plus forwarded localhost', { Host: 'game.example.com', 'X-Forwarded-Host': 'localhost', 'X-Forwarded-For': '127.0.0.1' }],
-    ['localhost Host but public Origin', { Host: 'localhost:3001', Origin: 'https://game.example.com' }],
-    ['Host that only starts with localhost', { Host: 'localhost.evil.test' }],
-  ])('refuses Advanced for %s', async (_name, headers) => {
-    const response = await request(agent()).post('/api/agent/generate').set(headers).send(body).expect(403);
-    expect(response.body.error.code).toBe('advanced_unavailable');
-  });
-
-  it('reports Advanced disabled to a public Host', async () => {
-    const response = await request(agent()).get('/api/agent/config').set('Host', 'game.example.com').expect(200);
-    expect(response.body.enabled).toBe(false);
-  });
-});
-
 describe('request size limits', () => {
   const app = () => appWith(new RequestBudget({ requestsPerMinute: 100 }), 'loopback');
-  it.each(['/api/games/generate', '/api/ai/test-connection', '/api/agent/generate'])('answers 413 for an oversized body on %s without calling a provider', async (path) => {
+  it.each(['/api/shooter/generate', '/api/ai/test-connection'])('answers 413 for an oversized body on %s without calling a provider', async (path) => {
     const response = await request(app()).post(path).set('Content-Type', 'application/json').send(JSON.stringify({ prompt: 'x'.repeat(40_000) }));
     expect(response.status).toBe(413);
     expect(response.body.error.code).toBe('PAYLOAD_TOO_LARGE');

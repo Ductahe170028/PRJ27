@@ -706,19 +706,7 @@ kbd {
   justify-content:center;
   font:10px "Segoe UI",sans-serif
 }
-.key-pair {
-  display:flex;
-  gap:3px
-}
-.or-label {
-  color:#4f5a67;
-  font-size:10px
-}
-.key-space {
-  padding-inline:8px;
-  min-width:45px;
-  font-size:9px
-}
+
 .controls-divider {
   height:17px;
   width:1px;
@@ -1159,9 +1147,7 @@ kbd {
     min-width:20px;
     font-size:9px
   }
-  .key-space {
-    min-width:41px
-  }
+
   .preview-footer {
     padding:12px 14px;
     font-size:8px;
@@ -1240,36 +1226,8 @@ kbd {
 .spec-issues{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px;max-height:180px;overflow:auto}
 .spec-issues li{display:grid;gap:2px;font-size:11px;line-height:1.45;color:#eda49c;overflow-wrap:anywhere}
 .spec-issues code{font-family:ui-monospace,monospace;color:#f4d2cd}
-.spec-issues .issue-code{color:#a7b4c4;font-family:ui-monospace,monospace;font-size:10px}
+
 /* Phase 3 controls reuse the existing panels and responsive workspace. */
-.generation-mode { display:flex; gap:12px; margin:0 0 24px; flex-wrap:wrap; }
-.generation-mode button { display:grid; gap:5px; text-align:left; background:#111b2a; color:#a7b8cc; border:1px solid #29384b; border-radius:12px; padding:14px 22px; cursor:pointer; flex:1; }
-.generation-mode button span { font-size:12px; font-weight:400; }
-.generation-mode button[aria-pressed="true"] { color:#d5f99d; border-color:#779b47; background:#1b2920; }
-.generation-mode button:disabled { cursor:wait; opacity:.7; }
-.local-badge { margin-left:auto; font:10px monospace; color:#c5f277; white-space:nowrap; }
-.advanced-workspace textarea { width:100%; min-height:160px; padding:16px; resize:vertical; background:#0c1420; color:#e0e9f4; border:1px solid #344456; border-radius:10px; font:inherit; line-height:1.7; }
-.agent-progress { padding:24px; }
-.agent-progress h2 { display:flex; justify-content:space-between; margin:0 0 16px; font-size:15px; }
-.agent-progress h2 span { color:#c5f277; font:12px monospace; }
-.agent-progress p { line-height:1.7; font-size:13px; color:#a4b9d0; overflow-wrap:anywhere; }
-.agent-stages { display:flex; flex-wrap:wrap; gap:7px; }
-.agent-stages span { border:1px solid #304158; border-radius:6px; padding:6px 8px; color:#7d90aa; font-size:11px; }
-.agent-stages .visited { border-color:#647f45; color:#c5f277; }
-.agent-stages .current { color:#0d1720; background:#c5f277; }
-.agent-plan { border-top:1px solid #29384b; padding-top:18px; margin-top:20px; font-size:13px; }
-.agent-plan ul { margin:12px 0; padding-left:19px; color:#b3c5d8; line-height:1.7; }
-.agent-logs { border-top:1px solid #29384b; margin-top:20px; padding-top:16px; font-size:12px; color:#adbed1; }
-.agent-logs summary { cursor:pointer; }
-.agent-logs pre { max-height:250px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#0b111b; padding:12px; border-radius:8px; line-height:1.6; color:#f5b6a5; }
-.agent-error p { color:#ffb9a3; }
-.retry-agent { display:flex; align-items:center; gap:8px; justify-content:center; width:100%; margin-top:12px; padding:10px; background:#172334; color:#d5e3f5; border:1px solid #3d526a; border-radius:8px; cursor:pointer; }
-.advanced-limits { color:#8ca1b9; font-size:12px; line-height:1.6; padding:0 24px 16px; }
-.advanced-empty { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:16px; padding:30px; text-align:center; background:radial-gradient(ellipse at center,#182d3b,#0c1420 75%); color:#c5f277; }
-.advanced-empty h3 { margin:0; color:#e0eaf5; font-size:22px; }
-.advanced-empty p { max-width:430px; color:#9eafc5; font-size:13px; line-height:1.7; margin:0; }
-.advanced-workspace .preview-loading span { max-width:85%; text-align:center; }
-@media (max-width:640px) { .generation-mode { gap:8px; } .generation-mode button { padding:12px; min-width:140px; } .agent-progress { padding:18px; } }
 
 /* Shooter playground (/?shooter=<level>): developer page, not linked from the app. */
 .shooter-playground{max-width:1100px;margin:0 auto;padding:24px 20px 32px;display:flex;flex-direction:column;gap:14px}

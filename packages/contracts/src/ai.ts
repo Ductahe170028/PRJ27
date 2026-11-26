@@ -17,7 +17,6 @@ export const SelectionPreferenceSchema = SelectionSchema.extend({ modelId: Selec
 export const CapabilitySchema = z.object({
   outputMode: z.enum(['json_schema', 'json_mode']),
   structuredOutput: z.boolean(),
-  genres: z.array(z.enum(['platformer', 'top-down'])).min(1).max(2),
 }).strict();
 export const ModelInfoSchema = z.object({
   id: SelectionSchema.shape.modelId,

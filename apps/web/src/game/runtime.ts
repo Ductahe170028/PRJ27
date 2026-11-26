@@ -1,7 +1,5 @@
 import Phaser from 'phaser';
-import { RuntimeInitSchema, type GameSpec, type RuntimeEvent, type RuntimeGame, type ShooterLevel } from '@game-creator/contracts';
-import { PlatformerScene } from './PlatformerScene';
-import { GameSpecScene } from './GameSpecScene';
+import { RuntimeInitSchema, type RuntimeEvent } from '@game-creator/contracts';
 import { ShooterScene } from './ShooterScene';
 
 const script = document.getElementById('game-runtime');
@@ -9,30 +7,6 @@ const sessionId = script?.getAttribute('data-session-id');
 const parentOrigin = script?.getAttribute('data-parent-origin');
 let game: Phaser.Game | undefined;
 let initialized = false;
-
-// What the iframe can play, told apart by the one field each kind owns. What is
-// left after the shooter and the GameSpec is the Phase 1 demo.
-const isShooter = (level: RuntimeGame): level is ShooterLevel => 'kind' in level;
-const isSpec = (level: RuntimeGame): level is GameSpec => 'version' in level;
-
-/** Downward pull of the Arcade world. Only the platformer and the demo fall. */
-function gravityOf(level: RuntimeGame): number {
-  if (isShooter(level)) return 0;
-  if (isSpec(level)) return level.genre === 'platformer' ? level.difficulty.gravity : 0;
-  return level.physics.gravity;
-}
-
-function sceneFor(level: RuntimeGame, started: () => void): Phaser.Scene {
-  if (isShooter(level)) return new ShooterScene(level, started);
-  if (isSpec(level)) return new GameSpecScene(level, started);
-  return new PlatformerScene(level, started);
-}
-
-function canvasLabel(level: RuntimeGame): string {
-  if (isShooter(level)) return `${level.title}. Chọn khung game. WASD di chuyển, chuột để ngắm và bắn, R chơi lại.`;
-  if (isSpec(level)) return `${level.title}. Chọn khung game để điều khiển bằng bàn phím. R để chơi lại.`;
-  return 'Moonlight Run. Di chuyển bằng A D hoặc phím mũi tên, nhảy bằng Space hoặc mũi tên lên.';
-}
 
 function notify(type: RuntimeEvent['type']) {
   if (!sessionId || !parentOrigin) return;
@@ -72,12 +46,12 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
       banner: false,
       audio: { noAudio: true },
       scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-      physics: { default: 'arcade', arcade: { gravity: { x: 0, y: gravityOf(level) }, debug: false } },
-      scene: [sceneFor(level, started)],
+      physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
+      scene: [new ShooterScene(level, started)],
       callbacks: {
         postBoot: (instance) => {
           instance.canvas.tabIndex = 0;
-          instance.canvas.setAttribute('aria-label', canvasLabel(level));
+          instance.canvas.setAttribute('aria-label', `${level.title}. Chọn khung game. WASD di chuyển, chuột để ngắm và bắn, R chơi lại.`);
           instance.canvas.addEventListener('pointerdown', () => instance.canvas.focus());
         },
       },

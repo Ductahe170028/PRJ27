@@ -3,11 +3,9 @@ import {
   EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
 } from './constants.js';
 import { dist, pointRectDistance, rectInsideField } from './geometry.js';
+import { intBetween as integer, labelOf } from './schema-helpers.js';
 
-const integer = (min: number, max: number) => z.number().int().min(min).max(max);
-// Same rule as the `label` of GameSpec v1: letters, marks, numbers, dashes and
-// simple title punctuation. No markup, URLs or code.
-const label = z.string().min(1).max(80).regex(/^[\p{L}\p{M}\p{N}\p{Pd} .,!?"'():]+$/u);
+const label = labelOf(80);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const point = { x: integer(FIELD.left, FIELD.right), y: integer(FIELD.top, FIELD.bottom) };
 

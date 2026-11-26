@@ -8,7 +8,6 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "start": "node dist/server.js",
-    "sandbox:verify": "node dist/sandbox/verify-main.js",
     "test:server": "tsx test/e2e-server.ts",
     "shooter:calibrate": "tsx scripts/calibrate-shooter.ts"
   },
@@ -18,9 +17,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
-    "groq-sdk": "^1.6.0",
-    "playwright": "^1.60.0",
-    "typescript": "^5.9.3"
+    "groq-sdk": "^1.6.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

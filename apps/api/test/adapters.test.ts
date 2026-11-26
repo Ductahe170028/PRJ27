@@ -3,7 +3,7 @@ import type { ModelInfo } from '@game-creator/contracts';
 import { GeminiProvider } from '../src/providers/gemini-provider.js';
 import { GroqProvider } from '../src/providers/groq-provider.js';
 import { MODEL_CATALOG } from '../src/providers/model-catalog.js';
-import { providerJsonSchema } from '../src/services/system-prompt.js';
+import { briefJsonSchema } from '../src/shooter/prompt.js';
 
 const sdk = vi.hoisted(() => ({ geminiOptions: vi.fn(), groqOptions: vi.fn(), geminiGenerate: vi.fn(), groqGenerate: vi.fn(), geminiGet: vi.fn(), groqList: vi.fn(), groqGet: vi.fn() }));
 vi.mock('@google/genai', async (importOriginal) => ({ ...await importOriginal<typeof import('@google/genai')>(), GoogleGenAI: class {
@@ -21,8 +21,8 @@ const model = (id: string): ModelInfo => {
   return found;
 };
 // No catalog model needs JSON mode today; keep the fallback path covered.
-const jsonModeModel: ModelInfo = { id: 'example/json-mode-model', name: 'JSON mode', capabilities: { outputMode: 'json_mode', structuredOutput: false, genres: ['platformer', 'top-down'] } };
-const input = (target: string | ModelInfo) => ({ model: typeof target === 'string' ? model(target) : target, prompt: 'Create a game', systemPrompt: 'Return JSON', jsonSchema: providerJsonSchema(), signal: new AbortController().signal });
+const jsonModeModel: ModelInfo = { id: 'example/json-mode-model', name: 'JSON mode', capabilities: { outputMode: 'json_mode', structuredOutput: false } };
+const input = (target: string | ModelInfo) => ({ model: typeof target === 'string' ? model(target) : target, prompt: 'Create a game', systemPrompt: 'Return JSON', jsonSchema: briefJsonSchema(), signal: new AbortController().signal });
 
 beforeEach(() => vi.resetAllMocks());
 describe('official SDK adapters with mocked transports', () => {
@@ -33,7 +33,7 @@ describe('official SDK adapters with mocked transports', () => {
       expect(sdk.geminiOptions).toHaveBeenCalledWith(expect.objectContaining({ httpOptions: { timeout: 45000, retryOptions: { attempts: 1 } } }));
       const request = sdk.geminiGenerate.mock.calls[0]?.[0];
       expect(request).toMatchObject({ model: id, contents: 'Create a game', config: {
-        systemInstruction: 'Return JSON', responseMimeType: 'application/json', responseJsonSchema: providerJsonSchema(),
+        systemInstruction: 'Return JSON', responseMimeType: 'application/json', responseJsonSchema: briefJsonSchema(),
         maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: level },
       } });
       // Deprecated for Gemini 3.5+ and an error in future generations.
@@ -47,7 +47,7 @@ describe('official SDK adapters with mocked transports', () => {
     expect(sdk.groqOptions).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0, timeout: 45000 }));
     expect(sdk.groqGenerate).toHaveBeenCalledWith(expect.objectContaining({
       model: id, max_completion_tokens: 4096, reasoning_effort: 'low', include_reasoning: false,
-      response_format: { type: 'json_schema', json_schema: { name: 'game_spec_v1', strict: true, schema: providerJsonSchema() } },
+      response_format: { type: 'json_schema', json_schema: { name: 'shooter_brief_v1', strict: true, schema: briefJsonSchema() } },
     }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
   it('falls back to Groq JSON mode for models without strict schema support', async () => {

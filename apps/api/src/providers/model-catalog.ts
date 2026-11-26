@@ -9,7 +9,7 @@ import type { ModelInfo } from '@game-creator/contracts';
 // https://console.groq.com/docs/rate-limits
 // https://console.groq.com/docs/structured-outputs
 function model(id: string, name: string, outputMode: 'json_schema' | 'json_mode'): ModelInfo {
-  return { id, name, capabilities: { outputMode, structuredOutput: outputMode === 'json_schema', genres: ['platformer', 'top-down'] } };
+  return { id, name, capabilities: { outputMode, structuredOutput: outputMode === 'json_schema' } };
 }
 export const MODEL_CATALOG: Readonly<Record<string, readonly ModelInfo[]>> = {
   gemini: [

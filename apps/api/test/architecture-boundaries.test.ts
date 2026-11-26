@@ -3,16 +3,18 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// Standard (and the shooter to come) must not depend on Advanced. app.ts and
-// server.ts are the only places allowed to assemble Advanced.
-const src = fileURLToPath(new URL('../src/', import.meta.url));
-const ASSEMBLY = new Set(['app.ts', 'server.ts']);
+// Three rules keep the layers apart:
+//   1. the simulation core (packages/contracts/src/shooter) imports nothing but zod and its own files: no phaser, react,
+//      node: module, app or other package;
+//   2. the API's shooter module (apps/api/src/shooter) never reaches into the web app;
+//   3. the web app never reaches into the API.
+const repo = fileURLToPath(new URL('../../../', import.meta.url));
 
-function tsFiles(directory: string): string[] {
+function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
     const path = join(directory, entry);
-    if (statSync(path).isDirectory()) return tsFiles(path);
-    return path.endsWith('.ts') ? [path] : [];
+    if (statSync(path).isDirectory()) return entry === 'node_modules' ? [] : sourceFiles(path);
+    return /\.(ts|tsx|mjs)$/.test(path) ? [path] : [];
   });
 }
 
@@ -28,101 +30,61 @@ function specifiers(source: string): string[] {
   return found;
 }
 
-const reachesAdvanced = (specifier: string) => /(^|\/)(agent|sandbox)(\/|$)/.test(specifier);
+const isLocal = (specifier: string) => specifier.startsWith('./') || specifier.startsWith('../');
+const reachesApp = (specifier: string, app: 'web' | 'api') => new RegExp(`(^|/)apps/${app}(/|$)|(^|/)@game-creator/${app}(/|$)`).test(specifier);
+/** The only imports the simulation core may have: zod, and files next to it. */
+const coreProblem = (specifier: string) => (specifier === 'zod' || (isLocal(specifier) && !specifier.includes('..'))) ? undefined : specifier;
+const webProblem = (specifier: string) => reachesApp(specifier, 'api') || /(^|\/)api\/src(\/|$)/.test(specifier) || /(^|\/)(express|cors|dotenv|groq-sdk|@google\/genai)(\/|$)/.test(specifier);
+const apiShooterProblem = (specifier: string) => reachesApp(specifier, 'web') || /(^|\/)(phaser|react|react-dom)(\/|$)/.test(specifier);
 
-const guarded = [
-  ...tsFiles(join(src, 'services')),
-  ...tsFiles(join(src, 'providers')),
-  ...tsFiles(join(src, 'http')),
-  ...readdirSync(src).filter((entry) => entry.endsWith('.ts') && !ASSEMBLY.has(entry)).map((entry) => join(src, entry)),
-];
+const core = join(repo, 'packages/contracts/src/shooter');
+const apiShooter = join(repo, 'apps/api/src/shooter');
+const web = join(repo, 'apps/web/src');
 
-describe('architecture boundaries: Standard does not import Advanced', () => {
-  it('guards a non-trivial set of files', () => {
-    expect(guarded.length).toBeGreaterThanOrEqual(25);
-    expect(guarded.some((file) => file.endsWith('game-generation-service.ts'))).toBe(true);
-    expect(guarded.some((file) => file.endsWith('redact.ts'))).toBe(true);
-    expect(guarded.some((file) => file.endsWith('app.ts'))).toBe(false);
+describe('architecture boundaries', () => {
+  it('guard real files', () => {
+    expect(sourceFiles(core).length).toBeGreaterThanOrEqual(20);
+    expect(sourceFiles(apiShooter).length).toBeGreaterThanOrEqual(10);
+    expect(sourceFiles(web).length).toBeGreaterThanOrEqual(15);
   });
 
-  it('no file in services, providers, http or src/*.ts imports agent/ or sandbox/', () => {
-    const violations = guarded.flatMap((file) => specifiers(readFileSync(file, 'utf8'))
-      .filter(reachesAdvanced).map((specifier) => `${relative(src, file)} -> ${specifier}`));
+  it('the simulation core imports only zod and its own files (no phaser, react, node:, app or package)', () => {
+    const violations = sourceFiles(core).flatMap((file) => specifiers(readFileSync(file, 'utf8'))
+      .filter((specifier) => coreProblem(specifier) !== undefined).map((specifier) => `${relative(repo, file)} -> ${specifier}`));
     expect(violations).toEqual([]);
   });
 
-  it('the detector sees every import form (so the test above can fail)', () => {
+  it('the API shooter module does not import the web app, phaser or react', () => {
+    const violations = sourceFiles(apiShooter).flatMap((file) => specifiers(readFileSync(file, 'utf8'))
+      .filter(apiShooterProblem).map((specifier) => `${relative(repo, file)} -> ${specifier}`));
+    expect(violations).toEqual([]);
+  });
+
+  it('the whole API source does not import the web app', () => {
+    const violations = sourceFiles(join(repo, 'apps/api/src')).flatMap((file) => specifiers(readFileSync(file, 'utf8'))
+      .filter((specifier) => reachesApp(specifier, 'web')).map((specifier) => `${relative(repo, file)} -> ${specifier}`));
+    expect(violations).toEqual([]);
+  });
+
+  it('the web app does not import the API (or a server library)', () => {
+    const violations = sourceFiles(web).flatMap((file) => specifiers(readFileSync(file, 'utf8'))
+      .filter(webProblem).map((specifier) => `${relative(repo, file)} -> ${specifier}`));
+    expect(violations).toEqual([]);
+  });
+
+  it('the detectors see every import form and every kind of violation (so the checks above can fail)', () => {
     const forms = [
-      "import { a } from '../agent/run-diagnostics.js';",
-      "import type { A } from '../sandbox/docker-args.js';",
-      "export { a } from '../agent/x.js';",
-      "import '../agent/side-effect.js';",
-      "const m = await import('../sandbox/x.js');",
-      "const r = require('../agent/x.js');",
-      "import {\n  a,\n  b,\n} from './agent/orchestrator.js';",
+      "import { a } from 'phaser';", "import type { A } from 'react';", "export { a } from 'node:fs';", "import 'node:path';",
+      "const m = await import('node:crypto');", "const r = require('node:os');", "import {\n  a,\n  b,\n} from '../../../apps/web/src/x.js';",
     ];
-    for (const form of forms) expect(specifiers(form).some(reachesAdvanced), form).toBe(true);
-    for (const ok of ["import { a } from './redact.js';", "import x from '../providers/errors.js';", "import { s } from 'node:path';", "import { a } from '../services/agent-name-but-not-a-dir.js';"]) {
-      expect(specifiers(ok).some(reachesAdvanced), ok).toBe(false);
+    for (const form of forms) expect(specifiers(form).length, form).toBe(1);
+    for (const bad of ['phaser', 'react', 'node:fs', '@game-creator/api', '../geometry/../../x.js', '../../../apps/web/src/x.js']) {
+      expect(coreProblem(bad), bad).toBeDefined();
     }
-  });
-
-  it('Advanced may import Standard (the allowed direction)', () => {
-    const orchestrator = readFileSync(join(src, 'agent', 'orchestrator.ts'), 'utf8');
-    expect(specifiers(orchestrator).some((specifier) => specifier.includes('/services/') || specifier.includes('/providers/'))).toBe(true);
-  });
-});
-
-// The API's shooter module (brief, compiler, gate, service) sits next to Standard
-// and Advanced but must not use their physics, repair or code-agent parts, nor
-// the GameSpec v1 types. Allowed from services/: game-generation-service
-// (generateArtifact), system-prompt (providerJsonSchema), redact,
-// standard-diagnostics and worker-run; and providers/ and http/.
-describe('architecture boundaries: the API shooter module', () => {
-  const shooterDirectory = join(src, 'shooter');
-  const forbiddenSpecifier = (specifier: string) => /(^|\/)(agent|sandbox)(\/|$)/.test(specifier)
-    || /services\/(repair-|game-geometry|enemy-hazard|platformer-physics|objective-route|isolated-repair)/.test(specifier)
-    || /(^|\/)game-spec(\.js)?$/.test(specifier);
-  /** Code without comments and string contents. */
-  const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
-    .replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g, '""');
-  const usesGameSpec = (source: string) => /\bGameSpec(Schema|Shape|PlacementInputSchema)?\b/.test(code(source));
-  const problems = (file: string, source: string) => [
-    ...specifiers(source).filter(forbiddenSpecifier).map((specifier) => `${file}: imports "${specifier}"`),
-    ...(usesGameSpec(source) ? [`${file}: uses a GameSpec type`] : []),
-  ];
-
-  it('guards the real files', () => {
-    const files = tsFiles(shooterDirectory);
-    expect(files.map((file) => relative(shooterDirectory, file)).sort()).toEqual(expect.arrayContaining(['brief.ts', 'compile.ts', 'gate.ts', 'service.ts', 'waves.ts', 'maps.ts', 'notices.ts', 'prompt.ts', 'presets.ts', 'isolated-compile.ts']));
-  });
-
-  it('no file imports Advanced, the Standard physics or repair, or GameSpec v1', () => {
-    const found = tsFiles(shooterDirectory).flatMap((file) => problems(relative(shooterDirectory, file), readFileSync(file, 'utf8')));
-    expect(found).toEqual([]);
-  });
-
-  it('catches each kind of violation (so the check above can fail)', () => {
-    const bad: Array<[string, string]> = [
-      ["import { a } from '../agent/run-diagnostics.js';", 'imports "../agent/run-diagnostics.js"'],
-      ["import { a } from '../sandbox/docker-args.js';", 'imports "../sandbox/docker-args.js"'],
-      ["import { repairGamePlacement } from '../services/repair-game-placement.js';", 'repair-game-placement'],
-      ["import { buildNavigation } from '../services/game-geometry.js';", 'game-geometry'],
-      ["import { analyzeHazards } from '../services/enemy-hazard.js';", 'enemy-hazard'],
-      ["import { x } from '../../../packages/contracts/src/game-spec.js';", 'game-spec'],
-      ["import type { GameSpec } from '@game-creator/contracts';", 'uses a GameSpec type'],
-      ["const s = GameSpecSchema.parse(x);", 'uses a GameSpec type'],
-    ];
-    for (const [source, message] of bad) expect(problems('x.ts', source).join('|'), source).toContain(message);
-    const fine = [
-      "import { ShooterLevelSchema } from '@game-creator/contracts';",
-      "import { diagnosticSink } from '../providers/diagnostic-sink.js';",
-      "import type { GameGenerationService } from '../services/game-generation-service.js';",
-      "import { providerJsonSchema } from '../services/system-prompt.js';",
-      "import { redactDiagnostics } from '../services/redact.js';",
-      "import { runInWorker } from '../services/worker-run.js';",
-      '// a comment may say GameSpec v1 and ../agent/x.js freely',
-    ];
-    for (const source of fine) expect(problems('x.ts', source), source).toEqual([]);
+    for (const ok of ['zod', './geometry.js', './sim.js']) expect(coreProblem(ok), ok).toBeUndefined();
+    for (const bad of ['../../../apps/web/src/App.tsx', '@game-creator/web', 'phaser', 'react']) expect(apiShooterProblem(bad), bad).toBe(true);
+    for (const ok of ['@game-creator/contracts', '../providers/errors.js', 'node:crypto', 'zod']) expect(apiShooterProblem(ok), ok).toBe(false);
+    for (const bad of ['../../api/src/app', 'apps/api/src/app.js', '@game-creator/api', 'express', 'groq-sdk']) expect(webProblem(bad), bad).toBe(true);
+    for (const ok of ['@game-creator/contracts', 'phaser', 'react', './lib/api']) expect(webProblem(ok), ok).toBe(false);
   });
 });

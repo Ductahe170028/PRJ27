@@ -2,7 +2,7 @@ import { CircleAlert, Gamepad2, Layers2, RefreshCw } from 'lucide-react';
 
 export type Health = 'checking' | 'online' | 'offline';
 
-/** The top bar shared by the shooter app and the legacy Standard app. */
+/** The top bar. */
 export function AppHeader({ health, badge, home = '/' }: { health: Health; badge: string; home?: string }) {
   return <header className="topbar">
     <a className="brand" href={home} aria-label="AI Game Creator — trang chủ">

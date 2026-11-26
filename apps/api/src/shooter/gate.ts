@@ -5,7 +5,7 @@
 // level EASIER, never harder: a level that is easy for the bot is not necessarily
 // easy for a person.
 import {
-  ENEMY_TYPES, ShooterLevelSchema, bossOf, bossWaveOf, createCasualBot, playLevel, type PlayResult, type ShooterLevel,
+  ENEMY_TYPES, ShooterLevelSchema, bossOf, bossWaveOf, createCasualBot, playLevel, totalScheduledEnemies, type PlayResult, type ShooterLevel,
 } from '@game-creator/contracts';
 import { AIError } from '../providers/errors.js';
 import { killTarget } from './waves.js';
@@ -47,7 +47,6 @@ export interface GateOptions {
   play?: (level: ShooterLevel) => PlayResult;
 }
 
-const total = (level: ShooterLevel) => level.waves.reduce((sum, wave) => sum + wave.count, 0);
 const withSeed = (level: ShooterLevel, seed: number): ShooterLevel => ({ ...level, seed: seed % 2_147_483_648 });
 /** A new casual bot for every game, made from that game's own seed. */
 const defaultPlay = (level: ShooterLevel) => playLevel(level, createCasualBot(level.seed));
@@ -118,5 +117,5 @@ export function gateLevel(level: ShooterLevel, options: GateOptions = {}): { lev
   if (result.wins < MIN_WINS) throw new AIError('unwinnable_level', UNWINNABLE_MESSAGE, 422, undefined, ['goal']);
 
   const notices = thinSteps > 0 ? [THINNED_NOTICE] : [];
-  return { level: current, notices, report: { bot: options.play ? 'custom' : 'casual', runs: GATE_SEEDS, wins: result.wins, hpLeftAvg: Math.round(result.hpLeftAvg * 1000) / 1000, thinSteps, scheduled: total(current), ...(bossWaveOf(current) ? { bossHp: current.bossHp ?? ENEMY_TYPES[bossWaveOf(current)!.type].hp } : {}) } };
+  return { level: current, notices, report: { bot: options.play ? 'custom' : 'casual', runs: GATE_SEEDS, wins: result.wins, hpLeftAvg: Math.round(result.hpLeftAvg * 1000) / 1000, thinSteps, scheduled: totalScheduledEnemies(current), ...(bossWaveOf(current) ? { bossHp: current.bossHp ?? ENEMY_TYPES[bossWaveOf(current)!.type].hp } : {}) } };
 }

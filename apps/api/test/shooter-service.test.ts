@@ -7,9 +7,9 @@ import {
 import { createApp } from '../src/app.js';
 import { AIError } from '../src/providers/errors.js';
 import type { AIRequest } from '../src/providers/ai-provider.js';
-import { GameGenerationService } from '../src/services/game-generation-service.js';
+import { AiGateway } from '../src/services/ai-gateway.js';
 import { RequestBudget } from '../src/services/request-budget.js';
-import type { StandardDiagnostics, StandardFinish } from '../src/services/standard-diagnostics.js';
+import type { RunDiagnostics, DiagnosticsFinish } from '../src/services/run-diagnostics.js';
 import { compileAndGate } from '../src/shooter/compile-job.js';
 import { COMPILE_TIMEOUT_MESSAGE, compileInWorker, type CompileRunner } from '../src/shooter/isolated-compile.js';
 import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema } from '../src/shooter/prompt.js';
@@ -36,9 +36,9 @@ function setup(answer: string | ((request: AIRequest) => Promise<string>), optio
     seen.push(input);
     return typeof answer === 'string' ? answer : answer(input);
   });
-  const generation = new GameGenerationService(mockRegistry([provider]), options.budget ?? new RequestBudget({ requestsPerMinute: 1000, requestsPerDay: 10000 }));
-  const finished: StandardFinish[] = [];
-  const diagnostics: StandardDiagnostics = { async note() {}, async raw() {}, async finish(record) { finished.push(record); } };
+  const generation = new AiGateway(mockRegistry([provider]), options.budget ?? new RequestBudget({ requestsPerMinute: 1000, requestsPerDay: 10000 }));
+  const finished: DiagnosticsFinish[] = [];
+  const diagnostics: RunDiagnostics = { async note() {}, async raw() {}, async finish(record) { finished.push(record); } };
   const service = new ShooterService(generation, { compile: options.compile ?? wide, openDiagnostics: async () => diagnostics, seed: () => SEED });
   return { service, generation, seen, finished };
 }
@@ -211,7 +211,7 @@ describe('failures after the brief is accepted', () => {
 describe('POST /api/shooter/generate', () => {
   const app = (answer: string) => {
     const { service, generation } = setup(answer);
-    return createApp({ generationService: generation, shooterService: service });
+    return createApp({ gateway: generation, shooterService: service });
   };
   const post = (server: ReturnType<typeof createApp>, body: unknown) => request(server).post('/api/shooter/generate').send(body as object);
 
@@ -224,9 +224,9 @@ describe('POST /api/shooter/generate', () => {
 
   it('works with the other provider and a chosen model', async () => {
     const provider = mockProvider('gemini', async () => JSON.stringify(briefOf()));
-    const generation = new GameGenerationService(mockRegistry([provider]), new RequestBudget({ requestsPerMinute: 1000, requestsPerDay: 10000 }));
+    const generation = new AiGateway(mockRegistry([provider]), new RequestBudget({ requestsPerMinute: 1000, requestsPerDay: 10000 }));
     const shooterService = new ShooterService(generation, { compile: wide, seed: () => 1 });
-    const server = createApp({ generationService: generation, shooterService });
+    const server = createApp({ gateway: generation, shooterService });
     const response = await post(server, { providerId: 'gemini', modelId: 'gemini-3.5-flash-lite', prompt: 'zombie' }).expect(201);
     expect(response.body.data).toMatchObject({ provider: 'gemini', modelId: 'gemini-3.5-flash-lite' });
   }, 60_000);
@@ -241,7 +241,7 @@ describe('POST /api/shooter/generate', () => {
 
   it('the demo answers without a provider', async () => {
     const server = app('{}');
-    for (const body of [{ prompt: 'zombie' }, { providerId: 'demo', modelId: 'platformer-v1', prompt: 'zombie' }]) {
+    for (const body of [{ prompt: 'zombie' }, { providerId: 'demo', modelId: 'shooter-arena', prompt: 'zombie' }]) {
       const response = await post(server, body).expect(201);
       expect(response.body.data).toMatchObject({ provider: 'demo', modelId: 'shooter-arena', notices: [] });
       expect(GenerateShooterResponseSchema.safeParse(response.body).success).toBe(true);
@@ -256,7 +256,7 @@ describe('POST /api/shooter/generate', () => {
     expect(JSON.stringify(response.body)).not.toContain('pirate-cove');
   });
 
-  it('an unknown provider is 400 and a missing key is 503, as for Standard', async () => {
+  it('an unknown provider is 400 and a missing key is 503', async () => {
     const server = app('{}');
     expect((await post(server, { providerId: 'nope', modelId: 'x', prompt: 'x' }).expect(400)).body.error.code).toBe('invalid_provider');
   });

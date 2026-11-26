@@ -1,40 +1,31 @@
 import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import { GenerateGameRequestSchema, ProviderRequestSchema } from '@game-creator/contracts';
-import { DemoGameProvider } from './providers/demo-game-provider.js';
-import { GameService } from './services/game-service.js';
 import { createProviderRegistry } from './providers/create-registry.js';
 import { AIError } from './providers/errors.js';
-import { GameGenerationService } from './services/game-generation-service.js';
+import { AiGateway } from './services/ai-gateway.js';
 import { RequestBudget } from './services/request-budget.js';
-import { AgentOrchestrator } from './agent/orchestrator.js';
-import { mountAgentRoutes } from './agent/routes.js';
 import { withResponseAbort } from './http/response-abort.js';
 import { clientKey } from './http/client-key.js';
 import { resolveTrustProxy } from './http/trust-proxy.js';
-import { createAgent } from './agent/create-agent.js';
 import { ShooterService } from './shooter/service.js';
 
 interface AppOptions {
-  service?: GameService;
-  generationService?: GameGenerationService;
+  gateway?: AiGateway;
   shooterService?: ShooterService;
   clientOrigins?: string[];
-  agent?: AgentOrchestrator;
-  advancedEnabled?: boolean;
   /** Express `trust proxy`. Default: from TRUST_PROXY (loopback in production). */
   trustProxy?: 'loopback' | false;
 }
 
 export function createApp(options: AppOptions = {}) {
   const app = express();
-  const service = options.service ?? new GameService(new DemoGameProvider());
-  const generation = options.generationService ?? new GameGenerationService(createProviderRegistry(), new RequestBudget({
+  const gateway = options.gateway ?? new AiGateway(createProviderRegistry(), new RequestBudget({
     requestsPerMinute: readLimit('AI_REQUESTS_PER_MINUTE', 5, 60),
     requestsPerDay: readLimit('AI_REQUESTS_PER_DAY', 100, 1_000),
     maxConcurrent: readLimit('AI_MAX_CONCURRENT', 2, 5),
   }), readLimit('AI_TIMEOUT_MS', 45_000, 50_000));
-  const shooter = options.shooterService ?? new ShooterService(generation);
+  const shooter = options.shooterService ?? new ShooterService(gateway);
   const origins = options.clientOrigins ?? ['http://localhost:5173', 'http://127.0.0.1:5173'];
 
   app.disable('x-powered-by');
@@ -53,43 +44,18 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.get('/api/ai/providers', (_request, response) => {
-    response.json({ providers: generation.registry.list() });
+    response.json({ providers: gateway.registry.list() });
   });
 
   app.post('/api/ai/test-connection', async (request, response) => {
     const parsed = ProviderRequestSchema.safeParse(request.body);
     if (!parsed.success) throw new AIError('invalid_model', 'Hãy chọn provider và model hợp lệ.', 400);
     await withResponseAbort(response, async (signal) => {
-      response.json(await generation.testConnection(parsed.data, clientKey(request.ip), signal));
+      response.json(await gateway.testConnection(parsed.data, clientKey(request.ip), signal));
     });
   });
 
-  app.post('/api/games/generate', async (request, response) => {
-    const result = GenerateGameRequestSchema.safeParse(request.body);
-    if (!result.success) {
-      response.status(400).json({
-        error: {
-          code: 'INVALID_PROMPT',
-          message: result.error.issues[0]?.message ?? 'Mô tả game không hợp lệ.',
-        },
-      });
-      return;
-    }
-    const { providerId, modelId } = result.data;
-    if ((!providerId && !modelId) || (providerId === 'demo' && modelId === 'platformer-v1')) {
-      response.status(201).json({ data: await service.generate(result.data) });
-      return;
-    }
-    if (!providerId || providerId === 'demo') {
-      throw new AIError('invalid_model', 'Cần chọn cả provider và model hợp lệ.', 400);
-    }
-    await withResponseAbort(response, async (signal) => {
-      const project = await generation.generate({ ...result.data, providerId }, clientKey(request.ip), signal);
-      response.status(201).json({ data: project });
-    });
-  });
-
-  // Same rules as /api/games/generate (prompt, provider/model choice, budget, timeout, abort).
+  // Prompt, provider/model choice, budget, timeout and abort: all checked here, then the shooter service does the work.
   app.post('/api/shooter/generate', async (request, response) => {
     const result = GenerateGameRequestSchema.safeParse(request.body);
     if (!result.success) {
@@ -97,7 +63,7 @@ export function createApp(options: AppOptions = {}) {
       return;
     }
     const { providerId, modelId } = result.data;
-    if ((!providerId && !modelId) || (providerId === 'demo' && modelId === 'platformer-v1')) {
+    if ((!providerId && !modelId) || (providerId === 'demo' && modelId === 'shooter-arena')) {
       response.status(201).json({ data: shooter.demo(result.data.prompt) });
       return;
     }
@@ -110,13 +76,6 @@ export function createApp(options: AppOptions = {}) {
     });
   });
 
-  const advancedEnabled = options.advancedEnabled ?? (process.env.ADVANCED_AI_ENABLED === 'true' && process.env.NODE_ENV !== 'production');
-  // The sandbox and queue are only built when Advanced can run at all.
-  const agent = options.agent ?? (advancedEnabled ? createAgent(generation, process.env) : new AgentOrchestrator(generation));
-  app.locals.agent = agent;
-  app.locals.advancedEnabled = advancedEnabled;
-  mountAgentRoutes(app, agent, advancedEnabled);
-
   app.use((_request, response) => {
     response.status(404).json({ error: { code: 'NOT_FOUND', message: 'API không tồn tại.' } });
   });
@@ -124,8 +83,7 @@ export function createApp(options: AppOptions = {}) {
   const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, next) => {
     const kind = typeof error === 'object' && error !== null && 'type' in error ? error.type : undefined;
     if (response.destroyed) return;
-    // Once NDJSON has started, Express must close the stream; writing JSON here
-    // would corrupt the protocol and raise ERR_HTTP_HEADERS_SENT.
+    // Once a response has started, Express must close it; writing JSON here would raise ERR_HTTP_HEADERS_SENT.
     if (response.headersSent) { next(error); return; }
     if (error instanceof AIError) {
       if (error.retryAfterSeconds) response.setHeader('Retry-After', error.retryAfterSeconds);

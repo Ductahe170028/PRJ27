@@ -21,7 +21,7 @@ export class GroqProvider implements AIProvider {
 
   async generate(request: AIRequest): Promise<string> {
     const responseFormat = request.model.capabilities.outputMode === 'json_schema'
-      ? { type: 'json_schema' as const, json_schema: { name: 'game_spec_v1', strict: true, schema: request.jsonSchema } }
+      ? { type: 'json_schema' as const, json_schema: { name: 'shooter_brief_v1', strict: true, schema: request.jsonSchema } }
       : { type: 'json_object' as const };
     const publish = async (outcome: Omit<Parameters<typeof buildGroqExchange>[0], 'provider' | 'model' | 'responseFormat'>) => {
       try { await diagnosticSink.getStore()?.note(buildGroqExchange({ provider: this.id, model: request.model.id, responseFormat, ...outcome })); }

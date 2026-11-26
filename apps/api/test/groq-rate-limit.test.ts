@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroqRateLimiter, durationMs, retryAfterMs, estimateInputTokens, groqErrorDetail, responseFormatDiagnostic, safeSchemaPath } from '../src/providers/groq-rate-limit.js';
 import { RequestCapacityError, TransientRateLimitError } from '../src/providers/errors.js';
-import { GameGenerationService } from '../src/services/game-generation-service.js';
+import { AiGateway } from '../src/services/ai-gateway.js';
 import { MODEL_CATALOG } from '../src/providers/model-catalog.js';
 import { mockProvider, mockRegistry } from './fixtures.js';
 import { RequestBudget } from '../src/services/request-budget.js';
@@ -84,7 +84,7 @@ describe('Groq free-plan pacing', () => {
     expect(rejectedSchema.message).not.toContain('không khớp');
     expect(groqErrorDetail({ error: { error: { code: 'json_validate_failed', failed_generation: 'body' } } }).code).toBe('json_validate_failed');
     expect(safeSchemaPath('Bearer gsk_secret')).toBeUndefined();
-    expect(responseFormatDiagnostic({ type: 'json_schema', json_schema: { name: 'game_spec_v1', strict: true, schema: { properties: { title: { minLength: 1, maxLength: 80 }, mechanics: { minItems: 2, maxItems: 8 } } } } }).unsupportedKeywords).toEqual([
+    expect(responseFormatDiagnostic({ type: 'json_schema', json_schema: { name: 'shooter_brief_v1', strict: true, schema: { properties: { title: { minLength: 1, maxLength: 80 }, mechanics: { minItems: 2, maxItems: 8 } } } } }).unsupportedKeywords).toEqual([
       'schema.properties.title.minLength', 'schema.properties.title.maxLength', 'schema.properties.mechanics.minItems', 'schema.properties.mechanics.maxItems',
     ]);
     expect(limiter.error(model, { status: 429, headers: new Headers({ 'retry-after': '2' }), error: { error: { code: 'insufficient_quota', message: 'Quota exceeded' } } })).not.toBeInstanceOf(TransientRateLimitError);
@@ -116,7 +116,7 @@ describe('Groq free-plan pacing', () => {
       return 'ok';
     });
     const provider = { ...mockProvider('groq', generate), prepare: (request: AIRequest) => limiter.acquire(request) };
-    const service = new GameGenerationService(mockRegistry([provider]), undefined, 1000);
+    const service = new AiGateway(mockRegistry([provider]), undefined, 1000);
     const result = service.generateArtifact({ providerId: 'groq' }, makeRequest(), 'client', new AbortController().signal);
     await vi.advanceTimersByTimeAsync(50_249);
     expect(generate).toHaveBeenCalledTimes(1);
@@ -134,7 +134,7 @@ describe('Groq free-plan pacing', () => {
     const limiter = new GroqRateLimiter(), onTelemetry = vi.fn();
     const generate = vi.fn(async () => 'code');
     const provider = { ...mockProvider('groq', generate), prepare: (request: AIRequest) => limiter.acquire(request) };
-    const service = new GameGenerationService(mockRegistry([provider]), new RequestBudget({ requestsPerMinute: 1, requestsPerDay: 2 }), 1000);
+    const service = new AiGateway(mockRegistry([provider]), new RequestBudget({ requestsPerMinute: 1, requestsPerDay: 2 }), 1000);
     await service.generateArtifact({ providerId: 'groq' }, makeRequest(), 'client', new AbortController().signal);
     const second = service.generateArtifact({ providerId: 'groq' }, makeRequest({ onTelemetry }), 'client', new AbortController().signal);
     await vi.advanceTimersByTimeAsync(59_999);
@@ -150,7 +150,7 @@ describe('Groq free-plan pacing', () => {
     const limiter = new GroqRateLimiter(), controller = new AbortController();
     const generate = vi.fn(async (request: AIRequest) => { throw limiter.error(request.model.id, throttle('TPM', { 'retry-after': '30' })); });
     const provider = { ...mockProvider('groq', generate), prepare: (request: AIRequest) => limiter.acquire(request) };
-    const service = new GameGenerationService(mockRegistry([provider]));
+    const service = new AiGateway(mockRegistry([provider]));
     const pending = expect(service.generateArtifact({ providerId: 'groq' }, makeRequest(), 'client', controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     await vi.advanceTimersByTimeAsync(1);
     controller.abort(); await pending;
