@@ -11,7 +11,7 @@ import type { AiGateway } from '../services/ai-gateway.js';
 import { openRunDiagnostics, type RunDiagnostics, type DiagnosticsFinish, type DiagnosticsRequest } from '../services/run-diagnostics.js';
 import { normalizeBrief, ShooterBriefSchema, type ShooterBrief } from './brief.js';
 import { compileInWorker, type CompileRunner } from './isolated-compile.js';
-import { collectNotices } from './notices.js';
+import { collectNotices, guardUnrequested } from './notices.js';
 import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema } from './prompt.js';
 import type { CompiledShooter } from './compile-job.js';
 
@@ -84,10 +84,11 @@ export class ShooterService {
         client, signal,
       ));
       await this.note(() => diag.raw(raw!));
-      const brief = this.parseBrief(raw, capture);
+      // A feature the model added that the text never asked for (health drops, a base) is taken out; the diagnostics say so.
+      const { brief, removed } = guardUnrequested(this.parseBrief(raw, capture), request.prompt);
       capture.stage = 'repair';
       const compiled: CompiledShooter = await this.compile({ brief, seed: this.seed() }, signal);
-      capture.report = compiled.report;
+      capture.report = removed.length > 0 ? { ...compiled.report, guardRemoved: removed } : compiled.report;
       const project = ShooterProjectSchema.parse({
         id: randomUUID(), title: compiled.level.title, prompt: request.prompt, provider: provider.id, modelId: model.id,
         createdAt: new Date().toISOString(), level: compiled.level,

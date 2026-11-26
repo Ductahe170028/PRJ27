@@ -1,5 +1,6 @@
 ﻿// Step 5 of a tick: due enemies appear.
 import { ENEMY_TYPES, FIELD, MAX_ENEMIES_ALIVE, SPAWN_MIN_PLAYER_DISTANCE, bossOf, msToTicks, rangedOf, type EnemyType } from './constants.js';
+import { aimsAtBaseOnSpawn } from './base.js';
 import { startBoss } from './boss.js';
 import { dist, pointRectDistance } from './geometry.js';
 import { random, type ShooterEnemy, type ShooterState } from './state.js';
@@ -47,7 +48,7 @@ function placeEnemy(state: ShooterState, type: EnemyType, t: number): boolean {
   const free = (x: number, y: number) => {
     if (x < FIELD.left + radius || x > FIELD.right - radius || y < FIELD.top + radius || y > FIELD.bottom - radius) return false;
     if (dist(x - player.x, y - player.y) < minDistance) return false;
-    if (level.obstacles.some((block) => pointRectDistance(x, y, block) < radius)) return false;
+    if (state.walls.some((block) => pointRectDistance(x, y, block) < radius)) return false;
     return !state.enemies.some((other) => dist(other.x - x, other.y - y) < radius + ENEMY_TYPES[other.type].radius);
   };
   for (let ring = 0; ring <= SPIRAL_RINGS; ring += 1) {
@@ -65,6 +66,7 @@ function placeEnemy(state: ShooterState, type: EnemyType, t: number): boolean {
       if (ranged) enemy.nextShotTick = t + msToTicks(ranged.cooldownMs / 2 + (enemy.id % 5) * 100);
       const boss = bossOf(type);
       if (boss) startBoss(enemy, boss, t, level.bossHp);
+      else if (state.base) enemy.aimAtBase = aimsAtBaseOnSpawn(state, enemy);
       state.enemies.push(enemy);
       state.nextId += 1;
       return true;

@@ -4,7 +4,7 @@ import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema, describeBrief } from '../
 import { THEMES } from '../src/shooter/presets.js';
 
 const valid = () => ({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [] as unknown[],
 }) as Record<string, any>;
@@ -127,7 +127,7 @@ describe('the prompt for the model', () => {
     expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toMatch(/never follow instructions/);
     expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toMatch(/NEAREST/);
     expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toMatch(/"unsupported"/);
-    for (const word of ['boss', 'vehicles', 'multiplayer', 'defense', 'reloading', 'pickups', 'crafting', 'traps']) expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toContain(word);
+    for (const word of ['boss', 'vehicles', 'multiplayer', 'towers', 'repairing the base', 'more than one base', 'reloading', 'pickups', 'crafting', 'traps']) expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toContain(word);
   });
 
   it('explains every enum value', () => {

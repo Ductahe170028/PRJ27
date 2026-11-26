@@ -41,3 +41,12 @@ export function record(name: string, policy: GoldenPolicyName, level: ShooterLev
 
 /** Replays a stored case with the current code. */
 export const replay = (stored: GoldenCase): GoldenCase => record(stored.name, stored.policy, stored.level);
+
+/** Stage 4D: which way a lost game was lost ("player" or "base"), or "" for a game that was not lost. A second, identical run, kept
+ * apart from record() so that the cases of the older goldens stay exactly what they were. */
+export function lostByOf(level: ShooterLevel, policy: GoldenPolicyName): string {
+  const state = createSim(level);
+  const decide = POLICIES[policy];
+  while (state.status === 'playing' && state.tick < MAX_TICKS) step(state, decide(state));
+  return state.status === 'lost' ? (state.lostBy ?? 'player') : '';
+}

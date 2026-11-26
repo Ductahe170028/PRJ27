@@ -31,6 +31,16 @@ export function bossHpFor(boss: Exclude<ShooterBrief['boss'], 'none'>, intensity
   return Math.min(400, Math.max(10, Math.round(ENEMY_TYPES[boss].hp * (BOSS_HP_BY_INTENSITY[intensity - 1] ?? 1))));
 }
 
+/** The base of a level that has one (brief `base: 'defend'`): its center is the center of the field, which is where every compiled
+ * level starts the player, so the player starts `gap` px away from it, on one of four sides (see compile.ts). The gap is tuned
+ * (limits 56..90 px; docs/shooter-calibration.md, Stage 4D); it is an object only so that the calibration script can try others. */
+export const BASE_PLAYER = { gap: 64 };
+/** The base's hit points by intensity 1..5 (20..200, the schema's maximum). Intensities 1-3 sit at 120; 4 and 5 get more (150, 200) because the
+ * dense waves of the top two levels cannot be held by 120 (Stage 4D.1, docs/shooter-calibration.md). */
+export const BASE_HP_BY_INTENSITY: number[] = [120, 120, 120, 150, 200];
+/** The `base` of a level for a brief of this intensity. */
+export const baseFor = (intensity: number) => ({ x: PLAYER_START.x, y: PLAYER_START.y, hp: BASE_HP_BY_INTENSITY[intensity - 1] ?? BASE_HP_BY_INTENSITY[2]! });
+
 /** Chance in percent that a defeated enemy drops a health pickup, by the brief's `healthDrops`. */
 export const HEALTH_DROP_PCT: Record<ShooterBrief['healthDrops'], number> = { none: 0, some: 12, many: 25 };
 

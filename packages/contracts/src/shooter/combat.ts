@@ -36,7 +36,10 @@ export function hurtPlayer(state: ShooterState, t: number) {
 export function advanceClock(state: ShooterState, t: number) {
   const { level, player } = state;
   state.tick = t + 1;
-  if (player.hp <= 0) state.status = 'lost';
-  else if (level.win.type === 'survive' ? state.tick >= level.win.seconds * TICK_RATE
+  const baseDown = state.base !== undefined && state.base.hp <= 0;
+  if (player.hp <= 0 || baseDown) {
+    state.status = 'lost';
+    if (state.base) state.lostBy = player.hp <= 0 ? 'player' : 'base';
+  } else if (level.win.type === 'survive' ? state.tick >= level.win.seconds * TICK_RATE
     : level.win.type === 'kill' ? state.kills >= level.win.count : state.bossDown === true) state.status = 'won';
 }

@@ -10,7 +10,7 @@ import { deriveRng } from '../src/shooter/rng.js';
 import { BRUTE_NOT_BEFORE, ENEMY_WEIGHT, SPITTER_NOT_BEFORE, scheduleWaves } from '../src/shooter/waves.js';
 
 const raw = (patch: Record<string, unknown> = {}) => ({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Stage 4B', theme: 'zombie-city', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: 'Stage 4B', theme: 'zombie-city', map: 'pillars',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [] as unknown[], ...patch,
 }) as Record<string, any>;

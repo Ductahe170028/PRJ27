@@ -43,10 +43,21 @@ export const NOTICE_GROUPS: readonly Group[] = [
   },
   { id: 'vehicle', pattern: /\bxe\b|\bphuong tien\b|\bvehicles?\b|\b(drive|drives|driving)\b/, notice: 'Chưa hỗ trợ: xe và phương tiện. Người chơi đi bộ.' },
   { id: 'multiplayer', pattern: /\bmulti ?player\b|\bco ?op\b|\bnhieu nguoi choi\b|\bhai nguoi choi\b|\b2 nguoi choi\b|\b(two|2|multiple) players?\b/, notice: 'Chưa hỗ trợ: nhiều người chơi. Game chỉ có một người chơi.' },
+  // The base itself is supported now (brief `base: 'defend'`); what is not: building or upgrading towers and walls, repairing the base, and more than one.
   {
-    id: 'defense',
-    pattern: /\bbao ve\b.{0,24}\b(can cu|can ban|co so|tru so|thanh|lau dai|base|tower|castle|camp)\b|\bphong thu\b|tower defen[cs]e|base defen[cs]e|\bdefend\b.{0,16}\b(base|tower|castle|camp|fort)\b/,
-    notice: 'Chưa hỗ trợ: bảo vệ căn cứ. Màn chơi chỉ có sống sót hoặc hạ quái.',
+    id: 'towers',
+    pattern: /\b(?:xay|dat|nang cap)\b.{0,16}\b(?:thap phao|thap|tru|tuong|hang rao|phao dai)\b|\b(?:build|building|upgrade|upgrading)\b.{0,16}\b(?:towers?|turrets?|walls?|fences?)\b|tower defen[cs]e/,
+    notice: 'Chưa hỗ trợ: xây hoặc nâng cấp tháp, tường. Căn cứ không thể xây thêm.',
+  },
+  {
+    id: 'many-bases',
+    pattern: /\b(?:hai|2|nhieu) +can cu\b|\bnhieu +can cu\b|\bmultiple bases\b/,
+    notice: 'Chưa hỗ trợ: nhiều căn cứ. Mỗi màn có tối đa một căn cứ.',
+  },
+  {
+    id: 'repair-base',
+    pattern: /\bsua can cu\b|\bsua chua\b|\brepair\w*\b.{0,16}\bbase\b|\bbase\b.{0,16}\brepair/,
+    notice: 'Chưa hỗ trợ: sửa chữa căn cứ. Căn cứ không tự hồi máu.',
   },
   {
     id: 'escort',
@@ -130,4 +141,28 @@ export function collectNotices(input: { prompt: string; unsupported: readonly st
     list.splice(drop >= 0 ? drop : list.length - 1, 1);
   }
   return list;
+}
+
+// --- What the model added that nobody asked for -----------------------------------------------------------------------------
+// A small model sometimes adds a feature that changes the game (health drops, a base to lose) when the user's text says
+// nothing of it. A feature is kept only when the text has at least one word that could mean it; the words are many on purpose
+// (folded text, no accents), so that a user who did ask is never refused, even at the price of keeping a few that were not asked for.
+
+/** Words that could mean health drops (`mau` also reads "màu" and `roi` also "rồi", `tim` also "tìm": folded text cannot tell them apart). */
+const HEALTH_ASKED = /\b(?:hoi mau|hop mau|binh mau|mau|hoi phuc|heal\w*|health|med ?kits?|thuoc|vat pham|items?|pick ?ups?|roi|drops?|tim)\b/;
+/** Words that could mean a base to defend (`thanh phố` is a city, not a castle). */
+const BASE_ASKED = /\b(?:can cu|can ban|bao ve|giu|phong thu|thanh(?! pho)|nha|trai|phao dai|tru so|co so|base|defen[cs]e\w*|protect\w*|guard\w*|fort\w*|castle|camp|house|shelter)\b/;
+
+export interface Guarded<T> { brief: T; /** The features the guard took out, by the name of the brief's field. */ removed: Array<'healthDrops' | 'base'> }
+
+/** Puts `healthDrops` back to 'none' and `base` back to 'none' when the user's text has no word that could mean them. The boss is left
+ * alone (too many ways to say it, and losing a boss the user wanted is worse than keeping one they did not). Nothing is said to the
+ * user about what was taken out: they did not ask for it. The caller records `removed` for the diagnostics. */
+export function guardUnrequested<T extends { healthDrops: string; base: string }>(brief: T, prompt: string): Guarded<T> {
+  const text = fold(prompt);
+  const removed: Guarded<T>['removed'] = [];
+  let next = brief;
+  if (brief.healthDrops !== 'none' && !HEALTH_ASKED.test(text)) { next = { ...next, healthDrops: 'none' }; removed.push('healthDrops'); }
+  if (brief.base !== 'none' && !BASE_ASKED.test(text)) { next = { ...next, base: 'none' }; removed.push('base'); }
+  return { brief: next, removed };
 }

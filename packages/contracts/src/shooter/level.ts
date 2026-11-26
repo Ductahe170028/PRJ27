@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import {
-  EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
+  BASE_CLEARANCE, EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
 } from './constants.js';
-import { dist, pointRectDistance, rectInsideField } from './geometry.js';
+import { baseRectOf, dist, pointRectDistance, rectInsideField } from './geometry.js';
 import { intBetween as integer, labelOf } from './schema-helpers.js';
 
 const label = labelOf(80);
@@ -37,6 +37,8 @@ export const ShooterLevelSchema = z.object({
   drops: z.object({ healthChancePct: integer(0, 50) }).strict().optional(),
   /** Hit points of the boss when it appears (absent = the boss kind's own). */
   bossHp: integer(10, 400).optional(),
+  /** A base to defend (absent = none): a square of BASE_SIZE centered here. The game is lost when its hit points reach zero. */
+  base: z.object({ ...point, hp: integer(5, 200) }).strict().optional(),
   win: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(10, 300) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(1, 400) }).strict(),
@@ -59,6 +61,21 @@ export const ShooterLevelSchema = z.object({
       issue(['spawnPoints', index], 'Điểm xuất hiện của quái quá gần người chơi.');
     }
   });
+  if (level.base) {
+    const square = baseRectOf(level.base);
+    if (!rectInsideField(square) || !insideMargin({ x: square.x - square.width / 2, y: square.y - square.height / 2 })
+      || !insideMargin({ x: square.x + square.width / 2, y: square.y + square.height / 2 })) issue(['base'], 'Căn cứ nằm quá sát mép vùng chơi.');
+    level.obstacles.forEach((block, index) => {
+      const gapX = Math.max(Math.abs(block.x - square.x) - (block.width + square.width) / 2, 0);
+      const gapY = Math.max(Math.abs(block.y - square.y) - (block.height + square.height) / 2, 0);
+      if (dist(gapX, gapY) < BASE_CLEARANCE) issue(['obstacles', index], 'Vật cản nằm quá gần căn cứ.');
+    });
+    if (pointRectDistance(level.player.x, level.player.y, square) < OBSTACLE_MARGIN) issue(['player'], 'Người chơi nằm trong hoặc sát căn cứ.');
+    level.spawnPoints.forEach((spawn, index) => {
+      if (pointRectDistance(spawn.x, spawn.y, square) < OBSTACLE_MARGIN) issue(['spawnPoints', index], 'Điểm xuất hiện của quái nằm trong hoặc sát căn cứ.');
+      if (dist(spawn.x - level.base!.x, spawn.y - level.base!.y) < SPAWN_SAFE_DISTANCE) issue(['spawnPoints', index], 'Điểm xuất hiện của quái quá gần căn cứ.');
+    });
+  }
   const total = level.waves.reduce((sum, wave) => sum + wave.count, 0);
   if (total > MAX_SCHEDULED_ENEMIES) issue(['waves'], `Tổng số quái theo lịch vượt ${MAX_SCHEDULED_ENEMIES}.`);
   if (level.win.type === 'kill' && level.win.count > total) {

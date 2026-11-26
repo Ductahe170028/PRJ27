@@ -11,7 +11,7 @@ lời mô tả  →  AI (Gemini hoặc Groq) chọn từ danh sách có sẵn  �
 1. **AI chỉ chọn, không vẽ.** Nó trả về một bản mô tả ngắn ("brief"): bối cảnh, bản đồ, loại quái, độ khó, súng, máu, mục tiêu, có boss hay không. Nó không bao giờ viết tọa độ hay số của vật lý.
 2. **Engine dựng màn** từ brief (cùng brief và cùng số `seed` luôn ra cùng một màn): đặt vật cản, lên lịch quái, tính máu boss.
 3. **Một bot "người chơi bình thường" thử chơi** màn đó. Nếu bot thua quá nhiều thì engine giảm số quái cho tới khi chơi được, và báo cho người dùng.
-4. **Những gì engine chưa làm được** (bảo vệ căn cứ, nhiều boss, hết đạn...) được liệt kê trong khối "Chưa hỗ trợ / điều chỉnh"; game vẫn chạy.
+4. **Căn cứ cần bảo vệ** có trong game (một tòa nhà vuông giữa sân: quái có thể đánh nó, thua nếu nó bị phá hoặc bạn bị hạ). **Những gì engine chưa làm được** (xây tháp, nhiều căn cứ, nhiều boss, hết đạn...) được liệt kê trong khối "Chưa hỗ trợ / điều chỉnh"; game vẫn chạy.
 5. Phaser chỉ **vẽ**: luật chơi nằm trong một mô-đun TypeScript thuần (`packages/contracts/src/shooter/`), nên kết quả giống nhau trên mọi máy.
 
 Có chọn "Demo" trong Settings thì không gọi AI: luôn chạy màn tay "Đấu trường".
@@ -42,7 +42,7 @@ Mở http://127.0.0.1:5173. `npm run dev` dựng thư viện dùng chung rồi c
 
 ### Sân chơi các màn viết tay (không gọi AI)
 
-`http://127.0.0.1:5173/?shooter=<tên>`; tên hiện có: `arena`, `pillars`, `wall`, `smoke-win`, `smoke-lose`, `shotgun-pit`, `spitters`, `medic`, `boss-crusher`, `boss-gunner`. Sai tên thì trang liệt kê các tên đúng.
+`http://127.0.0.1:5173/?shooter=<tên>`; tên hiện có: `arena`, `pillars`, `wall`, `smoke-win`, `smoke-lose`, `shotgun-pit`, `spitters`, `medic`, `boss-crusher`, `boss-gunner`, `base-siege`, `base-boss`, `base-fall`. Sai tên thì trang liệt kê các tên đúng.
 
 ## Biến môi trường
 

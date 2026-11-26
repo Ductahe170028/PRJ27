@@ -2,10 +2,12 @@
 // it reads a ShooterState (or a level) and paints it. ShooterScene owns the loop and the input.
 import Phaser from 'phaser';
 import {
-  BULLET_RADIUS, ENEMY_TYPES, FIELD, PLAYER_RADIUS, bossOf, bossWaveOf, isBoss, isEnraged,
+  BASE_SIZE, BULLET_RADIUS, ENEMY_TYPES, FIELD, PLAYER_RADIUS, bossOf, bossWaveOf, isBoss, isEnraged,
   type EnemyType, type ShooterEnemy, type ShooterLevel, type ShooterState,
 } from '@game-creator/contracts';
-import { BANNER_HINT, BOSS_WARNING_TEXT, bannerAlpha, bannerTextColor, bannerTitle, bossBar, bossWarningAlpha } from '../lib/shooter-text';
+import {
+  BANNER_HINT, BASE_BAR, BASE_BAR_LABEL, BASE_BAR_PLATE, BOSS_WARNING_TEXT, bannerAlpha, bannerLines, bannerTextColor, bannerTitle, baseBar, bossBar, bossWarningAlpha,
+} from '../lib/shooter-text';
 
 export const color = (hex: string) => Number.parseInt(hex.slice(1), 16);
 /** Scales each channel of #rrggbb by `factor` (<1 darker, >1 lighter, capped). */
@@ -116,6 +118,30 @@ export function drawBullets(g: Phaser.GameObjects.Graphics, state: ShooterState,
   }
 }
 
+/** The base: a dark square with a lighter roof and a door on the side the player is on, a thick rim in the theme's accent, and a small
+ * health bar above it. It flashes white for a moment when it is hit, and its rim flashes red when it is low. */
+export function drawBase(g: Phaser.GameObjects.Graphics, state: ShooterState, level: ShooterLevel) {
+  const { base, player } = state;
+  if (!base) return;
+  const half = BASE_SIZE / 2;
+  const left = base.x - half;
+  const top = base.y - half;
+  const bar = baseBar(base.hp, base.maxHp);
+  g.fillStyle(shade(level.theme.accent, 0.4), 1).fillRect(left, top, BASE_SIZE, BASE_SIZE);
+  g.fillStyle(shade(level.theme.accent, 0.7), 1).fillRect(base.x - 18, base.y - 18, 36, 36);
+  // the door, on the side the player is on
+  const dx = player.x - base.x;
+  const dy = player.y - base.y;
+  g.fillStyle(0x060d18, 1);
+  if (Math.abs(dx) >= Math.abs(dy)) g.fillRect(dx >= 0 ? base.x + half - 8 : left, base.y - 9, 8, 18);
+  else g.fillRect(base.x - 9, dy >= 0 ? base.y + half - 8 : top, 18, 8);
+  const flashingRed = bar.low && Math.floor(state.tick / 10) % 2 === 0;
+  g.lineStyle(5, flashingRed ? 0xff4d4d : color(level.theme.accent), 1).strokeRect(left, top, BASE_SIZE, BASE_SIZE);
+  if (state.tick - base.lastHitTick < 12 && Math.floor(state.tick / 3) % 2 === 0) g.fillStyle(0xffffff, 0.65).fillRect(left, top, BASE_SIZE, BASE_SIZE);
+  g.fillStyle(0x060d18, 0.85).fillRect(left, top - 15, BASE_SIZE, 8);
+  g.fillStyle(flashingRed ? 0xff4d4d : color(level.theme.accent), 1).fillRect(left + 1, top - 14, (BASE_SIZE - 2) * bar.share, 6);
+}
+
 /** Bullets of shooting enemies: a lighter disk with a thin white rim, so they are never mistaken for the player's. */
 export function drawEnemyBullets(g: Phaser.GameObjects.Graphics, state: ShooterState, level: ShooterLevel) {
   for (const bullet of state.enemyBullets) {
@@ -150,6 +176,7 @@ export function drawPlayer(g: Phaser.GameObjects.Graphics, state: ShooterState, 
 export function drawState(g: Phaser.GameObjects.Graphics, state: ShooterState, level: ShooterLevel) {
   g.clear();
   drawPickups(g, state);
+  drawBase(g, state, level);
   drawEnemies(g, state, level);
   drawEnemyBullets(g, state, level);
   drawBullets(g, state, level);
@@ -172,18 +199,21 @@ export function createHud(scene: Phaser.Scene, level: ShooterLevel): Phaser.Game
  * (the canvas has no text a test can read). */
 export function createBanner(scene: Phaser.Scene, level: ShooterLevel): { update(elapsedMs: number): void; dispose(): void } {
   const text = bannerTextColor(level.theme);
+  const title2 = bannerTitle(level.win, level.base !== undefined);
+  const lines = bannerLines(title2); // a long goal (a base to defend) goes on two lines
+  const two = lines.length > 1;
   const note = document.createElement('p');
   note.id = 'game-banner';
   note.setAttribute('role', 'status');
-  note.textContent = `${bannerTitle(level.win)}. ${BANNER_HINT}`;
+  note.textContent = `${title2}. ${BANNER_HINT}`;
   Object.assign(note.style, { position: 'absolute', width: '1px', height: '1px', margin: '-1px', padding: '0', overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap' });
   document.getElementById('game-banner')?.remove();
   document.body.appendChild(note);
-  const plate = scene.add.rectangle(480, 205, 700, 86, 0x060d18, 0.62).setDepth(20);
-  const title = scene.add.text(480, 188, bannerTitle(level.win), {
-    fontFamily: 'system-ui', fontSize: '32px', fontStyle: 'bold', color: text, stroke: '#060d18', strokeThickness: 5,
+  const plate = scene.add.rectangle(480, two ? 214 : 205, 700, two ? 124 : 86, 0x060d18, 0.62).setDepth(20);
+  const title = scene.add.text(480, two ? 196 : 188, lines.join('\n'), {
+    fontFamily: 'system-ui', fontSize: '32px', fontStyle: 'bold', color: text, stroke: '#060d18', strokeThickness: 5, align: 'center',
   }).setOrigin(0.5).setDepth(21);
-  const hint = scene.add.text(480, 226, BANNER_HINT, {
+  const hint = scene.add.text(480, two ? 258 : 226, BANNER_HINT, {
     fontFamily: 'system-ui', fontSize: '16px', color: '#ffffff', stroke: '#060d18', strokeThickness: 4,
   }).setOrigin(0.5).setDepth(21);
   const parts = [plate, title, hint];
@@ -211,7 +241,7 @@ export function createBanner(scene: Phaser.Scene, level: ShooterLevel): { update
  * warning's timing counts game ticks from the first tick that a boss is on the field (so a restart starts it again), the
  * bar is full at the boss's maximum and shows "CUỒNG NỘ" once it is enraged. The same words are in a visually hidden
  * `#game-boss-warning` while the warning is up (for screen readers and tests). Nothing is drawn in a level without a boss. */
-export function createBossUi(scene: Phaser.Scene, level: ShooterLevel): { update(state: ShooterState): void; dispose(): void } | undefined {
+export function createBossUi(scene: Phaser.Scene, level: ShooterLevel): { update(state: ShooterState): void; bounds(): string; dispose(): void } | undefined {
   if (!bossWaveOf(level)) return undefined;
   const plate = scene.add.rectangle(480, 83, 488, 20, 0x060d18, 0.72).setDepth(12).setVisible(false);
   const fill = scene.add.rectangle(240, 83, 480, 12, color(level.theme.enemy), 1).setOrigin(0, 0.5).setDepth(13).setVisible(false);
@@ -220,11 +250,13 @@ export function createBossUi(scene: Phaser.Scene, level: ShooterLevel): { update
   const warning = scene.add.text(480, 150, BOSS_WARNING_TEXT, { fontFamily: 'system-ui', fontSize: '38px', fontStyle: 'bold', color: '#ffffff', stroke: '#060d18', strokeThickness: 6 }).setOrigin(0.5).setDepth(22).setVisible(false);
   let note2: HTMLElement | undefined;
   let seenAt: number | undefined;
+  let barUp = false;
   const hideNote = () => { note2?.remove(); note2 = undefined; };
   return {
     update(state) {
       const boss = state.enemies.find((enemy) => isBoss(enemy.type) && enemy.maxHp !== undefined);
       const visible = boss !== undefined && boss.hp > 0;
+      barUp = visible;
       for (const part of [plate, fill, label]) part.setVisible(visible);
       if (boss && visible) {
         const spec = bossOf(boss.type)!;
@@ -246,6 +278,28 @@ export function createBossUi(scene: Phaser.Scene, level: ShooterLevel): { update
       }
       if (alpha <= 0) hideNote();
     },
+    /** The plate of the bar as drawn ("x,y,width,height"), or "" when the bar is not up. */
+    bounds() { const b = plate.getBounds(); return barUp ? `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}` : ''; },
     dispose() { hideNote(); for (const part of [plate, fill, label, note, warning]) part.destroy(); },
+  };
+}
+
+/** The base's bar on top of the screen, in the HUD strip at the right: "CĂN CỨ", then a bar that is full at the base's maximum and
+ * flashes red when the base is low. Nothing is drawn in a level without a base. `bounds()` is the plate as drawn, for the tests. */
+export function createBaseUi(scene: Phaser.Scene, level: ShooterLevel): { update(state: ShooterState): void; bounds(): string; dispose(): void } | undefined {
+  if (!level.base) return undefined;
+  const accent = color(level.theme.accent);
+  const plate = scene.add.rectangle(BASE_BAR_PLATE.x + BASE_BAR_PLATE.width / 2, BASE_BAR_PLATE.y + BASE_BAR_PLATE.height / 2, BASE_BAR_PLATE.width, BASE_BAR_PLATE.height, 0x060d18, 0.85).setDepth(11);
+  const fill = scene.add.rectangle(BASE_BAR.x, BASE_BAR.y + BASE_BAR.height / 2, BASE_BAR.width, BASE_BAR.height, accent, 1).setOrigin(0, 0.5).setDepth(12);
+  const label = scene.add.text(BASE_BAR_LABEL.x, BASE_BAR_LABEL.y, 'CĂN CỨ', { fontFamily: 'system-ui', fontSize: '13px', fontStyle: 'bold', color: '#ffffff', stroke: '#060d18', strokeThickness: 3 }).setOrigin(1, 0.5).setDepth(12);
+  return {
+    update(state) {
+      if (!state.base) return;
+      const bar = baseBar(state.base.hp, state.base.maxHp);
+      fill.setDisplaySize(Math.max(0, BASE_BAR.width * bar.share), BASE_BAR.height);
+      fill.setFillStyle(bar.low && Math.floor(state.tick / 10) % 2 === 0 ? 0xff4d4d : accent, 1);
+    },
+    bounds() { const b = plate.getBounds(); return `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}`; },
+    dispose() { for (const part of [plate, fill, label]) part.destroy(); },
   };
 }

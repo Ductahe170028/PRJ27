@@ -11,7 +11,7 @@ vi.setConfig({ testTimeout: 120_000 });
 
 const shaped = SHOOTER_MAPS.filter((map): map is Exclude<MapName, 'open-arena'> => map !== 'open-arena');
 const brief = (map: MapName): ShooterBrief => ShooterBriefSchema.parse({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Map', theme: 'zombie-city', map, enemies: [{ type: 'runner', share: 5 }],
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: 'Map', theme: 'zombie-city', map, enemies: [{ type: 'runner', share: 5 }],
   intensity: 2, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [],
 });
 /** The raw layout a template draws for `seed` at `variant`, exactly as the compiler asks for it. */

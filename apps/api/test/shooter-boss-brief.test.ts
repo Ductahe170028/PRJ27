@@ -14,7 +14,7 @@ import type { PlayResult } from '@game-creator/contracts';
 vi.setConfig({ testTimeout: 60_000 });
 
 const raw = (patch: Record<string, unknown> = {}) => ({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Boss', theme: 'military-base', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: 'Boss', theme: 'military-base', map: 'pillars',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 90 }, unsupported: [] as unknown[], ...patch,
 }) as Record<string, any>;
@@ -157,7 +157,7 @@ describe('compiling a brief with a boss', () => {
     for (let i = 0; i < 30; i += 1) {
       const survive = i % 2 === 0;
       const b = ShooterBriefSchema.parse({
-        version: 'brief-1', healthDrops: 'none', boss: 'none', title: `Golden ${i}`, theme: 'zombie-city',
+        version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: `Golden ${i}`, theme: 'zombie-city',
         map: SHOOTER_MAPS[i % SHOOTER_MAPS.length], enemies: MIXES[i % MIXES.length], intensity: ((Math.floor(i / 5) + i) % 5) + 1,
         playerHealth: PLAYER_HEALTHS[(i + Math.floor(i / 3)) % PLAYER_HEALTHS.length], weapon: OLD_WEAPONS[i % OLD_WEAPONS.length],
         goal: survive ? { type: 'survive', seconds: SURVIVE[(i >> 1) % SURVIVE.length] } : { type: 'kill', count: KILL[(i >> 1) % KILL.length] }, unsupported: [],
@@ -277,6 +277,6 @@ describe('what the model is told about the boss', () => {
   it('no longer says there are no bosses, and names what is still missing', () => {
     expect(text).not.toMatch(/NO bosses/);
     expect(text).toContain('more than one boss, mini-bosses, bosses that summon enemies');
-    for (const word of ['vehicles', 'multiplayer', 'defense', 'reloading', 'crafting', 'traps', 'explosions or area damage']) expect(text).toContain(word);
+    for (const word of ['vehicles', 'multiplayer', 'towers', 'repairing the base', 'more than one base', 'reloading', 'crafting', 'traps', 'explosions or area damage']) expect(text).toContain(word);
   });
 });

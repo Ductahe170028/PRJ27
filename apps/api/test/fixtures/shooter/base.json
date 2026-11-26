@@ -1,0 +1,15 @@
+{
+  "version": "brief-1",
+  "healthDrops": "none",
+  "boss": "none",
+  "base": "defend",
+  "title": "Giữ căn cứ",
+  "theme": "military-base",
+  "map": "pillars",
+  "enemies": [{ "type": "runner", "share": 5 }, { "type": "swarmer", "share": 5 }],
+  "intensity": 1,
+  "playerHealth": "normal",
+  "weapon": "pistol",
+  "goal": { "type": "survive", "seconds": 60 },
+  "unsupported": []
+}

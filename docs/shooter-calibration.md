@@ -1,11 +1,177 @@
 # Hiệu chỉnh mật độ quái của shooter
 
-Phần "Stage 4C.1" ngay dưới là số liệu mới nhất (boss không kẹt, nhịp quái của màn boss); phần "Stage 4C" sau nó là boss cuối (các số của boss và bảng trước 4C.1: bảng I1–I5 của 4C đã bị 4C.1 thay thế); phần "Stage 4B" là hai súng mới, quái bắn xa và hồi máu; phần "Stage 4A" là bot bình thường; các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
+Phần "Stage 4D.1" ngay dưới là số liệu mới nhất (máu căn cứ ở I4-I5); phần "Stage 4D" sau nó là căn cứ cần bảo vệ (các bảng của nó là trước 4D.1); phần "Stage 4C.1" sau nó là boss không kẹt (boss không kẹt, nhịp quái của màn boss); phần "Stage 4C" sau nó là boss cuối (các số của boss và bảng trước 4C.1: bảng I1–I5 của 4C đã bị 4C.1 thay thế); phần "Stage 4B" là hai súng mới, quái bắn xa và hồi máu; phần "Stage 4A" là bot bình thường; các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
 
 Lưới: intensity 1-5 x mix quái (runner, brute, swarmer, cả ba) x map (5) x weapon (3) x health (3) x 3 seed; mục tiêu sống sót 60 s.
 "Trước cổng" là bot chơi level đúng như compiler dựng; "sau cổng" là level service sẽ trả (compile + cổng), chơi trên seed mà cổng chưa dùng.
 
-## Stage 4C.1: boss không kẹt, màn boss tập trung vào boss (mới nhất)
+## Stage 4D.1: máu căn cứ ở độ khó 4 và 5 (mới nhất)
+
+Sau Stage 4D chỉ còn một chỗ chưa đạt: I5 trước cổng 13,0% (mục tiêu 20-50%). Quyết định (của người review, thay người dùng): chỉ tăng máu căn cứ ở I4 và I5, không đụng I1-I3, không đổi núm nào khác, không đổi schema (máu căn cứ tối đa vốn là 200).
+
+**Bộ số cuối:** `BASE_HP_BY_INTENSITY = [120, 120, 120, 150, 200]` (trước đó `[120 x 5]`); `BASE_HIT_INTERVAL_MS = 800`, `TARGET_SWITCH_MARGIN = 100`, `BOT_LEASH = 170`, `BASE_PLAYER_GAP = 64` như cũ. Giới hạn của núm máu căn cứ là 20..200 (không còn "không tăng theo intensity": máu căn cứ không bao giờ giảm khi độ khó tăng).
+
+`--set=base` đầy đủ (4500 ván mỗi pha, bot bình thường), trước cổng, khớp từng số với phép đo của người review:
+
+| intensity | mục tiêu % | trước 4D.1 | **sau 4D.1** | thua | do người chơi | do căn cứ | tỉ lệ người chơi / căn cứ |
+|---|---|---|---|---|---|---|---|
+| 1 | ≥ 80 | 97,0 | **97,0** | 27 | 6 | 21 | 22,2% / 77,8% |
+| 2 | 65-90 | 89,3 | **89,3** | 96 | 42 | 54 | 43,8% / 56,3% |
+| 3 | 50-80 | 65,9 | **65,9** | 307 | 137 | 170 | 44,6% / 55,4% |
+| 4 | 35-65 | 37,2 | **46,8** | 479 | 249 | 230 | 52,0% / 48,0% |
+| 5 | 20-50 | 13,0 | **29,9** | 631 | 415 | 216 | 65,8% / 34,2% |
+
+Mọi intensity đạt mục tiêu; mọi kiểu thua ≥ 15% ở mọi mức. Ở I3 với `pistol`: 107 ván thua, 57,9% do căn cứ, 42,1% do người chơi (không đổi).
+
+Bot thắng theo súng x intensity (trong ngoặc: tỉ lệ thua do căn cứ):
+
+| súng | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|
+| pistol | 94% (82%) | 82% (82%) | 41% (58%) | 8% (61%) | 1% (46%) |
+| rapid | 98% (100%) | 99% (0%) | 93% (46%) | 89% (35%) | 71% (19%) |
+| heavy | 98% (75%) | 90% (50%) | 72% (63%) | 48% (44%) | 18% (39%) |
+| shotgun | 97% (50%) | 85% (33%) | 58% (34%) | 44% (30%) | 28% (25%) |
+| piercing | 98% (100%) | 91% (56%) | 67% (73%) | 45% (52%) | 32% (28%) |
+
+Sau cổng (bot thắng ở seed cổng chưa dùng):
+
+| intensity | dựng được | bot thắng | màn bị giảm | máu căn cứ trung bình sau cổng | thua do căn cứ / số ván thua |
+|---|---|---|---|---|---|
+| 1 | 100,0% | 80,7% | 5,9% (53/900) | 121,1 | 168 / 174 |
+| 2 | 100,0% | 82,3% | 8,7% (78/900) | 121,7 | 126 / 159 |
+| 3 | 100,0% | 69,8% | 42,6% (383/900) | 131,2 | 182 / 272 |
+| 4 | 100,0% | 69,4% | 59,7% (537/900) | 170,6 | 154 / 275 |
+| 5 | 100,0% | 67,1% | 73,7% (663/900) | 200,0 | 104 / 296 |
+
+Đạt: dựng được 100% (≥ 99%), bot thắng ≥ 67,1% (≥ 60%), `unwinnable_level` 0 trên 4500 (≤ 1%). Tỉ lệ màn bị giảm ở I4 và I5 giảm (67,7 → 59,7% và 88,6 → 73,7%). Cổng: ở I5 máu đã bắt đầu ở 200 (trần) nên cổng chỉ còn cách giảm quái; test mới kiểm tra máu căn cứ đứng ở 200 qua mọi bước và mọi màn đều qua schema. Ở I4 (150) máu căn cứ sau cổng tối đa 200 (không màn nào vượt). Bản đồ bị đơn giản hóa: 0,0% ở cả 5 map.
+
+**Không thoái lui:** `--set=old|new|boss --seeds=1` giống từng ký tự (so bằng `cmp` với kết quả trước Stage 4D); ba bản chụp vàng cũ không đổi. `golden-sim-4d.json` tạo lại (ván I5 đổi): 18 ván, 9 thắng, 9 thua (4 do căn cứ, 5 do người chơi).
+
+**Các lát phụ của Stage 4D** (`--goal=kill:40`, `--boss=crusher`, `--boss=gunner`, mục "Stage 4D" bên dưới) đo với `[120 x 5]` và chưa chạy lại ở 4D.1; I1-I3 không đổi, chỉ I4-I5 của chúng thay đổi.
+
+**Điều tra ngắn: vì sao `--goal=kill:40` có bot thắng sau cổng ở I1-I2 chỉ 59,5% / 55,9% và `unwinnable` 0,6%.** Đo lại (225 ván mỗi ô, bot bình thường, `kill:40`, base `defend`, I1 / I2): có hai ô yếu, cả hai là chuyện mix quái trong màn có căn cứ, không phải màn bất khả thi nói chung.
+- Hỗn hợp chỉ có `brute`: trước cổng thắng 3% / 3% (215 trên 225 ván thua do căn cứ bị phá, bot mới hạ trung bình 19 trên 40 quái); sau cổng thắng 30% / 20%, và 18/225 / 9/225 ván bị từ chối `unwinnable_level`: đó là toàn bộ 0,6% của lát này. Brute nhiều máu đi thẳng vào căn cứ và đánh nó liên tục, hạ đủ 40 con bằng súng bình thường mất lâu hơn thời gian căn cứ chịu được.
+- `all4` ở I2: trước cổng 40% (91 thua do căn cứ, 44 do người chơi), sau cổng 43%, cổng không từ chối ván nào; còn `all4` ở I1 thắng 83% trước cổng và 70% sau cổng. Chưa rõ vì sao I2 thấp hơn I1 nhiều (có thể quái bắn xa đánh căn cứ từ xa); chưa điều tra.
+- `runner` và `mixed` ổn (trước cổng 81-96%, sau cổng 65-94%). Chưa phân biệt được bao nhiêu phần do bot (dây xích quanh căn cứ) và bao nhiêu do mục tiêu "hạ 40 con" khó trong màn có căn cứ: cần đo bot giỏi hoặc `BOT_LEASH` khác trên hai ô này, chưa làm.
+
+## Stage 4D: căn cứ cần bảo vệ (các bảng dưới đây là TRƯỚC Stage 4D.1, máu căn cứ 120 cả năm)
+
+Căn cứ là một tòa nhà vuông 56 px ở giữa sân (máu 5..200). Quái có thể nhắm vào nó (đi thẳng tới, chạm thì gây sát thương mỗi 0,5 giây theo tổng quái đang chạm, quái bắn xa đứng giữ tầm và bắn vào tâm căn cứ). Thua khi người chơi chết HOẶC căn cứ hết máu (thua được xét trước thắng). Bot bảo vệ căn cứ (nhắm quái gần căn cứ nhất, dây xích 170 px). Số liệu dưới đây do `npx tsx scripts/calibrate-shooter.ts --set=base` (từ `apps/api`) in ra; bot "bình thường" là thước đo.
+
+**Lưới `--set=base`**: intensity 1-5 x súng (5) x map (5) x máu (3) x hỗn hợp quái (`mixed`, `runner`, `brute`, `all4`) x 3 seed = 4500 ván mỗi pha, `survive 60`, `base: 'defend'`. Lát phụ: `--goal=kill:40`, `--boss=crusher`, `--boss=gunner`. Mỗi bảng tách "thua do người chơi chết" và "thua do căn cứ bị phá".
+
+### Các bộ số đã thử (trước cổng, bot bình thường; bot thắng % ở I1 / I2 / I3 / I4 / I5)
+
+Mục tiêu: I1 ≥ 80, I2 65-90, I3 50-80, I4 35-65, I5 20-50. Núm và giới hạn: `BASE_HP_BY_INTENSITY` 20..120 (không tăng theo intensity; giới hạn này được nới thành 20..200 ở Stage 4D.1), `BASE_HIT_INTERVAL_MS` 300..800, `TARGET_SWITCH_MARGIN` 30..100, `BOT_LEASH` 120..220, `BASE_PLAYER_GAP` 56..90.
+
+Vòng thăm dò (1 seed, 1500 ván, chỉ trước cổng):
+
+| máu căn cứ | hit ms | margin | leash | gap | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|---|---|---|---|
+| 60/50/40/32/26 (bộ đầu) | 500 | 60 | 170 | 64 | 67,7 | 35,7 | 7,7 | 2,7 | 0,0 |
+| 120/110/100/90/80 | 500 | 60 | 170 | 64 | 88,7 | 76,3 | 40,7 | 13,0 | 3,3 |
+| 120 cả năm | 500 | 60 | 170 | 64 | 88,7 | 82,3 | 46,7 | 22,3 | 7,0 |
+| 120 cả năm | 800 | 60 | 170 | 64 | 96,7 | 93,0 | 67,0 | 42,3 | 16,3 |
+| 120 cả năm | 800 | 60 | 220 | 64 | 96,7 | 93,0 | 67,0 | 42,3 | 16,3 |
+| 120 cả năm | 800 | 60 | 120 | 64 | 96,7 | 93,0 | 68,0 | 42,0 | 14,3 |
+| 120 cả năm | 800 | 100 | 170 | 64 | 98,0 | 92,3 | 75,3 | 38,7 | 15,7 |
+| 120 cả năm | 800 | 30 | 170 | 64 | 98,7 | 87,3 | 59,0 | 46,0 | 11,7 |
+| 120 cả năm | 800 | 60 | 170 | 56 | 97,7 | 92,0 | 62,7 | 39,3 | 13,3 |
+| 120 cả năm | 800 | 60 | 170 | 90 | 97,7 | 92,7 | 63,7 | 39,7 | 15,7 |
+
+Quét có 3 seed (4500 ván, leash 220, máu 120 cả năm):
+
+| hit ms | margin | gap | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|---|---|
+| 700 | 60 | 64 | 94,1 | 85,7 | 54,3 | 31,6 | 9,7 |
+| 700 | 60 | 90 | 94,9 | 81,3 | 53,4 | 28,9 | 7,4 |
+| 700 | 80 | 64 | 96,4 | 90,0 | 55,1 | 29,3 | 10,8 |
+| 700 | 80 | 90 | 96,9 | 87,7 | 57,6 | 30,3 | 9,7 |
+| 700 | 100 | 64 | 95,3 | 86,4 | 62,1 | 32,0 | 10,4 |
+| 700 | 100 | 90 | 96,4 | 87,0 | 59,9 | 30,8 | 12,4 |
+| 800 | 60 | 64 | 97,0 | 88,8 | 62,4 | 36,6 | 12,8 |
+| 800 | 60 | 90 | 97,3 | 87,9 | 60,3 | 33,0 | 11,4 |
+| 800 | 80 | 64 | 97,4 | 91,0 | 60,3 | 34,0 | 11,3 |
+| 800 | 80 | 90 | 97,9 | 91,6 | 63,2 | 33,9 | 11,0 |
+| **800** | **100** | **64** | **97,0** | **89,3** | **65,8** | **37,3** | **13,0** |
+| 800 | 100 | 90 | 97,8 | 90,0 | 64,4 | 34,3 | 13,8 |
+
+Thử thêm quanh bộ tốt nhất (hit 800, margin 100, gap 64): leash 120 / 170 / 220 cho I5 13,1 / 13,0 / 13,0 (gần như không đổi); máu 120/120/120/100/90 cho 97,0 / 89,3 / 65,8 / 28,9 / 8,2; máu 100 cả năm cho 94,7 / 84,0 / 58,8 / 28,9 / 9,9.
+
+### Bộ số cuối
+
+`BASE_HP_BY_INTENSITY = [120, 120, 120, 120, 120]`, `BASE_HIT_INTERVAL_MS = 800`, `TARGET_SWITCH_MARGIN = 100`, `BOT_LEASH = 170`, `BASE_PLAYER_GAP = 64`. (Bộ số của Stage 4D, đã được Stage 4D.1 thay: `[120, 120, 120, 150, 200]`.) Mọi núm nằm trong giới hạn; máu căn cứ phải để ở mức trần 120 vì ngay cả mức đó, I5 vẫn dưới mục tiêu.
+
+**Chưa đạt: I5 trước cổng (13,0% so với mục tiêu 20-50%).** Giữ nguyên giới hạn các núm (không nới). Lý do: ở I4-I5 nhịp quái (`INTENSITY_RATE`, không được chỉnh ở Stage này) quá dày so với một căn cứ 120 máu; đổi `BOT_LEASH`, `TARGET_SWITCH_MARGIN`, `BASE_PLAYER_GAP` chỉ dịch I5 trong khoảng 7 đến 14%. Cổng vẫn đưa I5 về mức chơi được (bảng sau cổng bên dưới: 65,7% thắng). Đề xuất (cần người quyết định, chưa làm): nới trần máu căn cứ lên 160-200 (schema cho phép tới 200), hoặc hạ `INTENSITY_RATE` ở I5 chỉ cho màn có căn cứ.
+
+### Trước cổng (final, 4500 ván)
+
+| intensity | mục tiêu % | bot thắng % | thua | do người chơi chết | do căn cứ bị phá | tỉ lệ người chơi | tỉ lệ căn cứ |
+|---|---|---|---|---|---|---|---|
+| 1 | ≥ 80 | 97,0 | 27 | 6 | 21 | 22,2% | 77,8% |
+| 2 | 65-90 | 89,3 | 96 | 42 | 54 | 43,8% | 56,3% |
+| 3 | 50-80 | 65,9 | 307 | 137 | 170 | 44,6% | 55,4% |
+| 4 | 35-65 | 37,2 | 565 | 210 | 355 | 37,2% | 62,8% |
+| 5 | 20-50 | **13,0** | 783 | 296 | 487 | 37,8% | 62,2% |
+
+Hai kiểu thua cùng có ý nghĩa: ở intensity 3 với `pistol`, trong 107 ván thua, 57,9% do căn cứ và 42,1% do người chơi chết (cả hai ≥ 15%). Bot thắng theo súng x intensity (trong ngoặc: tỉ lệ thua do căn cứ):
+
+| súng | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|
+| pistol | 94% (82%) | 82% (82%) | 41% (58%) | 1% (70%) | 0% (66%) |
+| rapid | 98% (100%) | 99% (0%) | 93% (46%) | 83% (61%) | 49% (60%) |
+| heavy | 98% (75%) | 90% (50%) | 72% (63%) | 34% (59%) | 4% (66%) |
+| shotgun | 97% (50%) | 85% (33%) | 58% (34%) | 37% (51%) | 1% (60%) |
+| piercing | 98% (100%) | 91% (56%) | 67% (73%) | 31% (66%) | 11% (56%) |
+
+`pistol` từ I4 trở lên gần như không thắng được trước cổng (cổng giảm mật độ và tăng máu căn cứ); `rapid` thắng dễ nhất.
+
+### Sau cổng (final, 4500 ván, bot thắng ở seed cổng chưa dùng)
+
+| intensity | dựng được | bot thắng | màn bị giảm (có thông báo) | máu căn cứ trung bình sau cổng | thua do căn cứ trong số ván thua |
+|---|---|---|---|---|---|
+| 1 | 100,0% | 80,7% | 5,9% (53/900) | 121,1 | 168 / 174 |
+| 2 | 100,0% | 82,3% | 8,7% (78/900) | 121,7 | 126 / 159 |
+| 3 | 100,0% | 69,8% | 42,6% (383/900) | 131,2 | 182 / 272 |
+| 4 | 100,0% | 67,7% | 67,7% (609/900) | 142,3 | 190 / 291 |
+| 5 | 100,0% | 65,7% | 88,6% (797/900) | 156,7 | 156 / 309 |
+
+Đạt: dựng được 100% (≥ 99%), bot thắng ≥ 65,7% (≥ 60%), `unwinnable_level` 0 trên 4500 (0%, ≤ 1%). Cổng làm màn DỄ HƠN theo hai cách mỗi bước: quái thường ×0,8 và máu căn cứ ×1,15 (làm tròn lên, trần 200). Tỉ lệ màn phải giảm mật độ tăng theo intensity: 5,9% / 8,7% / 42,6% / 67,7% / 88,6%.
+
+**Tỉ lệ bản đồ bị "đơn giản hóa thành đấu trường trống" vì luật căn cứ, theo map** (không map nào vượt 25%): open-arena 0,0%, pillars 0,0%, cross-corridors 0,0%, rooms 0,0%, ring 0,0% (0 trên 900 mỗi map). (Căn cứ ở giữa sân, người chơi cách 64 px; mọi map vẫn có đường nối từ các điểm xuất hiện tới căn cứ và tới người chơi.)
+
+### Các lát phụ (cùng bộ số cuối)
+
+| lát | dựng được I1..I5 | bot thắng sau cổng I1..I5 | màn bị giảm I1..I5 | `unwinnable` | tỉ lệ thua do căn cứ, I3 pistol |
+|---|---|---|---|---|---|
+| `--goal=kill:40` | 98,0 / 99,0 / 100 / 100 / 100 | 59,5 / 55,9 / 62,6 / 63,2 / 57,7 | 17,4 / 28,3 / 43,1 / 53,0 / 69,0 % | 0,60% (27/4500) | 75,0% |
+| `--boss=crusher` | 100 / 100 / 100 / 99,9 / 100 | 79,7 / 73,0 / 68,7 / 66,7 / 64,0 | 11,9 / 12,4 / 22,4 / 41,9 / 63,3 % | 0,02% (1/4500) | 50,6% |
+| `--boss=gunner` | 100 / 100 / 100 / 99,9 / 99,9 | 81,1 / 75,8 / 73,6 / 66,3 / 69,2 | 7,1 / 15,4 / 24,7 / 44,3 / 66,7 % | 0,04% (2/4500) | 43,6% |
+
+Trước cổng, `--boss=crusher`: bot thắng 84,9 / 83,7 / 73,0 / 61,1 / 47,9%; `--boss=gunner`: 93,1 / 85,8 / 74,2 / 56,7 / 43,3%; `--goal=kill:40`: 64,0 / 55,6 / 49,6 / 47,8 / 26,9%. Với `kill:40` bot thắng ít hơn `survive 60` ở I1-I2 và tỉ lệ thắng sau cổng ở I1-I2 (59,5% và 55,9%) thấp hơn 60% một chút (nguyên nhân chưa được điều tra). Đây là lát phụ, không nằm trong tiêu chí đạt/không đạt của prompt.
+
+### Không thoái lui
+
+`--set=old --seeds=1`, `--set=new --seeds=1`, `--set=boss --seeds=1` được chạy trước và sau Stage 4D và cho kết quả GIỐNG TỪNG KÝ TỰ (so bằng `cmp`). Ba bản chụp vàng `golden-sim.json`, `golden-sim-4b.json`, `golden-sim-4c.json` không đổi một byte (SHA-256 đúng như ghi ở đầu Stage này). Bản chụp vàng mới `golden-sim-4d.json` có 18 ván (12 dựng từ brief + 6 màn tay `base-siege`, `base-boss`, `base-fall`, bot giỏi và đứng yên; 8 thắng, 10 thua: 5 do căn cứ, 5 do người chơi).
+
+### Thời gian dựng (40 lần mỗi ca, qua worker thật, `node scripts/measure-compile-time.mjs 40`)
+
+| ca | median | p95 | max | chạm giới hạn 8 s |
+|---|---|---|---|---|
+| survive 60 s | 0,35 s | 0,56 s | 0,59 s | 0 |
+| survive 180 s | 0,47 s | 0,71 s | 0,98 s | 0 |
+| worst boss (kill 200, all4, shotgun, I5, gunner) | 0,85 s | 1,41 s | 2,10 s | 0 |
+| **worst căn cứ (I5, all4, shotgun, máu yếu, gunner, `base: defend`)** | 0,82 s | **1,02 s** | 1,24 s | 0 |
+| worst 4B | 1,63 s | 2,32 s | 2,51 s | 0 |
+| worst brutes | 1,37 s | 1,90 s | 2,02 s | 0 |
+
+Ca xấu nhất của căn cứ p95 1,02 s (< 5 s), không lần nào chạm giới hạn 8 s. (22 trên 40 dựng được, 18 bị từ chối `unwinnable_level` vì máu yếu x kill 200: đúng như các ca xấu khác.)
+
+### Groq thật (6 prompt, mỗi prompt một lần, `shooter-live.smoke.ts --set=stage4d`)
+
+Cả sáu dựng được. 1) `base: defend`, không thông báo căn cứ, `healthDrops: none`. 2) `defend` + boss crusher, mục tiêu "Bảo vệ căn cứ: Hạ boss", thông báo "Màn có boss", không hồi máu, máu căn cứ 120 (không bị giảm). 3) `defend`, spitter, `healthDrops: some`. 4) `defend`; thông báo về tháp là câu do model viết ("Chức năng xây tháp pháo không được hỗ trợ trong engine này"), câu chuẩn của engine không thêm vì trùng ý. Model còn đặt `healthDrops: some` dù không được xin: chốt chặn không gỡ vì từ "rồi" ("rồi bảo vệ nó") bị đọc như "rơi" khi bỏ dấu; đã chủ ý để chốt chặn rộng (giữ nhầm tốt hơn từ chối nhầm). 5) `base: none`, không thông báo căn cứ. 6) một căn cứ, thông báo "Hai căn cứ không được hỗ trợ" (câu của model) và thông báo hộ tống `escort`.
+
+## Stage 4C.1: boss không kẹt, màn boss tập trung vào boss
 
 Hai lỗi của Stage 4C đã được đo (không phải phỏng đoán) rồi sửa. `maps.ts`, `CASUAL`, `INTENSITY_RATE`, `gate.ts`, số của quái, súng và boss (máu, chu kỳ, tốc độ) KHÔNG đổi. Số liệu từ `npx tsx scripts/calibrate-shooter.ts --set=boss` (cùng lưới 6750 ván của Stage 4C, brief `survive 60`) và từ `npx tsx scripts/measure-boss-reach.ts` (chạy từ `apps/api`).
 

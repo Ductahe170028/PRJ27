@@ -1,5 +1,6 @@
 ﻿// Step 6 of a tick: enemies move. Every number about a kind comes from ENEMY_TYPES.
 import { ENEMY_TYPES, NAV_REFRESH_TICKS, PLAYER_RADIUS, TICK_RATE, rangedOf } from './constants.js';
+import { moveAtBase, retarget } from './base.js';
 import { isBoss, moveBoss } from './boss.js';
 import { lineOfSight, resolveCircle, type Rect } from './geometry.js';
 import { GRID_COLS, buildGrid, gridCells, gridCol, gridRow } from './grid.js';
@@ -35,6 +36,11 @@ export function moveEnemies(state: ShooterState, t: number, walls: readonly Rect
     if (isBoss(enemy.type)) { moveBoss(state, enemy, t, walls, () => ensureBossFlow().dist); continue; }
     const kind = ENEMY_TYPES[enemy.type];
     const stride = kind.speed / TICK_RATE;
+    // In a level with a base an enemy may be going for it: it keeps its own target (see base.ts).
+    if (enemy.aimAtBase !== undefined) {
+      retarget(state, enemy);
+      if (enemy.aimAtBase) { moveAtBase(state, enemy, stride); continue; }
+    }
     let toPlayer = true;
     let tx = player.x;
     let ty = player.y;

@@ -103,7 +103,7 @@ test('an unknown level lists the valid ones', async ({ page }) => {
   await page.goto('/?shooter=khong-ton-tai');
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('khong-ton-tai');
-  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic, boss-crusher, boss-gunner');
+  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic, boss-crusher, boss-gunner, base-siege, base-boss, base-fall');
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.goto('/?shooter=constructor');
   await expect(page.getByRole('alert')).toContainText('Level hợp lệ');
@@ -277,4 +277,84 @@ test('the level card of the boss levels has a boss line, and "most enemies" coun
   await expect(card().locator('[data-info="goal"]')).toHaveText('Hạ boss');
   await expect(card().locator('[data-info="extra"]')).toHaveText(['Boss cuối: bắn đạn quạt và vòng đạn (máu 24)']);
   await expect(card().locator('[data-info="enemies"]')).toHaveText('9');
+});
+
+// --- Stage 4D: the base ---
+
+const barBox = async (hud: Locator, name: string) => {
+  const [x, y, width, height] = ((await hud.getAttribute(name)) ?? '').split(',').map(Number) as [number, number, number, number];
+  return { x, y, width, height };
+};
+
+test('base-siege: the banner names the base, the HUD says "Giữ căn cứ", and the base bar is full and in the top strip, at the right', async ({ page }) => {
+  const { frame, hud, errors } = await open(page, 'base-siege');
+  await expect(frame.locator('#game-banner')).toContainText('MỤC TIÊU: Bảo vệ căn cứ: Sống sót 60 giây');
+  await expect(hud).toContainText('Giữ căn cứ · Sống sót');
+  await expect(hud).toHaveAttribute('data-base-hp', '100');
+  await expect(hud).toHaveAttribute('data-base-max', '100');
+  const bar = await barBox(hud, 'data-base-bar');
+  expect(bar.y + bar.height).toBeLessThanOrEqual(70); // inside the HUD strip
+  expect(bar.x + bar.width).toBeLessThanOrEqual(960);
+  expect(bar.x + bar.width).toBeGreaterThanOrEqual(930); // at the right
+  expect(bar.width).toBe(264);
+  // a level without a base has none of this
+  await page.goto('/?shooter=arena');
+  const plain = page.frameLocator('iframe').locator('#game-hud');
+  await expect(plain).toContainText('Máu');
+  await expect(plain).not.toHaveAttribute('data-base-hp', /.*/);
+  await expect(plain).not.toContainText('căn cứ');
+  expect(errors).toEqual([]);
+});
+
+test('a game lost because the base was destroyed says so, and the player did not fall (base-fall)', async ({ page }) => {
+  test.setTimeout(60_000);
+  const { frame, hud, result, errors } = await open(page, 'base-fall');
+  await expect(frame.locator('#game-banner')).toContainText('Bảo vệ căn cứ');
+  await expect(hud).toHaveAttribute('data-base-hp', '5');
+  await expect(result).toBeVisible({ timeout: 30_000 }); // the brutes reach the base after about 8 seconds
+  await expect(frame.locator('#result-title')).toHaveText('Game over');
+  await expect(frame.locator('#result-detail')).toContainText('Căn cứ đã bị phá.');
+  await expect(hud).toHaveAttribute('data-lost-by', 'base');
+  await expect(hud).toHaveAttribute('data-base-hp', '0');
+  expect(await num(hud, 'data-hp')).toBeGreaterThan(0); // the player is alive
+  expect(errors).toEqual([]);
+});
+
+test('a game lost by the player on a base level says "Bạn đã bị hạ", and a level without a base keeps its old sentence', async ({ page }) => {
+  test.setTimeout(60_000);
+  const siege = await open(page, 'base-siege');
+  await expect(siege.result).toBeVisible({ timeout: 40_000 }); // standing still: the player falls first
+  await expect(siege.frame.locator('#result-detail')).toContainText('Bạn đã bị hạ.');
+  await expect(siege.hud).toHaveAttribute('data-lost-by', 'player');
+  const smoke = await open(page, 'smoke-lose');
+  await expect(smoke.result).toBeVisible({ timeout: 20_000 });
+  await expect(smoke.frame.locator('#result-detail')).toContainText('Bạn đã hết máu.');
+  await expect(smoke.hud).not.toHaveAttribute('data-lost-by', /.*/);
+});
+
+test('the level card of the base levels says the base goal and has a base line', async ({ page }) => {
+  const card = () => page.getByRole('region', { name: 'Thông tin màn' });
+  await open(page, 'base-siege');
+  await expect(card().locator('[data-info="goal"]')).toHaveText('Bảo vệ căn cứ: Sống sót 60 giây');
+  await expect(card().locator('[data-info="extra"]')).toHaveText(['Có căn cứ cần bảo vệ (máu 100): thua nếu căn cứ bị phá']);
+  await expect(card().locator('[data-info="enemies"]')).toHaveText('31');
+  await open(page, 'base-boss');
+  await expect(card().locator('[data-info="goal"]')).toHaveText('Bảo vệ căn cứ: Hạ boss');
+  await expect(card().locator('[data-info="extra"]')).toHaveText(['Boss cuối: quái khổng lồ, lao vào bạn (máu 30)', 'Có căn cứ cần bảo vệ (máu 50): thua nếu căn cứ bị phá']);
+  await expect(card().locator('[data-info="enemies"]')).toHaveText('15');
+});
+
+test('base-boss: the base bar and the boss bar are both up and do not overlap', async ({ page }) => {
+  test.setTimeout(60_000);
+  const { hud, errors } = await open(page, 'base-boss');
+  await expect(hud).toHaveAttribute('data-boss-max', '30', { timeout: 20_000 });
+  await expect(hud).not.toHaveAttribute('data-boss-bar', '');
+  const base = await barBox(hud, 'data-base-bar');
+  const boss = await barBox(hud, 'data-boss-bar');
+  expect(base.width).toBeGreaterThan(0);
+  expect(boss.width).toBeGreaterThan(0);
+  const overlap = base.x < boss.x + boss.width && boss.x < base.x + base.width && base.y < boss.y + boss.height && boss.y < base.y + base.height;
+  expect(overlap, `base bar ${JSON.stringify(base)} and boss bar ${JSON.stringify(boss)}`).toBe(false);
+  expect(boss.y).toBeGreaterThanOrEqual(base.y + base.height);
+  expect(errors).toEqual([]);
 });

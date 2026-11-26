@@ -1,6 +1,6 @@
 // Circles, axis-aligned rectangles and segments. Rectangles are given by their
 // CENTER and size, like everything else in a level. Pure functions only.
-import { FIELD } from './constants.js';
+import { BASE_SIZE, FIELD } from './constants.js';
 
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface Vec { x: number; y: number }
@@ -120,6 +120,9 @@ export function lineOfSight(from: Vec, to: Vec, radius: number, rects: readonly 
   for (const rect of rects) if (segmentRectHit(from.x, from.y, to.x, to.y, rect, radius) !== undefined) return false;
   return true;
 }
+
+/** The square a base stands on: centered on the base, `BASE_SIZE` on a side. */
+export const baseRectOf = (base: Vec): Rect => ({ x: base.x, y: base.y, width: BASE_SIZE, height: BASE_SIZE });
 
 /** Radians in one degree. */
 export const RADIANS_PER_DEGREE = Math.PI / 180;

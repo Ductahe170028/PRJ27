@@ -2,6 +2,7 @@
 // and their bullets fly. Every number comes from the kind's `ranged` data. No random numbers here.
 import { ENEMY_BULLET_RANGE_FACTOR, ENEMY_TYPES, FIELD, INVULNERABLE_MS, MAX_ENEMY_BULLETS, PLAYER_RADIUS, TICK_RATE, msToTicks, rangedOf } from './constants.js';
 import { lineOfSight, segmentCircleHit, segmentRectHit, type Rect } from './geometry.js';
+import { damageBase } from './base.js';
 import type { EnemyBullet, ShooterState } from './state.js';
 
 /** 6b. Each shooting enemy (in array order) whose turn has come, that sees the player in a straight line
@@ -13,11 +14,14 @@ export function enemiesShoot(state: ShooterState, t: number) {
     const ranged = rangedOf(enemy.type);
     if (!ranged || enemy.nextShotTick === undefined || t < enemy.nextShotTick) continue;
     if (state.enemyBullets.length >= MAX_ENEMY_BULLETS) return;
-    const dx = player.x - enemy.x;
-    const dy = player.y - enemy.y;
+    // An enemy that is going for the base shoots at its center (the base does not block the view of itself).
+    const atBase = enemy.aimAtBase === true && state.base !== undefined;
+    const target = atBase ? state.base! : player;
+    const dx = target.x - enemy.x;
+    const dy = target.y - enemy.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     if (distance === 0 || distance > ranged.sightRange) continue;
-    if (!lineOfSight(enemy, player, ranged.bulletRadius, level.obstacles)) continue;
+    if (!lineOfSight(enemy, target, ranged.bulletRadius, atBase ? level.obstacles : state.walls)) continue;
     const ux = dx / distance;
     const uy = dy / distance;
     const reach = ENEMY_TYPES[enemy.type].radius + 1;
@@ -46,11 +50,19 @@ export function flyEnemyBullets(state: ShooterState, t: number, walls: readonly 
     const x1 = speed > 0 ? x0 + (bullet.vx / speed) * stride : x0;
     const y1 = speed > 0 ? y0 + (bullet.vy / speed) * stride : y0;
     let wallHit: number | undefined;
+    let baseHit: number | undefined; // the base's square is among the walls, but it is hurt by a bullet, not only stopped
     for (const block of walls) {
       const hit = segmentRectHit(x0, y0, x1, y1, block, bullet.radius);
-      if (hit !== undefined && (wallHit === undefined || hit < wallHit)) wallHit = hit;
+      if (hit === undefined) continue;
+      if (block === state.baseRect) baseHit = hit;
+      else if (wallHit === undefined || hit < wallHit) wallHit = hit;
     }
     const playerHit = segmentCircleHit(x0, y0, x1, y1, player.x, player.y, PLAYER_RADIUS + bullet.radius);
+    // The base takes the bullet's damage at once, and the bullet is spent, when it is the first thing on the way.
+    if (baseHit !== undefined && (wallHit === undefined || baseHit < wallHit) && (playerHit === undefined || baseHit < playerHit)) {
+      damageBase(state, bullet.damage, t);
+      continue;
+    }
     if (playerHit !== undefined && (wallHit === undefined || playerHit < wallHit)) {
       if (t >= player.invulnerableUntilTick) {
         player.hp = Math.max(0, player.hp - bullet.damage);

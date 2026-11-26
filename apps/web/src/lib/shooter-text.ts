@@ -6,13 +6,23 @@ import { ENEMY_TYPES, bossOf, bossWaveOf, rangedOf, totalScheduledEnemies, type 
 type Win = ShooterLevel['win'];
 type Weapon = ShooterLevel['weapon'];
 
-/** "Sống sót 60 giây", "Hạ 40 quái" or "Hạ boss". */
-export const goalSentence = (win: Win): string => (win.type === 'survive' ? `Sống sót ${win.seconds} giây` : win.type === 'kill' ? `Hạ ${win.count} quái` : 'Hạ boss');
+/** "Sống sót 60 giây", "Hạ 40 quái" or "Hạ boss"; with a base to defend, "Bảo vệ căn cứ: Sống sót 60 giây" and so on. */
+export const goalSentence = (win: Win, withBase = false): string => {
+  const goal = win.type === 'survive' ? `Sống sót ${win.seconds} giây` : win.type === 'kill' ? `Hạ ${win.count} quái` : 'Hạ boss';
+  return withBase ? `Bảo vệ căn cứ: ${goal}` : goal;
+};
 
 // --- the banner shown for the first seconds of every game (and after every restart) ---
 export const BANNER_MS = 3000;
 export const BANNER_FADE_MS = 500;
-export const bannerTitle = (win: Win): string => `MỤC TIÊU: ${goalSentence(win)}`;
+export const bannerTitle = (win: Win, withBase = false): string => `MỤC TIÊU: ${goalSentence(win, withBase)}`;
+/** A title longer than this does not fit on one line at the banner's size, and is shown on two. */
+export const BANNER_ONE_LINE_MAX = 34;
+/** The lines the banner is drawn on: the title as it is, or "MỤC TIÊU:" and then the goal when the title is long (a base to defend). */
+export function bannerLines(title: string): string[] {
+  const cut = title.indexOf(': ');
+  return title.length <= BANNER_ONE_LINE_MAX || cut < 0 ? [title] : [title.slice(0, cut + 1), title.slice(cut + 2)];
+}
 export const BANNER_HINT = 'WASD di chuyển · chuột ngắm và bắn · R chơi lại';
 
 /** How opaque the banner is `elapsedMs` after the game started: fully for the first 2.5 s, fading out over
@@ -48,16 +58,17 @@ export const bannerTextColor = (theme: Pick<ShooterLevel['theme'], 'accent' | 'b
 export interface HudInput { hp: number; maxHp: number; score: number; kills: number; seconds: number }
 
 /** "Sống sót 12/60s", "Hạ 12/40" or "Hạ boss" (the boss bar is its progress): the goal with its progress. */
-export function goalProgress(win: Win, hud: Pick<HudInput, 'kills' | 'seconds'>): string {
-  if (win.type === 'boss') return 'Hạ boss';
-  return win.type === 'survive' ? `Sống sót ${Math.min(Math.floor(hud.seconds), win.seconds)}/${win.seconds}s` : `Hạ ${hud.kills}/${win.count}`;
+export function goalProgress(win: Win, hud: Pick<HudInput, 'kills' | 'seconds'>, withBase = false): string {
+  const goal = win.type === 'boss' ? 'Hạ boss'
+    : win.type === 'survive' ? `Sống sót ${Math.min(Math.floor(hud.seconds), win.seconds)}/${win.seconds}s` : `Hạ ${hud.kills}/${win.count}`;
+  return withBase ? `Giữ căn cứ · ${goal}` : goal;
 }
 
 /** Health, score, then the goal. A survive game also shows the kills (a kill game shows them in the goal). */
-export function hudLine(win: Win, hud: HudInput): string {
+export function hudLine(win: Win, hud: HudInput, withBase = false): string {
   const parts = [`Máu ${hud.hp}/${hud.maxHp}`, `Điểm ${hud.score}`];
   if (win.type === 'survive') parts.push(`Hạ ${hud.kills}`);
-  parts.push(goalProgress(win, hud), 'R: chơi lại');
+  parts.push(goalProgress(win, hud, withBase), 'R: chơi lại');
   return parts.join('  ·  ');
 }
 
@@ -79,6 +90,35 @@ export interface BossBar { share: number; percent: number; label: string; note: 
 export function bossBar(hp: number, maxHp: number, enraged: boolean): BossBar {
   const share = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
   return { share, percent: Math.round(share * 100), label: 'BOSS', note: enraged ? 'CUỒNG NỘ' : '' };
+}
+
+// --- the base's bar, and where the two bars stand ---
+/** The base's bar is at the top right of the HUD strip (the strip is the top 70 px of the field), with its label to the left of it:
+ * 260 px wide, at least 60 px from the longest HUD line. The boss's bar is under the strip (y 73 to 93, x 236 to 724). They never
+ * touch: the base's bar ends at y 55. */
+export const BASE_BAR = { x: 678, y: 41, width: 260, height: 14 } as const;
+export const BASE_BAR_LABEL = { x: 670, y: 48 } as const;
+export const BOSS_BAR_PLATE = { x: 236, y: 73, width: 488, height: 20 } as const;
+/** The dark plate behind the base's bar (2 px more on every side). */
+export const BASE_BAR_PLATE = { x: BASE_BAR.x - 2, y: BASE_BAR.y - 2, width: BASE_BAR.width + 4, height: BASE_BAR.height + 4 } as const;
+export const HUD_STRIP_HEIGHT = 70;
+type Box = { x: number; y: number; width: number; height: number };
+/** Whether two boxes share any area. */
+export const boxesOverlap = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+/** The base is "low" (its rim flashes red) at or below this share of its hit points. */
+export const BASE_LOW_SHARE = 0.3;
+export interface BaseBar { share: number; percent: number; label: string; low: boolean }
+/** The base's bar: how full it is (0 to 1, from hit points over maximum), the label, and whether it is low. */
+export function baseBar(hp: number, maxHp: number): BaseBar {
+  const share = maxHp > 0 ? Math.min(1, Math.max(0, hp / maxHp)) : 0;
+  return { share, percent: Math.round(share * 100), label: 'CĂN CỨ', low: share <= BASE_LOW_SHARE };
+}
+
+/** The line under "Game over" (the first words of the result's detail): why the game was lost. Without a base it is what it always was. */
+export function loseReason(lostBy: 'player' | 'base' | undefined, withBase: boolean): string {
+  if (lostBy === 'base') return 'Căn cứ đã bị phá.';
+  return withBase ? 'Bạn đã bị hạ.' : 'Bạn đã hết máu.';
 }
 
 // --- the "Thông tin màn" card ---
@@ -117,5 +157,6 @@ export function levelInfo(level: ShooterLevel): LevelInfo {
     else if (boss.volleys) extras.push(`Boss cuối: bắn đạn quạt và vòng đạn (máu ${hp})`);
     else extras.push(`Boss cuối (máu ${hp})`);
   }
-  return { goal: goalSentence(level.win), maxHealth: level.player.hp, maxEnemies: totalScheduledEnemies(level), weapon: weapon.label, weaponDetail: weapon.detail, extras };
+  if (level.base) extras.push(`Có căn cứ cần bảo vệ (máu ${level.base.hp}): thua nếu căn cứ bị phá`);
+  return { goal: goalSentence(level.win, level.base !== undefined), maxHealth: level.player.hp, maxEnemies: totalScheduledEnemies(level), weapon: weapon.label, weaponDetail: weapon.detail, extras };
 }

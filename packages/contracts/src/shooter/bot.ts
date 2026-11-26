@@ -2,19 +2,20 @@
 // and the opponent in the tests. It is not meant to play like a person: it aims
 // perfectly and never gets tired. (The gate uses the casual bot, which is closer
 // to a person: casual-bot.ts.)
-import { ENEMY_TYPES } from './constants.js';
+import { BULLET_RADIUS, ENEMY_TYPES } from './constants.js';
 import { isBoss } from './boss.js';
-import { dist } from './geometry.js';
+import { dist, lineOfSight } from './geometry.js';
 import type { ShooterLevel } from './level.js';
 import { step } from './sim.js';
 import { createSim, type ShooterInput, type ShooterState } from './state.js';
-import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer } from './steering.js';
+import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, nearestToBase, steer } from './steering.js';
 
 export const IDLE: ShooterInput = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, fire: false };
 
 /** Aims at the nearest enemy (at the boss instead, when the boss is within the weapon's range), holds fire, and steps
  * away from enemies within 150 px (a boss from farther: its own radius is added), from enemy bullets within 90 px, and
- * from walls. It sees every enemy and bullet exactly, at every tick. It does not go for health pickups. */
+ * from walls. It sees every enemy and bullet exactly, at every tick. It does not go for health pickups. With a base to defend it
+ * stays near it and shoots first at what is nearest to it. */
 export function botInput(state: ShooterState): ShooterInput {
   const { player, enemies, level } = state;
   let nearest: (typeof enemies)[number] | undefined;
@@ -28,7 +29,8 @@ export function botInput(state: ShooterState): ShooterInput {
   // Only in a level with a boss are the enemies described to the steering one by one (the boss with its radius).
   const seen = state.bossIndex === undefined ? enemies : enemies.map((e) => (isBoss(e.type) ? { x: e.x, y: e.y, extra: ENEMY_TYPES[e.type].radius } : { x: e.x, y: e.y }));
   const { moveX, moveY } = steer(player, level, seen, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, state.enemyBullets, EXPERT_BULLET_RADIUS);
-  const target = bossInRange ?? nearest;
+  // With a base to defend it shoots at what is nearest the base (among the enemies in range), unless the boss is in range.
+  const target = bossInRange ?? (level.base ? nearestToBase(level.base, player, enemies, level.weapon.range, (p) => lineOfSight(player, p, BULLET_RADIUS, state.walls)) : undefined) ?? nearest;
   return {
     moveX, moveY,
     aimX: target ? target.x : player.x + 1, aimY: target ? target.y : player.y,

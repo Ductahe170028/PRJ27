@@ -40,7 +40,7 @@ ShooterBrief (AI sinh, chỉ ngữ nghĩa, không tọa độ)
 
 ## Ngoài MVP
 
-Bảo vệ căn cứ, pickup đạn, mobile/cảm ứng, chỉnh game bằng prompt, bot mô phỏng.
+Pickup đạn, mobile/cảm ứng, chỉnh game bằng prompt, bot mô phỏng. (Bảo vệ căn cứ đã có từ Stage 4D, xem bên dưới.)
 
 ## Lộ trình
 
@@ -61,7 +61,7 @@ Bảo vệ căn cứ, pickup đạn, mobile/cảm ứng, chỉnh game bằng pro
 - **Compiler** (`compile.ts`, `maps.ts`, `waves.ts`): xác định theo `seed`. Bố cục map phải qua schema, nối được mọi điểm xuất hiện tới người chơi cho một con brute, và khe ≥ 60 px; không vừa thì thử 8 biến thể rồi rơi về đấu trường trống kèm thông báo. Lịch wave theo nhịp `INTENSITY_RATE` (đe dọa mỗi giây, chia cho trọng số trung bình của loại quái) và giảm nhịp khi màn dài hơn 60 s.
 - **Cổng bot** (`gate.ts`, `compile-job.ts`): bot chơi level trên 3 seed. Thắng dưới 2/3 thì giảm mật độ (tối đa 6 lần x0.8, từ Stage 4A; trước đó 4), hết bước mà vẫn dưới 2/3 thì `unwinnable_level`; thắng 2/3 trở lên thì nhận nguyên vẹn. Bot vẫn chơi giỏi hơn nhiều người, nên cổng chỉ làm màn DỄ HƠN, không bao giờ KHÓ HƠN. Mục tiêu `kill` quá nặng thì giảm x0.7 (tối thiểu 10, tối đa 3 lần, cùng seed) thay vì từ chối; `survive` không bị đổi thời gian. Mỗi điều chỉnh có một thông báo cố định. Chạy trong worker, tối đa 8 s.
 - **Hiệu chỉnh** (`npm run shooter:calibrate -w @game-creator/api`, kết quả ở [shooter-calibration.md](shooter-calibration.md)): chỉ chỉnh `INTENSITY_RATE`, trọng số loại quái và hệ số nhịp.
-- **Thông báo cho người dùng** (`notices.ts`): yêu cầu engine không có (boss, xe, nhiều người, bảo vệ căn cứ, bảo vệ hoặc hộ tống nhân vật khác, màn không có quái, hết đạn, vật phẩm, đổi vũ khí, chế tạo, bẫy) luôn hiện ra. Model ghi vào `unsupported`, và một bảng từ khóa cố định bổ sung câu chuẩn nếu model quên. Mục `unsupported` chỉ chép lại nguyên lời người dùng bị thay bằng một câu chung ("Một phần yêu cầu chưa được hỗ trợ."). "Bảo vệ thành phố" vẫn nhận thông báo bảo vệ căn cứ: người dùng nói bảo vệ thì mong có thứ cần bảo vệ, và nói rõ là chưa có là trung thực. Không im lặng bỏ qua.
+- **Thông báo cho người dùng** (`notices.ts`): yêu cầu engine không có (boss, xe, nhiều người, xây tháp, nhiều căn cứ, sửa căn cứ, bảo vệ hoặc hộ tống nhân vật khác, màn không có quái, hết đạn, vật phẩm, đổi vũ khí, chế tạo, bẫy) luôn hiện ra. Model ghi vào `unsupported`, và một bảng từ khóa cố định bổ sung câu chuẩn nếu model quên. Mục `unsupported` chỉ chép lại nguyên lời người dùng bị thay bằng một câu chung ("Một phần yêu cầu chưa được hỗ trợ."). Từ Stage 4D "bảo vệ căn cứ" và "bảo vệ thành phố" không còn là thông báo: chúng là một tính năng thật.
 - **Giao diện**: `/` là ShooterApp; `/?shooter=<level>` là sân chơi level viết tay; `/?legacy=standard` là app Standard cũ (GameSpec v1), giữ nguyên.
 - **Không có retry, không gọi AI lần hai, không game dự phòng khi lỗi.** Biến thể map nội bộ là điều chỉnh của engine và được báo cho người dùng.
 
@@ -99,6 +99,19 @@ Bảo vệ căn cứ, pickup đạn, mobile/cảm ứng, chỉnh game bằng pro
 - **Bài đo thành test lâu dài** (`shooter-boss-reach.test.ts`): người chơi đứng yên bất tử, boss phải tới trong `max(140, holdRange + 40)` px trong 120 s ở mọi cặp boss × map. 300/300 trên 30 seed, 2000/2000 trên 200 seed, 0% bản đồ bị đơn giản hóa.
 - **Màn boss là về boss.** Quái thường nhẹ nhịp hơn trước boss (`beforePace` 0,7) và rất ít sau khi boss ra (20 s, `afterPace` 0,25). Bot bình thường trước cổng: 94,6 / 83,5 / 67,9 / 44,4 / 27,7% (intensity 1…5), đạt mọi khoảng mục tiêu; số màn boss bị cổng giảm mật độ ở intensity 3–5 giảm từ 70/79/90% xuống 33/57/74%.
 - **Chưa làm:** người chơi vẫn có thể đứng ở chỗ lưới của boss không nối tới (ví dụ lối vừa khít 68 px) và ra ngoài tầm với của boss (đo: 3 trên 2772 ván thử vị trí khác).
+
+## Stage 4D: căn cứ cần bảo vệ
+
+- **Căn cứ là một bức tường của mô phỏng.** Tòa nhà vuông 56 px (`level.base`, máu 5..200) được thêm vào `state.walls = [...level.obstacles, baseRect]`: người chơi, quái, đạn và đường nhìn đều dùng `state.walls`; không có căn cứ thì `state.walls === level.obstacles` (cùng mảng), nên màn cũ chạy ra đúng từng bit (ba bản chụp vàng cũ không đổi một byte). Bước mới `8b hurtBase` nằm sau `hurtPlayer`.
+- **Quái chọn mục tiêu** (`aimAtBase`, chỉ quái thường): chọn thứ gần hơn, đổi ý chỉ khi mục tiêu kia gần hơn ít nhất `TARGET_SWITCH_MARGIN` px (chống rung). Đường tới căn cứ là một flow field tính một lần (`baseFlow`, lưới không chặn bởi căn cứ); trong 140 px thì đi thẳng, chạm thì dừng. Quái bắn xa giữ tầm và bắn vào tâm căn cứ. Boss chỉ nhắm người chơi (quyết định, để màn boss vẫn là về boss).
+- **Sát thương**: chạm gây sát thương mỗi `BASE_HIT_INTERVAL_MS` theo TỔNG các quái đang chạm (cả boss); đạn của quái trúng là mất máu ngay. Căn cứ chặn cả đạn của người chơi (quyết định: nó là tường; bot đã học đứng sao cho đường bắn thông).
+- **Thua**: người chơi chết HOẶC căn cứ hết máu (`state.lostBy`); thua xét trước thắng; nếu người chơi chết cùng tick với căn cứ thì `lostBy` là `player`.
+- **Bot** (`steering.ts`, `bot.ts`, `casual-bot.ts`): coi căn cứ là tường, nhắm quái gần căn cứ nhất có đường bắn thông, bị kéo về trong dây xích (`BOT_LEASH`), không thêm lần gọi `random()` nào. Hai bot chỉ khác nhau ở độ hiểu biết.
+- **Brief và compiler**: `base: 'none' | 'defend'`; căn cứ ở giữa sân, người chơi cách `BASE_PLAYER_GAP` px ở một trong bốn phía theo `seed % 4`; máu theo `BASE_HP_BY_INTENSITY`; kiểm tra thêm khả năng nối (có căn cứ, có boss, tới căn cứ) và rơi về đấu trường trống nếu không vừa. Cổng: mỗi bước giảm quái còn nâng máu căn cứ ×1,15 (làm tròn lên, trần 200).
+- **Chốt chặn `guardUnrequested`**: gỡ `healthDrops` và `base` mà model tự thêm khi lời người dùng không có từ nào có thể có nghĩa đó (bỏ dấu, từ rộng cố ý; boss không đụng; không báo người dùng, ghi vào chẩn đoán `guardRemoved`). Nhóm thông báo mới: xây tháp, nhiều căn cứ, sửa căn cứ; "bảo vệ căn cứ" không còn là thông báo.
+- **Giao diện**: vẽ căn cứ, thanh máu căn cứ ở góc trên phải (trong dải HUD), biểu ngữ "Bảo vệ căn cứ: …", HUD "Giữ căn cứ · …", lý do thua "Căn cứ đã bị phá." / "Bạn đã bị hạ.", dòng căn cứ trong thẻ "Thông tin màn"; ba màn tay `base-siege`, `base-boss`, `base-fall`.
+- **Hiệu chỉnh** ([shooter-calibration.md](shooter-calibration.md), mục "Stage 4D"): máu căn cứ `[120, 120, 120, 150, 200]` (Stage 4D.1; trước đó 120 cả năm), `BASE_HIT_INTERVAL_MS` 800, `TARGET_SWITCH_MARGIN` 100, `BOT_LEASH` 170, `BASE_PLAYER_GAP` 64. Trước cổng bot thắng 97,0 / 89,3 / 65,9 / 46,8 / 29,9% ở I1-I5 (đạt mọi mục tiêu); sau cổng dựng được 100%, bot thắng ≥ 67,1%, không màn nào bị từ chối. Lát phụ `kill:40` yếu ở hỗn hợp toàn brute và `all4` I2 (xem Stage 4D.1 trong shooter-calibration.md).
+- **Chưa làm**: xây tháp, nhiều căn cứ, sửa căn cứ; căn cứ chỉ ở giữa sân.
 
 ## Dọn nhà: shooter là sản phẩm duy nhất
 

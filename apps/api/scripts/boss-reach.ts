@@ -13,7 +13,7 @@ export const arrivalDistance = (boss: BossKind) => Math.max(140, (bossOf(boss)?.
 /** The brief of the measurement: survive 60, runners, pistol, sturdy player, no drops, intensity 1 (more with `intensity`). */
 export function reachBrief(boss: BossKind, map: ShooterBrief['map'], intensity = 1): ShooterBrief {
   return ShooterBriefSchema.parse({
-    version: 'brief-1', healthDrops: 'none', boss, title: 'Reach', theme: 'zombie-city', map, enemies: [{ type: 'runner', share: 5 }],
+    version: 'brief-1', healthDrops: 'none', boss, base: 'none', title: 'Reach', theme: 'zombie-city', map, enemies: [{ type: 'runner', share: 5 }],
     intensity, playerHealth: 'sturdy', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [],
   });
 }

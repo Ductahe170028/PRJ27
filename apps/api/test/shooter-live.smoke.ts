@@ -1,7 +1,7 @@
 // Opt-in diagnostic: real Groq requests through the shooter service (brief ->
 // compiler -> bot gate). Never run by `npm test` or E2E.
 //
-//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3|stage4a|stage4b|stage4c|cleanup] [--dump=file.json]
+//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3|stage4a|stage4b|stage4c|stage4d|cleanup] [--dump=file.json]
 //
 // The key is read from apps/api/.env (git-ignored) exactly like the server does,
 // and is never printed or written anywhere. Requests go one after the other and
@@ -72,12 +72,21 @@ const STAGE4C_PROMPTS: ReadonlyArray<[string, string]> = [
   ['d', 'hạ 30 quái ở rừng rồi đánh boss, có hai boss và mini boss'],
   ['e', 'đấu trường neon, quái bắn xa, súng xuyên, không boss'],
 ];
+// --set=stage4d: the six prompts of the Stage 4D check, a base to defend (one request each: --rounds=1).
+const STAGE4D_PROMPTS: ReadonlyArray<[string, string]> = [
+  ['1', 'bảo vệ căn cứ khỏi zombie trong 90 giây'],
+  ['2', 'bảo vệ căn cứ có boss cuối'],
+  ['3', 'phòng thủ trại quân sự trước quái bắn xa, rơi hộp máu'],
+  ['4', 'xây tháp pháo quanh căn cứ rồi bảo vệ nó'],
+  ['5', 'sống sót 60 giây ở rừng tối, súng shotgun'],
+  ['6', 'bảo vệ hai căn cứ và người dân'],
+];
 // --set=cleanup: the two prompts of the check after the removal of the old code (one request each: --rounds=1).
 const CLEANUP_PROMPTS: ReadonlyArray<[string, string]> = [
   ['a', 'zombie thành phố 60 giây'],
   ['b', 'bảo vệ căn cứ có boss cuối'],
 ];
-const SETS: Record<string, ReadonlyArray<[string, string]>> = { stage3: STAGE3_PROMPTS, stage4a: STAGE4A_PROMPTS, stage4b: STAGE4B_PROMPTS, stage4c: STAGE4C_PROMPTS, cleanup: CLEANUP_PROMPTS };
+const SETS: Record<string, ReadonlyArray<[string, string]>> = { stage3: STAGE3_PROMPTS, stage4a: STAGE4A_PROMPTS, stage4b: STAGE4B_PROMPTS, stage4c: STAGE4C_PROMPTS, stage4d: STAGE4D_PROMPTS, cleanup: CLEANUP_PROMPTS };
 const PROMPTS = SETS[arg('set') ?? ''] ?? DEFAULT_PROMPTS;
 // --dump=file.json keeps the generated projects (level + notices, never the key) so a browser can open exactly them.
 const dumpPath = arg('dump');
@@ -111,8 +120,8 @@ outer: for (let round = 1; round <= rounds; round += 1) {
       const brief = lastRecord()?.normalized as Record<string, unknown> | undefined;
       Object.assign(row, {
         ok: true, title: project.title, notices: project.notices,
-        brief: brief && { theme: brief.theme, map: brief.map, enemies: brief.enemies, intensity: brief.intensity, playerHealth: brief.playerHealth, weapon: brief.weapon, healthDrops: brief.healthDrops, boss: brief.boss, goal: brief.goal, unsupported: brief.unsupported },
-        level: { bossHp: project.level.bossHp ?? null, weapon: project.level.weapon, drops: project.level.drops ?? null, obstacles: project.level.obstacles.length, spawnPoints: project.level.spawnPoints.length, waves: project.level.waves.length, enemies: project.level.waves.reduce((sum, wave) => sum + wave.count, 0), hp: project.level.player.hp, win: project.level.win },
+        brief: brief && { theme: brief.theme, map: brief.map, enemies: brief.enemies, intensity: brief.intensity, playerHealth: brief.playerHealth, weapon: brief.weapon, healthDrops: brief.healthDrops, boss: brief.boss, base: brief.base, goal: brief.goal, unsupported: brief.unsupported },
+        level: { bossHp: project.level.bossHp ?? null, base: project.level.base ?? null, weapon: project.level.weapon, drops: project.level.drops ?? null, obstacles: project.level.obstacles.length, spawnPoints: project.level.spawnPoints.length, waves: project.level.waves.length, enemies: project.level.waves.reduce((sum, wave) => sum + wave.count, 0), hp: project.level.player.hp, win: project.level.win },
         compile: lastRecord()?.report,
       });
     } catch (error) {

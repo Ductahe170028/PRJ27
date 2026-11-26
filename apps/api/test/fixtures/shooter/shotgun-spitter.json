@@ -2,6 +2,7 @@
   "version": "brief-1",
   "healthDrops": "some",
   "boss": "none",
+  "base": "none",
   "title": "Desert Snipers",
   "theme": "desert-ruins",
   "map": "pillars",

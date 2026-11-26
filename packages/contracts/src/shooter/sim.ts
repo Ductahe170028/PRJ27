@@ -7,6 +7,7 @@
 // This file only orders the steps of a tick. The state and the generator are in
 // state.ts, and each step has its own file: player.ts, weapons.ts, spawn.ts,
 // enemies.ts, enemy-fire.ts, boss.ts, bullets.ts, pickups.ts, combat.ts (the hash for tests is hash.ts).
+import { hurtBase } from './base.js';
 import { advanceClock, hurtPlayer } from './combat.js';
 import { bossesFire } from './boss.js';
 import { enemiesShoot, flyEnemyBullets } from './enemy-fire.js';
@@ -33,12 +34,14 @@ import { fireWeapon } from './weapons.js';
  *     7b. enemy bullets fly: a wall stops them; they hurt the player unless it is still protected
  *     7c. health pickups: expired ones go, the player takes one by touching it when hurt
  *  8. one enemy touch hurts the player, unless the player is still protected
- *  9. the clock advances; losing is checked before winning
+ *     8b. the enemies that touch the base hurt it (all of them together, once every 500 ms); it is a wall like the obstacles,
+ *         and enemies that go for it walk to it by a field of their own (base.ts)
+ *  9. the clock advances; losing is checked before winning (the player's hit points, or the base's)
  */
 export function step(state: ShooterState, input: ShooterInput): void {
   if (state.status !== 'playing') return;
   const t = state.tick;
-  const walls: readonly Rect[] = state.level.obstacles;
+  const walls: readonly Rect[] = state.walls;
 
   movePlayer(state, input, walls);
   aimPlayer(state, input);
@@ -51,5 +54,6 @@ export function step(state: ShooterState, input: ShooterInput): void {
   flyEnemyBullets(state, t, walls);
   collectPickups(state, t);
   hurtPlayer(state, t);
+  hurtBase(state, t);
   advanceClock(state, t);
 }

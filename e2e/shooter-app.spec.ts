@@ -67,10 +67,11 @@ test('what the engine cannot do is listed, and the game still runs', async ({ pa
 test('the engine adds its own notice when the model forgot to list an unsupported request', async ({ page }) => {
   await page.goto('/');
   await useMockProvider(page);
-  await generate(page, 'zombie nhưng phải bảo vệ căn cứ, hết đạn thì nạp đạn');
+  await generate(page, 'zombie nhưng phải xây tháp quanh căn cứ, hết đạn thì nạp đạn');
   await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
   const items = notices(page).getByRole('listitem');
-  await expect(items).toContainText(['Chưa hỗ trợ: bảo vệ căn cứ. Màn chơi chỉ có sống sót hoặc hạ quái.', 'Chưa hỗ trợ: giới hạn đạn và nạp đạn. Đạn không giới hạn, có hồi chiêu.']);
+  await expect(items.filter({ hasText: 'Chưa hỗ trợ: xây hoặc nâng cấp tháp, tường. Căn cứ không thể xây thêm.' })).toHaveCount(1);
+  await expect(items.filter({ hasText: 'Chưa hỗ trợ: giới hạn đạn và nạp đạn. Đạn không giới hạn, có hồi chiêu.' })).toHaveCount(1);
 });
 
 test('escorting someone and a prompt with no enemies get their own fixed sentences, never the prompt text', async ({ page }) => {
@@ -426,4 +427,32 @@ test.describe('mobile', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
     await page.screenshot({ path: 'test-results/workspace-mobile.png', fullPage: true });
   });
+});
+
+// --- Stage 4D: the base ---
+
+test('a brief with a base to defend: the banner and the card say so, and nothing is reported as unsupported about it', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'bảo vệ căn cứ khỏi zombie trong 60 giây [brief:base]');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  const frame = page.frameLocator('iframe');
+  await expect(frame.locator('canvas')).toBeVisible();
+  await expect(frame.locator('#game-banner')).toContainText('MỤC TIÊU: Bảo vệ căn cứ: Sống sót 60 giây');
+  await expect(frame.locator('#game-hud')).toContainText('Giữ căn cứ · Sống sót');
+  await expect(frame.locator('#game-hud')).toHaveAttribute('data-base-hp', /^\d+$/);
+  await expect(infoCard(page)).toBeVisible();
+  await expect(field(page, 'goal')).toHaveText('Bảo vệ căn cứ: Sống sót 60 giây');
+  await expect(infoCard(page).locator('[data-info="extra"]').filter({ hasText: 'Có căn cứ cần bảo vệ' })).toHaveCount(1);
+  // the base is supported: no sentence about it among the notices (there may be the one about the eased difficulty)
+  await expect(notices(page).getByRole('listitem').filter({ hasText: 'căn cứ' })).toHaveCount(0);
+});
+
+test('building towers around the base is the one thing about it that is reported as unsupported', async ({ page }) => {
+  await page.goto('/');
+  await useMockProvider(page);
+  await generate(page, 'xây tháp pháo quanh căn cứ rồi bảo vệ nó [brief:base]');
+  await expect(page.getByText('Game đã sẵn sàng!', { exact: true })).toBeVisible();
+  await expect(notices(page).getByRole('listitem').filter({ hasText: 'xây hoặc nâng cấp tháp, tường' })).toHaveCount(1);
+  await expect(field(page, 'goal')).toHaveText('Bảo vệ căn cứ: Sống sót 60 giây');
 });

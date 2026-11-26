@@ -10,7 +10,7 @@ import { deriveRng } from '../src/shooter/rng.js';
 import { BRUTE_NOT_BEFORE, ENEMY_WEIGHT, INTENSITY_RATE, MAX_WAVES, MAX_WAVE_COUNT, killTarget, scheduleWaves } from '../src/shooter/waves.js';
 
 const brief = (patch: Partial<ShooterBrief> = {}): ShooterBrief => ShooterBriefSchema.parse({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'open-arena',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'open-arena',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [], ...patch,
 });

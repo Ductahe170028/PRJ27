@@ -25,7 +25,7 @@ const wide: CompileRunner = (job, signal, options) => compileInWorker(job, signa
 const SEED = 424242;
 
 const briefOf = (patch: Record<string, unknown> = {}) => ({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: 'Zombie City', theme: 'zombie-city', map: 'pillars',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 2, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [] as string[], ...patch,
 });
@@ -81,10 +81,10 @@ describe('the shooter service', () => {
 
   it('lists what the model reported and what the engine adds from the prompt', async () => {
     const { service } = setup(JSON.stringify(briefOf({ unsupported: ['Chưa có boss'] })));
-    const project = await ask(service, 'có boss, nâng cấp và bảo vệ căn cứ');
+    const project = await ask(service, 'có boss, nâng cấp và xây tháp quanh căn cứ');
     expect(project.notices).toEqual([
       'Chưa có boss',
-      'Chưa hỗ trợ: bảo vệ căn cứ. Màn chơi chỉ có sống sót hoặc hạ quái.',
+      'Chưa hỗ trợ: xây hoặc nâng cấp tháp, tường. Căn cứ không thể xây thêm.',
       'Chưa hỗ trợ: vật phẩm tăng sức mạnh và nâng cấp. Chỉ có vật phẩm hồi máu.',
     ]);
     expect(ShooterProjectSchema.safeParse(project).success).toBe(true);

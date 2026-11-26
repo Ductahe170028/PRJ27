@@ -130,5 +130,17 @@ export const NAV_REFRESH_TICKS = 20;
 /** Clearance the hand-made levels must give (2 brute radii plus slack, px). */
 export const BRUTE_CLEARANCE = 2 * NAV_CELL + 8;
 
+/** Stage 4D, the base: a square building that stands still. Its side (px), and how far it keeps from every obstacle (two brute
+ * widths and some room, so that a brute can slip past). */
+export const BASE_SIZE = 56;
+export const BASE_CLEARANCE = 48;
+/** An enemy that is going for the base walks straight at its center once it is this close (px). */
+export const BASE_DIRECT_RANGE = 140;
+/** The base's tuned numbers, in one mutable object so that the calibration script can try others (`--tune`); the game never
+ * changes them. hitIntervalMs: how often the enemies that touch the base hurt it (limits 300..800). targetSwitchMargin: how much
+ * nearer the other target must be before an enemy changes its mind, px (30..100). botLeash: how far from the base's center a
+ * bot strays before it is pulled back, px (120..220). */
+export const BASE_TUNING = { hitIntervalMs: 800, targetSwitchMargin: 100, botLeash: 170 };
+
 /** Whole ticks in `ms` milliseconds, rounded up. */
 export const msToTicks = (ms: number) => Math.ceil((ms * TICK_RATE) / 1000);

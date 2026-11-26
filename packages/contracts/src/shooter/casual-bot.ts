@@ -11,10 +11,11 @@
 // seed), never from Math.random. The numbers are in CASUAL, ONE place, so they can be tuned
 // without touching the logic. They are an estimate of a casual player, to be tuned with feedback
 // from real players (docs/shooter-calibration.md).
-import { ENEMY_TYPES } from './constants.js';
+import { BULLET_RADIUS, ENEMY_TYPES } from './constants.js';
 import { isBoss } from './boss.js';
+import { lineOfSight } from './geometry.js';
 import type { ShooterInput, ShooterState } from './state.js';
-import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, steer, type BulletPoint, type EnemyPoint, type Point } from './steering.js';
+import { EXPERT_BULLET_RADIUS, EXPERT_FLEE_RADIUS, EXPERT_WALL_RADIUS, nearestToBase, steer, type BulletPoint, type EnemyPoint, type Point } from './steering.js';
 
 export interface CasualParams {
   /** Ticks between two looks at the field (60 ticks = 1 s). Reaction delay. */
@@ -87,7 +88,8 @@ export function createCasualBot(seed: number, params: CasualParams = CASUAL): (s
         const dy = enemy.y - player.y;
         return isBoss(enemy.type) && Math.sqrt(dx * dx + dy * dy) <= range;
       });
-      target = boss ? { x: boss.x, y: boss.y } : nearestTo(player, seen);
+      // With a base to defend, what is nearest the base (within that same reach) comes before what is nearest the player.
+      target = boss ? { x: boss.x, y: boss.y } : (level.base ? nearestToBase(level.base, player, seen, range, (p) => lineOfSight(player, p, BULLET_RADIUS, state.walls)) : undefined) ?? nearestTo(player, seen);
       sideways = (random() * 2 - 1) * errorTan; // one draw per look, enemies or not
     }
     const { moveX, moveY } = steer(player, level, seen, fleeRadius, wallRadius, seenBullets, bulletRadius);

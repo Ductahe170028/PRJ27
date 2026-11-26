@@ -24,6 +24,9 @@ export const THIN_FACTOR = 0.8;
  * original and never below 10: the boss itself is never removed or reduced in number. */
 export const BOSS_THIN_FACTOR = 0.9;
 export const BOSS_MIN_SHARE = 0.4;
+/** Each easing step also gives a base this many times its hit points (rounded up, at most 200): fewer enemies and a sturdier base. */
+export const BASE_HP_FACTOR = 1.15;
+export const MAX_BASE_HP = 200;
 const MAX_ATMS = 600_000;
 
 export const THINNED_NOTICE = 'Độ khó được điều chỉnh để màn chơi thắng được.';
@@ -84,6 +87,11 @@ function scaleCounts(waves: ShooterLevel['waves'], factor: number, floorTotal = 
 /** Fewer enemies (survive) or the same enemies later (kill: the goal needs them,
  * so only the surplus above 1.3 x the goal is removed, and the schedule is stretched). */
 function thin(level: ShooterLevel, original: ShooterLevel): ShooterLevel {
+  const thinned = thinEnemies(level, original);
+  return level.base ? { ...thinned, base: { ...level.base, hp: Math.min(MAX_BASE_HP, Math.ceil(level.base.hp * BASE_HP_FACTOR)) } } : thinned;
+}
+
+function thinEnemies(level: ShooterLevel, original: ShooterLevel): ShooterLevel {
   const bossWave = bossWaveOf(level);
   if (bossWave) {
     // The ordinary enemies thin out as in a survive level; the boss wave stays whole and its hit points go down a little.

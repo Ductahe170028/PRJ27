@@ -33,5 +33,9 @@ export function snapshotHash(state: ShooterState): string {
     for (const tick of e.volleyTicks ?? []) h = mix(h, tick);
   }
   if (state.bossDown !== undefined) h = mix(h, state.bossDown ? 1 : 0);
+  // A level with a base only: the base, who each enemy is going for, and who lost.
+  if (state.base) for (const value of [state.base.hp, state.base.nextHitTick, state.base.lastHitTick]) h = mix(h, value);
+  for (const e of state.enemies) if (e.aimAtBase !== undefined) h = mix(h, e.aimAtBase ? 1 : 0);
+  if (state.lostBy !== undefined) h = mix(h, state.lostBy === 'base' ? 1 : 2);
   return h.toString(16).padStart(8, '0');
 }

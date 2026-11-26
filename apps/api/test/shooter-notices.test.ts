@@ -20,7 +20,9 @@ describe('keyword notices, one group at a time', () => {
     ['boss-summon', ['boss triệu hồi quái', 'boss gọi quái đến', 'trùm triệu hồi', 'a boss that summons minions', 'the boss summons enemies', 'summoner boss']],
     ['vehicle', ['lái xe tăng', 'xe máy', 'có phương tiện', 'phuong tien', 'drive a car', 'vehicles']],
     ['multiplayer', ['multiplayer', 'chế độ co-op', 'co op', 'hai người chơi', 'nhieu nguoi choi', '2 người chơi', 'two players']],
-    ['defense', ['bảo vệ căn cứ trước các đợt tấn công', 'bao ve can cu', 'phòng thủ', 'tower defense', 'tower defence', 'defend the base', 'base defense']],
+    ['towers', ['xây tháp pháo quanh căn cứ', 'xay thap', 'đặt tháp canh', 'nâng cấp tường', 'xây hàng rào', 'xây pháo đài', 'build towers', 'upgrade the turrets', 'build a wall', 'tower defense', 'tower defence', 'building fences']],
+    ['many-bases', ['bảo vệ hai căn cứ', '2 căn cứ', 'nhiều căn cứ', 'nhieu can cu', 'multiple bases']],
+    ['repair-base', ['sửa căn cứ', 'sửa chữa căn cứ', 'sua chua', 'repair the base', 'the base needs repairs']],
     ['ammo', ['hết đạn thì nạp đạn', 'het dan', 'reload', 'Reloading', 'ammo', 'đạn có hạn']],
     ['pickups', ['nâng cấp', 'nhặt vật phẩm', 'nhặt vật phẩm tăng tốc', 'power-up', 'powerups', 'nâng cấp súng', 'upgrades', 'pickups', 'pick up speed boosts']],
     ['explosion', ['đạn nổ lan', 'tên lửa', 'rocket launcher', 'ném lựu đạn', 'grenades', 'explosions everywhere', 'sát thương lan', 'area damage', 'nổ lan ra xung quanh']],
@@ -44,6 +46,10 @@ describe('keyword notices, one group at a time', () => {
     ['escort', ['bảo vệ bản thân khỏi zombie', 'áo giáp bảo vệ người chơi', 'bảo vệ môi trường', 'protect yourself', 'defend against the horde', 'zombie tấn công người dân',
       'a friendly ally', 'totally awesome', 'bảo vệ máu và sống sót thật lâu, đồng đội không cần', 'em bé zombie']],
     ['vehicle', ['xem thử màn chơi', 'xếp hàng quái', 'exercise room', 'mixed enemies', 'axe fight', 'a taxi']],
+    // a base to defend is supported now: none of these says anything about a base
+    ['towers', ['bảo vệ căn cứ khỏi zombie', 'phòng thủ căn cứ', 'defend the base', 'protect the base', 'tháp canh cổ', 'the tower of babel', 'một căn cứ quân sự', 'xây dựng không khí kinh dị']],
+    ['many-bases', ['một căn cứ', 'căn cứ quân sự', 'hai người chơi giữ căn cứ', 'the base is big', 'two kinds of zombies']],
+    ['repair-base', ['bảo vệ căn cứ', 'base defense', 'repair', 'the soldier repairs his armor', 'căn cứ bị tấn công']],
   ];
   it.each(misses)('%s does not trigger on look-alikes', (id, texts) => {
     for (const text of texts) {
@@ -51,12 +57,23 @@ describe('keyword notices, one group at a time', () => {
     }
   });
 
-  it('"bảo vệ" is the defence group for a base or a city, and the escort group for people', () => {
-    // Decision recorded on purpose: asking to defend a city expects something to defend, and there is nothing, so say it.
-    expect(keywordNotices('bảo vệ thành phố khỏi zombie', [])).toEqual([noticeOf('defense')]);
-    expect(keywordNotices('bảo vệ căn cứ', [])).toEqual([noticeOf('defense')]);
+  it('a base to defend is supported now: "bảo vệ" says nothing for a base, a city or a camp, and the escort sentence for people', () => {
+    for (const text of ['bảo vệ căn cứ khỏi zombie', 'phòng thủ căn cứ', 'bảo vệ thành phố khỏi zombie', 'bảo vệ căn cứ', 'bao ve can cu', 'defend the base', 'protect the camp from the horde']) {
+      expect(keywordNotices(text, []), text).toEqual([]);
+    }
     expect(keywordNotices('bảo vệ dân làng', [])).toEqual([noticeOf('escort')]);
-    expect(keywordNotices('bảo vệ người dân trong thành phố', [])).toEqual([noticeOf('defense'), noticeOf('escort')]);
+    expect(keywordNotices('bảo vệ người dân', [])).toEqual([noticeOf('escort')]);
+    expect(keywordNotices('bảo vệ người dân trong thành phố', [])).toEqual([noticeOf('escort')]);
+  });
+
+  it('the three new groups: building towers, more than one base, repairing the base', () => {
+    expect(noticeOf('towers')).toBe('Chưa hỗ trợ: xây hoặc nâng cấp tháp, tường. Căn cứ không thể xây thêm.');
+    expect(noticeOf('many-bases')).toBe('Chưa hỗ trợ: nhiều căn cứ. Mỗi màn có tối đa một căn cứ.');
+    expect(noticeOf('repair-base')).toBe('Chưa hỗ trợ: sửa chữa căn cứ. Căn cứ không tự hồi máu.');
+    expect(keywordNotices('xây tháp pháo quanh căn cứ', [])).toEqual([noticeOf('towers')]);
+    expect(keywordNotices('bảo vệ hai căn cứ và người dân', [])).toEqual([noticeOf('many-bases'), noticeOf('escort')]);
+    expect(keywordNotices('sửa chữa căn cứ sau mỗi đợt', [])).toEqual([noticeOf('repair-base')]);
+    expect(keywordNotices('tower defense with turrets: build towers, then repair the base', []).sort()).toEqual([noticeOf('towers'), noticeOf('repair-base')].sort());
   });
 
   it('a self-contradicting prompt still gets the no-enemies sentence', () => {
@@ -64,12 +81,12 @@ describe('keyword notices, one group at a time', () => {
   });
 
   it('every group has a fixed Vietnamese sentence of at most 160 characters', () => {
-    expect(NOTICE_GROUPS).toHaveLength(13);
+    expect(NOTICE_GROUPS).toHaveLength(15);
     for (const group of NOTICE_GROUPS) {
       expect(group.notice.length).toBeLessThanOrEqual(NOTICE_MAX_CHARS);
       expect(group.notice.startsWith('Chưa hỗ trợ:')).toBe(true);
     }
-    expect(new Set(NOTICE_GROUPS.map((group) => group.notice)).size).toBe(13);
+    expect(new Set(NOTICE_GROUPS.map((group) => group.notice)).size).toBe(15);
   });
 
   it('adds nothing for ordinary prompts', () => {
@@ -149,7 +166,7 @@ describe('one final boss is supported now, more than one is not', () => {
   });
   it('the other groups still match as before next to a boss', () => {
     expect(keywordNotices('bảo vệ căn cứ có boss cuối, tên lửa nổ lan, nhặt vật phẩm tăng tốc', []).sort()).toEqual([
-      noticeOf('defense'), noticeOf('explosion'), noticeOf('pickups'),
+      noticeOf('explosion'), noticeOf('pickups'),
     ].sort());
   });
 });
@@ -166,13 +183,13 @@ describe('collectNotices', () => {
   });
 
   it('keeps at most 8 and at most 160 characters each, dropping standard sentences first', () => {
-    const everything = 'nhiều boss xe multiplayer bảo vệ căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy';
+    const everything = 'nhiều boss xe multiplayer xây tháp nhiều căn cứ sửa căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy';
     const model = ['m1', 'm2', 'm3', 'm4', 'm5'];
     const engine = ['e1', 'e2', 'e3'];
     const list = collectNotices({ prompt: everything, unsupported: model, engine });
     expect(list).toHaveLength(MAX_NOTICES);
     for (const item of [...model, ...engine]) expect(list).toContain(item);
-    expect(collectNotices({ prompt: everything, unsupported: [], engine: [] })).toHaveLength(MAX_NOTICES); // nine standard sentences, eight kept
+    expect(collectNotices({ prompt: everything, unsupported: [], engine: [] })).toHaveLength(MAX_NOTICES); // eleven standard sentences, eight kept
     const long = collectNotices({ prompt: 'x', unsupported: ['y'.repeat(500)], engine: [] });
     expect(long[0]!.length).toBe(NOTICE_MAX_CHARS);
   });
@@ -231,7 +248,7 @@ describe('an `unsupported` entry that only repeats the prompt', () => {
   });
 
   it('keeps the order (model, keyword, engine) and the limit of 8, the generic sentence counting as a model entry', () => {
-    const everything = 'nhiều boss xe multiplayer bảo vệ căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy và còn nhiều thứ khác nữa';
+    const everything = 'nhiều boss xe multiplayer xây tháp nhiều căn cứ sửa căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy và còn nhiều thứ khác nữa';
     const list = collectNotices({ prompt: everything, unsupported: ['m1', everything, 'm2'], engine: ['e1'] });
     expect(list).toHaveLength(MAX_NOTICES);
     expect(list.slice(0, 3)).toEqual(['m1', GENERIC_UNSUPPORTED_NOTICE, 'm2']);

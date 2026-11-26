@@ -12,6 +12,8 @@ export const HEALTH_DROPS = ['none', 'some', 'many'] as const;
 export const MAX_BRIEF_ENEMIES = 4;
 /** The final boss of the level: none (default), a huge melee boss (crusher) or a shooting one (gunner). */
 export const BOSSES = ['none', 'crusher', 'gunner'] as const;
+/** Whether the level has a base to defend: none (default), or defend (one base in the middle of the field; the level is lost when it is destroyed). */
+export const BASES = ['none', 'defend'] as const;
 
 export const TITLE_MAX = 40;
 export const UNSUPPORTED_MAX_ITEMS = 5;
@@ -28,6 +30,7 @@ export const ShooterBriefSchema = z.object({
   weapon: z.enum(WEAPONS),
   healthDrops: z.enum(HEALTH_DROPS),
   boss: z.enum(BOSSES),
+  base: z.enum(BASES),
   goal: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(20, 180) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(10, 200) }).strict(),
@@ -64,6 +67,8 @@ export function normalizeBrief(raw: unknown): unknown {
   if (brief.healthDrops === undefined) brief.healthDrops = 'none';
   // Likewise a missing boss means the user asked for none.
   if (brief.boss === undefined) brief.boss = 'none';
+  // And a missing base means none.
+  if (brief.base === undefined) brief.base = 'none';
 
   if (Array.isArray(brief.enemies)) {
     const merged: unknown[] = [];
