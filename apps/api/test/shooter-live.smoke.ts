@@ -1,7 +1,7 @@
 // Opt-in diagnostic: real Groq requests through the shooter service (brief ->
 // compiler -> bot gate). Never run by `npm test` or E2E.
 //
-//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3|stage4a|stage4b|stage4c|stage4d|stage5a|stage6a|cleanup] [--dump=file.json]
+//   npx tsx test/shooter-live.smoke.ts --live [--rounds=2] [--only=abc] [--set=stage3|stage4a|stage4b|stage4c|stage4d|stage5a|stage6a|stage6b|cleanup] [--dump=file.json]
 //
 // The key is read from apps/api/.env (git-ignored) exactly like the server does,
 // and is never printed or written anywhere. Requests go one after the other and
@@ -96,12 +96,22 @@ const STAGE6A_PROMPTS: ReadonlyArray<[string, string]> = [
   ['3', 'Bảo vệ căn cứ, có boss cuối'],
   ['4', 'Một màn bắn súng'],
 ];
+// --set=stage6b: the seven prompts of the Stage 6B check, the weapon the user names and the bigger base (one request each: --rounds=1).
+const STAGE6B_PROMPTS: ReadonlyArray<[string, string]> = [
+  ['1', 'Chỉ có súng ngắn, hạ 40 zombie'],
+  ['2', 'Chỉ có súng liên tục, sống sót 60 giây'],
+  ['3', 'Chỉ dùng shotgun trong rừng tối'],
+  ['4', 'Chỉ có súng liên thanh, bảo vệ căn cứ'],
+  ['5', 'Bắt đầu bằng súng xuyên giáp, hạ boss'],
+  ['6', 'Quái tấn công liên tục, sống sót 60 giây'],
+  ['7', 'Bảo vệ căn cứ khỏi zombie 90 giây'],
+];
 // --set=cleanup: the two prompts of the check after the removal of the old code (one request each: --rounds=1).
 const CLEANUP_PROMPTS: ReadonlyArray<[string, string]> = [
   ['a', 'zombie thành phố 60 giây'],
   ['b', 'bảo vệ căn cứ có boss cuối'],
 ];
-const SETS: Record<string, ReadonlyArray<[string, string]>> = { stage3: STAGE3_PROMPTS, stage4a: STAGE4A_PROMPTS, stage4b: STAGE4B_PROMPTS, stage4c: STAGE4C_PROMPTS, stage4d: STAGE4D_PROMPTS, stage5a: STAGE5A_PROMPTS, stage6a: STAGE6A_PROMPTS, cleanup: CLEANUP_PROMPTS };
+const SETS: Record<string, ReadonlyArray<[string, string]>> = { stage3: STAGE3_PROMPTS, stage4a: STAGE4A_PROMPTS, stage4b: STAGE4B_PROMPTS, stage4c: STAGE4C_PROMPTS, stage4d: STAGE4D_PROMPTS, stage5a: STAGE5A_PROMPTS, stage6a: STAGE6A_PROMPTS, stage6b: STAGE6B_PROMPTS, cleanup: CLEANUP_PROMPTS };
 const PROMPTS = SETS[arg('set') ?? ''] ?? DEFAULT_PROMPTS;
 // --dump=file.json keeps the generated projects (level + notices, never the key) so a browser can open exactly them.
 const dumpPath = arg('dump');

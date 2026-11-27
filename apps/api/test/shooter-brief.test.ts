@@ -138,7 +138,7 @@ describe('the prompt for the model', () => {
   });
 
   it('is short, and its field list is generated from the schema lists', () => {
-    expect(SHOOTER_BRIEF_SYSTEM_PROMPT.length).toBeLessThan(5_000); // (3 500 before the new weapons, healthDrops and boss; 4 600 before the loadout of Stage 6A)
+    expect(SHOOTER_BRIEF_SYSTEM_PROMPT.length).toBeLessThan(5_200); // (3 500 before the new weapons, healthDrops and boss; 4 600 before the loadout of Stage 6A; 5 000 before the weapon names of Stage 6B)
     expect(describeBrief().join('\n')).toContain('theme: zombie-city|alien-lab');
     expect(SHOOTER_BRIEF_SYSTEM_PROMPT).toContain(describeBrief().join('\n'));
   });

@@ -28,7 +28,7 @@ import { BASE_TUNING, CASUAL, ENEMY_TYPES, bossWaveOf, botInput, createCasualBot
 import { ShooterBriefSchema, SHOOTER_MAPS, PLAYER_HEALTHS, WEAPONS, type ShooterBrief } from '../src/shooter/brief.js';
 import { compileShooter } from '../src/shooter/compile.js';
 import { compileAndGate } from '../src/shooter/compile-job.js';
-import { BASE_HP_BY_INTENSITY, BASE_PLAYER, BOSS_HP_BY_INTENSITY, WEAPONS as WEAPON_PRESETS } from '../src/shooter/presets.js';
+import { BASE_HP_BY_INTENSITY, BASE_PLAYER, BASE_SIZE_COMPILED, BOSS_HP_BY_INTENSITY, WEAPONS as WEAPON_PRESETS } from '../src/shooter/presets.js';
 import { BOSS_TIMING, ENEMY_WEIGHT, INTENSITY_RATE, NOT_BEFORE } from '../src/shooter/waves.js';
 
 const MIXES: ReadonlyArray<{ name: string; enemies: ShooterBrief['enemies'] }> = [
@@ -211,7 +211,7 @@ function report(rows: Row[], preOnly: boolean): string {
 function baseReport(rows: Row[], preOnly: boolean, weapons: string[]): string[] {
   const lines: string[] = [];
   const TARGET: Record<number, string> = { 1: '>= 80', 2: '65-90', 3: '50-80', 4: '35-65', 5: '20-50' };
-  lines.push('', `Base levels, knobs: BASE_HP_BY_INTENSITY = [${BASE_HP_BY_INTENSITY.join(', ')}], BASE_HIT_INTERVAL_MS = ${BASE_TUNING.hitIntervalMs}, TARGET_SWITCH_MARGIN = ${BASE_TUNING.targetSwitchMargin}, BOT_LEASH = ${BASE_TUNING.botLeash}, BASE_PLAYER_GAP = ${BASE_PLAYER.gap}`);
+  lines.push('', `Base levels, knobs: BASE_HP_BY_INTENSITY = [${BASE_HP_BY_INTENSITY.join(', ')}], BASE_HIT_INTERVAL_MS = ${BASE_TUNING.hitIntervalMs}, TARGET_SWITCH_MARGIN = ${BASE_TUNING.targetSwitchMargin}, BOT_LEASH = ${BASE_TUNING.botLeash}, BASE_SIZE = ${BASE_SIZE_COMPILED.size}, BASE_PLAYER_MARGIN = ${BASE_PLAYER.margin}`);
   lines.push('', 'Base levels, before the gate: bot wins vs the target, and how the lost games were lost (player died / base destroyed):', '| intensity | target % | bot wins % | lost | by player | by base | share by player | share by base |', '|---|---|---|---|---|---|---|---|');
   for (const i of [1, 2, 3, 4, 5]) {
     const set = rows.filter((r) => r.combo.intensity === i);
@@ -305,7 +305,9 @@ function applyTune() {
     'base.hit': () => (v) => { BASE_TUNING.hitIntervalMs = v; },
     'base.margin': () => (v) => { BASE_TUNING.targetSwitchMargin = v; },
     'base.leash': () => (v) => { BASE_TUNING.botLeash = v; },
-    'base.gap': () => (v) => { BASE_PLAYER.gap = v; },
+    // Stage 6B: the compiler's own base (the side of its square, and how far from its edge the player starts)
+    'base.size': () => (v) => { BASE_SIZE_COMPILED.size = v; },
+    'base.stand': () => (v) => { BASE_PLAYER.margin = v; }, // how far from the edge of the base's square the player starts
     'bossmult.1': () => (v) => { BOSS_HP_BY_INTENSITY[0] = v; },
     'bossmult.2': () => (v) => { BOSS_HP_BY_INTENSITY[1] = v; },
     'bossmult.3': () => (v) => { BOSS_HP_BY_INTENSITY[2] = v; },

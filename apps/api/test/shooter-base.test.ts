@@ -31,7 +31,7 @@ describe('the base in the level schema', () => {
     expect(problems(siege())).toEqual([]);
     for (const hp of [5, 200]) expect(problems(siege({ base: { x: 480, y: 305, hp } })), String(hp)).toEqual([]);
     for (const hp of [4, 201, 20.5]) expect(problems(siege({ base: { x: 480, y: 305, hp } })).join('|'), String(hp)).toContain('base.hp');
-    expect(problems({ ...siege(), base: { x: 480, y: 305, hp: 20, size: 80 } }).length).toBeGreaterThan(0);
+    expect(problems({ ...siege(), base: { x: 480, y: 305, hp: 20, color: 'red' } }).length).toBeGreaterThan(0);
     expect(BASE_SIZE).toBe(56);
     expect(BASE_CLEARANCE).toBe(48);
   });

@@ -12,6 +12,7 @@ import { openRunDiagnostics, type RunDiagnostics, type DiagnosticsFinish, type D
 import { normalizeBrief, ShooterBriefSchema, type ShooterBrief } from './brief.js';
 import { compileInWorker, type CompileRunner } from './isolated-compile.js';
 import { collectNotices, guardUnrequested } from './notices.js';
+import { guardWeapons } from './weapon-guard.js';
 import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema } from './prompt.js';
 import type { CompiledShooter } from './compile-job.js';
 
@@ -85,14 +86,22 @@ export class ShooterService {
       ));
       await this.note(() => diag.raw(raw!));
       // A feature the model added that the text never asked for (health drops, a base) is taken out; the diagnostics say so.
-      const { brief, removed } = guardUnrequested(this.parseBrief(raw, capture), request.prompt);
+      const unrequested = guardUnrequested(this.parseBrief(raw, capture), request.prompt);
+      const { removed } = unrequested;
+      // The weapon and the loadout are decided by the user's own words, not by the model (weapon-guard.ts)
+      const weapons = guardWeapons(unrequested.brief, request.prompt);
+      const { brief } = weapons;
       capture.stage = 'repair';
       const compiled: CompiledShooter = await this.compile({ brief, seed: this.seed() }, signal);
-      capture.report = removed.length > 0 ? { ...compiled.report, guardRemoved: removed } : compiled.report;
+      capture.report = {
+        ...compiled.report,
+        ...(removed.length > 0 ? { guardRemoved: removed } : {}),
+        ...(weapons.changed.length > 0 ? { guardChanged: weapons.changed } : {}),
+      };
       const project = ShooterProjectSchema.parse({
         id: randomUUID(), title: compiled.level.title, prompt: request.prompt, provider: provider.id, modelId: model.id,
         createdAt: new Date().toISOString(), level: compiled.level,
-        notices: collectNotices({ prompt: request.prompt, unsupported: brief.unsupported, engine: compiled.notices }),
+        notices: collectNotices({ prompt: request.prompt, unsupported: brief.unsupported, engine: [...compiled.notices, ...weapons.notices] }),
       });
       capture.stage = 'ok';
       await this.note(() => diag.finish(this.finish(capture, 'completed', raw)));

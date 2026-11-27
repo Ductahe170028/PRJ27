@@ -67,8 +67,8 @@ Một họ có đủ **6 loại quái** của game: `runner`, `brute`, `swarmer`
 
 ### `base` (căn cứ)
 
-- Khung gợi ý **96×96**, thân vuông `body: { "w": 56, "h": 56 }` (bằng cạnh căn cứ của game).
-- Căn cứ được phép **nhô lên phía trên** hình vuông (mái, ăng-ten, tháp pháo) **tối đa 24 px** theo thang game. Phần nhô chỉ để nhìn, không chặn gì. Cách làm: đặt hình vuông 56×56 thấp hơn giữa khung và đặt `anchor.y` tương ứng. Gợi ý: hình vuông chiếm x 20 đến 76, y 24 đến 80 của khung 96×96, tức `anchor: { "x": 0.5, "y": 0.5417 }`, và `"overhang": 24`.
+- Khung gợi ý **120×120**, thân vuông `body: { "w": 80, "h": 80 }`. Kích thước căn cứ trong game nay là **80** (Stage 6B; trước đó 56) khi nói về gói ảnh: game tự co ảnh cho khớp cạnh căn cứ của từng màn (`tỉ lệ = cạnh căn cứ / body.w`; căn cứ do engine dựng hiện là 72, nên ảnh co còn 90%).
+- Căn cứ được phép **nhô lên phía trên** hình vuông (mái, ăng-ten, tháp pháo) **tối đa 24 px** theo thang game. Phần nhô chỉ để nhìn, không chặn gì. Cách làm: đặt hình vuông 56×56 thấp hơn giữa khung và đặt `anchor.y` tương ứng. Gợi ý: hình vuông 80×80 chiếm x 20 đến 100, y 24 đến 104 của khung 120×120, tức `anchor: { "x": 0.5, "y": 0.5333 }`, và `"overhang": 24`.
 - Số khung gợi ý: `idle` 2, `hit` 2, `low` 4 (có khói), `destroyed` 1 (đống đổ nát).
 
 ### `weapon` (súng cầm tay)

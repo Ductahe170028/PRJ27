@@ -163,9 +163,18 @@ export function levelInfo(level: ShooterLevel): LevelInfo {
 }
 
 // --- Stage 6A: switching weapons (keys 1-5, the mouse wheel) and the weapon bar ---------------------------------------------------
-/** The names the screen gives to the five weapons (by the id of an arsenal entry, which is only a name for the screen: the simulation never reads it). */
-export const WEAPON_NAMES: Record<string, string> = { pistol: 'Súng ngắn', shotgun: 'Shotgun', piercing: 'Súng xuyên', rapid: 'Bắn nhanh', heavy: 'Súng nặng' };
-export const weaponName = (id: string) => WEAPON_NAMES[id] ?? id;
+/** The one table of weapon names the screen uses (the id of an arsenal entry is only a name for the screen: the simulation never reads it):
+ * what the weapon is called, and a plain sentence about it. The sentence takes its numbers from the weapon's own data when it is given
+ * (pellets, how many enemies a bullet passes), so that a level that changes the numbers still reads true. */
+export const WEAPON_TEXT: Record<string, { name: string; blurb: (weapon?: ShooterLevel['weapon']) => string }> = {
+  pistol: { name: 'Súng ngắn', blurb: () => 'Bắn từng phát, tầm xa vừa' },
+  shotgun: { name: 'Shotgun (súng săn)', blurb: (weapon) => `Bắn chùm ${weapon?.pellets ?? 6} viên, rất mạnh ở gần` },
+  piercing: { name: 'Súng xuyên giáp', blurb: (weapon) => `Đạn xuyên qua ${weapon?.pierce ?? 2} quái` },
+  rapid: { name: 'Súng bắn nhanh (liên thanh)', blurb: () => 'Bắn liên tục, mỗi viên yếu' },
+  heavy: { name: 'Súng nặng', blurb: () => 'Chậm nhưng mỗi viên rất mạnh' },
+};
+export const weaponName = (id: string) => WEAPON_TEXT[id]?.name ?? id;
+export const weaponBlurb = (id: string, weapon?: ShooterLevel['weapon']) => WEAPON_TEXT[id]?.blurb(weapon) ?? '';
 /** The third line of the banner and of the hidden #game-banner, only in a level with an arsenal. */
 export const ARSENAL_HINT = '1–5 hoặc cuộn chuột: đổi súng';
 
@@ -214,11 +223,14 @@ export function waitShare(tick: number, nextShotTick: number, equipUntilTick: nu
   return Math.min(1, left / total);
 }
 
-/** The line about the weapons for the level card (only with an arsenal): the list, with the weapon the player starts with marked. */
+/** The lines about the weapons for the level card (only with an arsenal): each weapon with its key, name and a plain sentence, then the weapon the player starts with. */
 export function arsenalLines(level: Pick<ShooterLevel, 'arsenal' | 'weapon'>): string[] {
   const arsenal = level.arsenal;
   if (!arsenal) return [];
   const start = arsenal.findIndex((entry) => sameWeapon(entry.weapon, level.weapon));
-  const names = arsenal.map((entry, i) => `${i + 1} ${weaponName(entry.id)}`).join(', ');
-  return [`Có ${arsenal.length} súng, đổi bằng phím 1–${arsenal.length} hoặc cuộn chuột: ${names}`, `Súng lúc đầu: ${weaponName(arsenal[Math.max(0, start)]!.id)}`];
+  const lines = arsenal.map((entry, i) => {
+    const note = weaponBlurb(entry.id, entry.weapon);
+    return `${i + 1} · ${weaponName(entry.id)}${note ? `: ${note}` : ''}`;
+  });
+  return [`Có ${arsenal.length} súng, đổi bằng phím 1–${arsenal.length} hoặc cuộn chuột:`, ...lines, `Súng lúc đầu: ${weaponName(arsenal[Math.max(0, start)]!.id)}`];
 }

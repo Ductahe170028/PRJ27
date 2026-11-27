@@ -7,7 +7,7 @@ import { packKey, type LoadedArt } from './art/loader';
 import { prefersReducedMotion } from './render/motion';
 import { registerPack } from './render/world';
 import {
-  ARSENAL_HINT, BANNER_HINT, BASE_BAR, BASE_BAR_LABEL, BASE_BAR_PLATE, BOSS_WARNING_TEXT, bannerAlpha, bannerLines, bannerTextColor, bannerTitle, baseBar, bossBar, bossWarningAlpha, waitShare, weaponBarLayout, WEAPON_CELL,
+  ARSENAL_HINT, BANNER_HINT, BASE_BAR, BASE_BAR_LABEL, BASE_BAR_PLATE, BOSS_WARNING_TEXT, bannerAlpha, bannerLines, bannerTextColor, bannerTitle, baseBar, bossBar, bossWarningAlpha, waitShare, weaponBarLayout, weaponName, WEAPON_CELL,
 } from '../lib/shooter-text';
 import { CSS, PALETTE, color } from './palette';
 
@@ -154,6 +154,9 @@ export function createWeaponBar(
   const parts: Phaser.GameObjects.GameObject[] = [];
   const plate = scene.add.rectangle(layout.plate.x + layout.plate.width / 2, layout.plate.y + layout.plate.height / 2, layout.plate.width, layout.plate.height, PALETTE.ink, 0.55).setDepth(11);
   parts.push(plate);
+  // the name of the weapon in hand, in small letters with a dark edge, just above the bar
+  const label = scene.add.text(480, layout.plate.y - 2, '', { fontFamily: 'system-ui', fontSize: '13px', fontStyle: 'bold', color: CSS.white, stroke: CSS.ink, strokeThickness: 4 }).setOrigin(0.5, 1).setDepth(14);
+  parts.push(label);
   const cooldownTicks = arsenal.map((entry) => msToTicks(entry.weapon.cooldownMs));
   const cells = layout.cells.map((cell, i) => {
     const entry = arsenal[i]!;
@@ -181,6 +184,7 @@ export function createWeaponBar(
     update(state, deltaMs) {
       const slot = state.weaponSlot;
       if (slot === undefined) return;
+      label.setText(weaponName(arsenal[slot]?.id ?? ''));
       if (lastSlot !== undefined && slot !== lastSlot) { flashMs = 0; flashSlot = slot; }
       lastSlot = slot;
       flashMs += deltaMs;
@@ -195,7 +199,14 @@ export function createWeaponBar(
         cell.flash.setFillStyle(PALETTE.white, glow);
       });
     },
-    bounds() { const b = plate.getBounds(); return `${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}`; },
+    /** The plate and the name above it, as drawn (one box that holds both), for the tests. */
+    bounds() {
+      const p = plate.getBounds();
+      const l = label.getBounds();
+      const left = Math.min(p.x, l.x);
+      const top = Math.min(p.y, l.y);
+      return `${Math.round(left)},${Math.round(top)},${Math.round(Math.max(p.right, l.right) - left)},${Math.round(Math.max(p.bottom, l.bottom) - top)}`;
+    },
     dispose() { for (const part of parts) part.destroy(); },
   };
 }

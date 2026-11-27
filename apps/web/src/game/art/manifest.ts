@@ -50,5 +50,5 @@ export function manifestFits(manifest: Manifest, sheetWidth: number, sheetHeight
 export function bodyScale(body: Manifest['body'] | FamilyKind['body'], gameSize: number): number {
   if (!body) return 1;
   if ('radius' in body) return gameSize / body.radius;
-  return gameSize / body.w; // a square: `gameSize` is then the game's side (BASE_SIZE)
+  return gameSize / body.w; // a square: `gameSize` is then the game's side (the base's own size, `baseSizeOf`)
 }

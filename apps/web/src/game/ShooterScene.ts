@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { TICK_RATE, bossOf, createSim, elapsedSeconds, isBoss, isEnraged, step, type Look, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
+import { ENEMY_TYPES, TICK_RATE, bossOf, createSim, elapsedSeconds, isBoss, isEnraged, pointRectDistance, step, type Look, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
 import { sourcesText, type LoadedArt } from './art/loader';
-import { hudLine, loseReason, slotForKey, wheelStep, wrapSlot } from '../lib/shooter-text';
+import { hudLine, loseReason, slotForKey, weaponName, wheelStep, wrapSlot } from '../lib/shooter-text';
 import { alphaOf } from './render/interpolate';
 import { lookText } from './render/look';
 import { WorldRenderer } from './render/world';
@@ -15,6 +15,21 @@ function bossValues(state: ShooterState) {
     bossHp: String(boss.hp), bossMax: String(boss.maxHp), bossAt: `${Math.round(boss.x)},${Math.round(boss.y)}`, bossPhase: boss.bossPhase ?? '',
     bossEnraged: isEnraged(boss, bossOf(boss.type)!) ? 'yes' : 'no',
   };
+}
+
+/** The base's square, and how many enemies touch it and how many are inside it (none should be), for the hidden #game-hud (data-base-side, -touching, -inside). */
+function baseValues(state: ShooterState) {
+  const rect = state.baseRect;
+  if (!rect) return {};
+  let touching = 0;
+  let inside = 0;
+  for (const enemy of state.enemies) {
+    const gap = pointRectDistance(enemy.x, enemy.y, rect);
+    const radius = ENEMY_TYPES[enemy.type].radius;
+    if (gap <= radius + 2) touching += 1;
+    if (gap < radius - 0.5) inside += 1;
+  }
+  return { baseSide: String(rect.width), baseTouching: String(touching), baseInside: String(inside) };
 }
 
 const TICK_MS = 1000 / TICK_RATE;
@@ -184,11 +199,11 @@ export class ShooterScene extends Phaser.Scene {
       enemies: String(state.enemies.length), bullets: String(state.bullets.length), updateMs: this.frameMsText,
       // only in a level with an arsenal: the weapon in hand (its id), its slot, whether the player is switching, and the plate of the weapon bar
       ...(state.weaponSlot !== undefined && this.level.arsenal ? {
-        weapon: this.level.arsenal[state.weaponSlot]?.id ?? '', slot: String(state.weaponSlot), equip: state.tick < (state.equipUntilTick ?? 0) ? 'yes' : 'no',
+        weapon: this.level.arsenal[state.weaponSlot]?.id ?? '', weaponName: weaponName(this.level.arsenal[state.weaponSlot]?.id ?? ''), slot: String(state.weaponSlot), equip: state.tick < (state.equipUntilTick ?? 0) ? 'yes' : 'no',
         weaponBar: this.weaponBar?.bounds() ?? '',
       } : {}),
       // only in a level that has them: the base's hit points, the plates of the two bars as drawn, and who lost
-      ...(state.base ? { baseHp: String(state.base.hp), baseMax: String(state.base.maxHp), baseBar: this.baseUi?.bounds() ?? '', lostBy: state.lostBy ?? '' } : {}),
+      ...(state.base ? { baseHp: String(state.base.hp), baseMax: String(state.base.maxHp), baseBar: this.baseUi?.bounds() ?? '', lostBy: state.lostBy ?? '', ...baseValues(state) } : {}),
       ...(this.bossUi ? { bossBar: this.bossUi.bounds() } : {}),
     };
     const key = Object.values(values).join('|');

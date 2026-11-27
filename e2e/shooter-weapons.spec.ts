@@ -159,7 +159,8 @@ test('the banner has the hint for switching weapons in a level that has an arsen
 test('the level card lists the weapons and the one the player starts with', async ({ page }) => {
   await open(page, 'arsenal');
   const card = page.getByRole('region', { name: 'Thông tin màn' });
-  await expect(card.locator('[data-info="arsenal"]')).toContainText('1 Súng ngắn, 2 Shotgun, 3 Súng xuyên, 4 Bắn nhanh, 5 Súng nặng');
+  await expect(card.locator('[data-info="arsenal"]')).toContainText('1 · Súng ngắn');
+  await expect(card.locator('[data-info="arsenal"]')).toContainText('5 · Súng nặng');
   await expect(card.locator('[data-info="arsenal"]')).toContainText('Súng lúc đầu: Súng ngắn');
   await open(page, 'arena');
   await expect(card.locator('[data-info="arsenal"]')).toHaveCount(0);

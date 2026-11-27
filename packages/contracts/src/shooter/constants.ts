@@ -133,6 +133,8 @@ export const BRUTE_CLEARANCE = 2 * NAV_CELL + 8;
 /** Stage 4D, the base: a square building that stands still. Its side (px), and how far it keeps from every obstacle (two brute
  * widths and some room, so that a brute can slip past). */
 export const BASE_SIZE = 56;
+/** The largest side a level may give its base (Stage 6B: the compiler's bases are bigger than the old 56). */
+export const BASE_MAX_SIZE = 120;
 export const BASE_CLEARANCE = 48;
 /** An enemy that is going for the base walks straight at its center once it is this close (px). */
 export const BASE_DIRECT_RANGE = 140;

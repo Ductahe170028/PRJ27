@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  BASE_CLEARANCE, EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
+  BASE_CLEARANCE, BASE_MAX_SIZE, BASE_SIZE, EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
 } from './constants.js';
 import { baseRectOf, dist, pointRectDistance, rectInsideField } from './geometry.js';
 import { sameWeapon } from './equip.js';
@@ -48,8 +48,8 @@ export const ShooterLevelSchema = z.object({
   drops: z.object({ healthChancePct: integer(0, 50) }).strict().optional(),
   /** Hit points of the boss when it appears (absent = the boss kind's own). */
   bossHp: integer(10, 400).optional(),
-  /** A base to defend (absent = none): a square of BASE_SIZE centered here. The game is lost when its hit points reach zero. */
-  base: z.object({ ...point, hp: integer(5, 200) }).strict().optional(),
+  /** A base to defend (absent = none): a square centered here, `size` px on a side (absent = BASE_SIZE, 56). The game is lost when its hit points reach zero. */
+  base: z.object({ ...point, hp: integer(5, 200), size: integer(BASE_SIZE, BASE_MAX_SIZE).optional() }).strict().optional(),
   /** How the level looks (ids of art packs). Only the renderer reads it: the simulation and its hash never do. Absent = the defaults. */
   look: LookSchema.optional(),
   win: z.discriminatedUnion('type', [

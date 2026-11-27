@@ -1,11 +1,88 @@
 # Hiệu chỉnh mật độ quái của shooter
 
-Phần "Stage 4D.1" ngay dưới là số liệu mới nhất (máu căn cứ ở I4-I5); phần "Stage 4D" sau nó là căn cứ cần bảo vệ (các bảng của nó là trước 4D.1); phần "Stage 4C.1" sau nó là boss không kẹt (boss không kẹt, nhịp quái của màn boss); phần "Stage 4C" sau nó là boss cuối (các số của boss và bảng trước 4C.1: bảng I1–I5 của 4C đã bị 4C.1 thay thế); phần "Stage 4B" là hai súng mới, quái bắn xa và hồi máu; phần "Stage 4A" là bot bình thường; các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
+Phần "Stage 6B" ngay dưới là số liệu mới nhất (căn cứ to hơn: 72 px, máu 200); phần "Stage 4D.1" sau nó là máu căn cứ ở I4-I5 (căn cứ 56); phần "Stage 4D" sau nó là căn cứ cần bảo vệ (các bảng của nó là trước 4D.1); phần "Stage 4C.1" sau nó là boss không kẹt (boss không kẹt, nhịp quái của màn boss); phần "Stage 4C" sau nó là boss cuối (các số của boss và bảng trước 4C.1: bảng I1–I5 của 4C đã bị 4C.1 thay thế); phần "Stage 4B" là hai súng mới, quái bắn xa và hồi máu; phần "Stage 4A" là bot bình thường; các phần sau nó là Stage 3 (bot giỏi) và cũ hơn, giữ để so sánh. Ngày chạy phần Stage 3: 2026-11-22. Kết quả của `npx tsx scripts/calibrate-shooter.ts --write` (cờ `--write` đã được thay bằng `--out=tệp` từ Stage 4A) chạy từ `apps/api` (PowerShell nuốt cờ qua `npm run`, nên chạy trực tiếp; 2700 ván mỗi pha, 7 tiến trình song song, 87 s).
 
 Lưới: intensity 1-5 x mix quái (runner, brute, swarmer, cả ba) x map (5) x weapon (3) x health (3) x 3 seed; mục tiêu sống sót 60 s.
 "Trước cổng" là bot chơi level đúng như compiler dựng; "sau cổng" là level service sẽ trả (compile + cổng), chơi trên seed mà cổng chưa dùng.
 
-## Stage 4D.1: máu căn cứ ở độ khó 4 và 5 (mới nhất)
+## Stage 6B: căn cứ to hơn (mới nhất)
+
+Căn cứ 56 px nhìn bé (nhỏ hơn cả boss, 68 px). Stage này cho căn cứ một kích thước riêng: `level.base.size` (số nguyên 56..120, tùy chọn; thiếu thì 56 như mọi màn cũ), nên hộp va chạm cũng to thật, không chỉ ảnh. Màn không có `size` chơi ra đúng từng bit như trước. Căn cứ do compiler dựng nay là **72 px** (xem dưới), máu **200** ở mọi độ khó, người chơi đứng cách mép hình vuông 30 px (cách tâm `size / 2 + 30` = 66 px).
+
+Núm được chỉnh (chỉ phía biên dịch, `presets.ts`): `BASE_SIZE_COMPILED.size`, `BASE_HP_BY_INTENSITY` (tối đa 200), `BASE_PLAYER.margin` (khoảng cách người chơi đến mép, giới hạn cũ của khoảng cách tâm 56..90 px). **Không chỉnh `BASE_TUNING`** (nhịp sát thương 800 ms, biên đổi mục tiêu 100, dây buộc bot 170) và không đổi `CASUAL`, `INTENSITY_RATE`, số liệu quái, súng, boss. Hai núm mới cho `--tune`: `base.size=`, `base.stand=` (khoảng cách người chơi đến mép; `base.gap` của 4D đã bỏ).
+
+Mục tiêu (bot bình thường, `--set=base` đầy đủ, 4500 ván mỗi pha): trước cổng I1 ≥ 80, I2 65-90, I3 50-80, I4 35-65, I5 20-50; mỗi kiểu thua ≥ 15% ở I3 với súng ngắn; sau cổng dựng được ≥ 99%, bot thắng ≥ 60%, `unwinnable_level` ≤ 1%; bản đồ bị đơn giản hóa ≤ 5%; thời gian dựng p95 < 5 s.
+
+### Các kích thước đã thử (trước cổng, bot thắng % ở I1 / I2 / I3 / I4 / I5; "I3 pistol" = % thua do căn cứ / do người chơi)
+
+Vòng 1: máu của 4D.1 (120/120/120/150/200), khoảng cách đến mép 36:
+
+| kích thước | I1 | I2 | I3 | I4 | I5 | đạt? |
+|---|---|---|---|---|---|---|
+| 88 | 56,8 | 36,9 | 20,3 | 14,8 | 6,6 | không (mọi mức dưới dải) |
+| 80 | 66,9 | 48,8 | 31,0 | 25,6 | 13,1 | không |
+| 72 | 78,7 | 62,8 | 42,0 | 31,7 | 19,6 | không (mọi mức vừa dưới dải) |
+
+Căn cứ to hơn có nhiều mép hơn cho quái chạm cùng lúc nên chịu sát thương nhanh hơn (nhịp sát thương cố định): phải tăng máu. Vòng 2: máu 200 ở mọi độ khó (trần của schema):
+
+| kích thước | khoảng cách đến mép | I1 | I2 | I3 | I4 | I5 | I3 pistol (căn cứ / người) |
+|---|---|---|---|---|---|---|---|
+| 88 | 36 | 93,7 | 74,9 | 53,7 | 26,2 | 6,6 | 61 / 39 |
+| 88 | 46 | 92,1 | 76,3 | 55,9 | 26,1 | 9,6 | 56 / 44 |
+| 88 | 26 | 91,8 | 75,6 | 58,3 | 27,0 | 9,2 | 58 / 42 |
+| 80 | 36 | 95,9 | 80,8 | 65,3 | 41,3 | 13,1 | 64 / 36 |
+| 80 | 50 | 96,1 | 79,4 | 64,8 | 40,2 | 16,8 | 59 / 41 |
+| 80 | 26 | 94,7 | 85,1 | 64,8 | 39,0 | 15,8 | 64 / 36 |
+| 72 | 36 | 98,9 | 89,6 | 66,0 | 49,8 | 19,6 | 51 / 49 |
+| 72 | 54 | 98,7 | 90,7 | 70,8 | 47,4 | 19,2 | 47 / 53 |
+| 72 | 46 | 98,9 | 89,4 | 71,8 | 49,3 | 18,6 | 43 / 57 |
+| 72 | 32 | 98,7 | 90,3 | 71,8 | 48,9 | 18,3 | 43 / 57 |
+| 72 | 28 | 99,0 | 89,7 | 68,9 | 48,3 | 19,7 | 47 / 53 |
+| 72 | 26 | 98,4 | 89,6 | 68,7 | 46,9 | 20,0 | 49 / 51 |
+| 72 | 24 | 98,4 | 91,9 | 68,4 | 50,1 | 16,6 | 45 / 55 |
+| **72** | **30** | **98,8** | **88,7** | **66,7** | **46,6** | **20,7** | **57 / 43** |
+
+(Thử thêm ngoài giới hạn cũ của khoảng cách tâm, chỉ để biết: 88 / 60 cho I5 11,2; 80 / 60 cho I5 12,2. Khoảng cách đến mép 20 và 22 không dựng được: người chơi quá sát hình vuông.) Mức I5 của 88 và 80 không với tới 20% dù đã ở trần máu; chỉ 72 đạt hết dải. **Kích thước cuối: 72**, máu `[200, 200, 200, 200, 200]`, khoảng cách đến mép 30. Lưu ý: các số dao động vài điểm theo khoảng cách (trò chơi tất định nhưng nhạy): I5 của 72 chỉ từ 16,6 đến 20,7 khi khoảng cách đổi từ 24 đến 32; bộ cuối ở sát mép dưới của dải (20,7), nên bất kỳ thay đổi nào của nhịp quái ở I5 sẽ cần đo lại.
+
+### Bộ cuối, trước cổng (4500 ván)
+
+| intensity | mục tiêu % | bot thắng % | thua | do người chơi | do căn cứ | tỉ lệ người chơi / căn cứ |
+|---|---|---|---|---|---|---|
+| 1 | ≥ 80 | 98,8 | 11 | 2 | 9 | 18,2% / 81,8% |
+| 2 | 65-90 | 88,7 | 102 | 44 | 58 | 43,1% / 56,9% |
+| 3 | 50-80 | 66,7 | 300 | 166 | 134 | 55,3% / 44,7% |
+| 4 | 35-65 | 46,6 | 481 | 260 | 221 | 54,1% / 45,9% |
+| 5 | 20-50 | 20,7 | 714 | 367 | 347 | 51,4% / 48,6% |
+
+Ở I3 với `pistol`: 86 ván thua, 57,0% do căn cứ và 43,0% do người chơi (cả hai ≥ 15%). Bot thắng theo súng (trong ngoặc: tỉ lệ thua do căn cứ):
+
+| súng | I1 | I2 | I3 | I4 | I5 |
+|---|---|---|---|---|---|
+| pistol | 98% (100%) | 85% (59%) | 52% (57%) | 13% (56%) | 0% (49%) |
+| rapid | 97% (100%) | 88% (95%) | 89% (45%) | 82% (44%) | 51% (63%) |
+| heavy | 100% (0%) | 90% (56%) | 68% (42%) | 39% (42%) | 17% (49%) |
+| shotgun | 100% (0%) | 88% (38%) | 58% (33%) | 48% (40%) | 17% (43%) |
+| piercing | 99% (0%) | 92% (21%) | 66% (44%) | 49% (41%) | 18% (44%) |
+
+### Sau cổng (bộ cuối, 4500 ván, bot thắng ở seed cổng chưa dùng)
+
+| intensity | dựng được | bot thắng | màn bị giảm quái | máu căn cứ sau cổng | thua do căn cứ / số ván thua |
+|---|---|---|---|---|---|
+| 1 | 100,0% | 87,6% | 8,3% (75/900) | 200,0 | 103 / 112 |
+| 2 | 100,0% | 86,3% | 13,1% (118/900) | 200,0 | 90 / 123 |
+| 3 | 100,0% | 70,4% | 43,8% (394/900) | 200,0 | 168 / 266 |
+| 4 | 100,0% | 67,6% | 66,6% (599/900) | 200,0 | 186 / 292 |
+| 5 | 99,3% | 63,4% | 85,7% (771/900) | 200,0 | 198 / 327 |
+
+Đạt: dựng được 99,3-100% (≥ 99%), bot thắng ≥ 63,4% (≥ 60%), `unwinnable_level` 0,13% (6 trên 4500, ≤ 1%). Vì máu căn cứ đã ở trần 200 nên cổng chỉ còn cách giảm quái (không thể thêm máu căn cứ). **Bản đồ bị "đơn giản hóa thành đấu trường trống"**: open-arena 0,0%, pillars 0,0%, cross-corridors 0,0%, rooms 0,0%, ring 0,0% (0 trên 900 mỗi map; giới hạn 5%).
+
+### Không thoái lui
+
+`--set=old|new|boss --seeds=1` giống từng ký tự trước và sau (so bằng `cmp`; các lát này không có căn cứ). Các bản chụp vàng cũ (`golden-sim`, `-4b`, `-4c`, `-4d`, `-6a`) không đổi một byte; các màn tay cũ `base-siege`, `base-boss`, `base-fall` không sửa (không có `size`, 56 px). Test: một màn có `size: 56` ghi rõ chơi y hệt cùng màn không có `size` (bot giỏi và bot bình thường, 3 màn). Bản chụp vàng mới `golden-sim-6b.json` (18 ván trên căn cứ 72 và 80, thắng và thua, cả hai kiểu thua, có boss).
+
+Hai màn tay mới (không sửa màn cũ): `base-siege-big` (căn cứ 80, máu 200, ít quái hơn: căn cứ to bị nhiều quái chạm cùng lúc) và `base-boss-big` (căn cứ 80, máu 150, boss 30). Người chơi đứng cách mép 44 px.
+
+## Stage 4D.1: máu căn cứ ở độ khó 4 và 5 (các bảng của nó là trước Stage 6B: căn cứ 56, máu 120/120/120/150/200)
 
 Sau Stage 4D chỉ còn một chỗ chưa đạt: I5 trước cổng 13,0% (mục tiêu 20-50%). Quyết định (của người review, thay người dùng): chỉ tăng máu căn cứ ở I4 và I5, không đụng I1-I3, không đổi núm nào khác, không đổi schema (máu căn cứ tối đa vốn là 200).
 

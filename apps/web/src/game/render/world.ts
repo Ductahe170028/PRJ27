@@ -4,7 +4,7 @@
 // stays as it was. Sprites are reused (pools): nothing is created per frame once the game is running.
 import Phaser from 'phaser';
 import {
-  BASE_SIZE, BULLET_RADIUS, ENEMY_TYPES, EQUIP_MS, PLAYER_RADIUS, TICK_RATE, isBoss, rangedOf, startingSlot,
+  BULLET_RADIUS, ENEMY_TYPES, EQUIP_MS, PLAYER_RADIUS, TICK_RATE, baseSizeOf, isBoss, rangedOf, startingSlot,
   type EnemyType, type Look, type ShooterEnemy, type ShooterLevel, type ShooterState,
 } from '@game-creator/contracts';
 import { packKey, type LoadedArt, type LoadedPack } from '../art/loader';
@@ -268,7 +268,7 @@ export class WorldRenderer {
   private react(events: FrameEvents, state: ShooterState): void {
     const shake = (duration: number, intensity: number) => { if (!this.reduced) this.scene.cameras.main.shake(duration, intensity); };
     if (events.playerHit) { this.playerHurtAt = this.now; shake(120, 0.004); }
-    if (events.baseHit) { this.baseHitAt = this.now; shake(90, 0.0025); if (state.base) this.spawnFx('spark', state.base.x, state.base.y - 8, { scale: 1.4 }); }
+    if (events.baseHit) { this.baseHitAt = this.now; shake(90, 0.0025); if (state.base) { const side = state.baseRect?.width ?? 56; this.spawnFx('spark', state.base.x, state.base.y - side / 7, { scale: (1.4 * side) / 56 }); } }
     if (events.shot) {
       this.shotAt = this.now;
       this.spawnFx('muzzle', this.lastMuzzle.x, this.lastMuzzle.y, { rotation: this.playerAngle, scale: this.heroScale() });
@@ -466,7 +466,7 @@ export class WorldRenderer {
     const img = this.baseImg;
     if (!base || !img) return;
     const sheet = this.base;
-    const scale = bodyScale(sheet.manifest.body, BASE_SIZE);
+    const scale = bodyScale(sheet.manifest.body, baseSizeOf(this.level.base!));
     const bar = baseBar(base.hp, base.maxHp);
     let name = 'idle';
     let since = this.now;

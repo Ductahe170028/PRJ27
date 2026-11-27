@@ -37,6 +37,9 @@ export function variantFromParams(level: ShooterLevel, params: URLSearchParams, 
   let next = level;
   const boss = params.get('boss');
   if (boss) next = withBoss(next, boss);
+  // &basehp=N (5 to 200): the base's hit points, to see a base fall without waiting for it
+  const baseHp = Number(params.get('basehp'));
+  if (next.base && Number.isInteger(baseHp) && baseHp >= 5 && baseHp <= 200) next = { ...next, base: { ...next.base, hp: baseHp } };
   // &loadout=single: the one weapon the level starts with, no arsenal (to try the one-weapon mode of a level that has five)
   if (params.get('loadout') === 'single' && next.arsenal) { const { arsenal: _arsenal, ...single } = next; next = single; }
   const stress = Number(params.get('stress'));
@@ -46,4 +49,4 @@ export function variantFromParams(level: ShooterLevel, params: URLSearchParams, 
 }
 
 /** Whether the address asks for anything that changes the level (the playground then waits for the list of known packs). */
-export const hasOverrides = (params: URLSearchParams) => ['biome', 'hero', 'family', 'base', 'weapon', 'boss', 'stress', 'loadout'].some((name) => params.has(name));
+export const hasOverrides = (params: URLSearchParams) => ['biome', 'hero', 'family', 'base', 'weapon', 'boss', 'stress', 'loadout', 'basehp'].some((name) => params.has(name));

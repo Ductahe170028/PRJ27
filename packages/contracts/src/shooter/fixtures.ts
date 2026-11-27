@@ -334,9 +334,52 @@ const arsenal: ShooterLevel = {
   win: { type: 'survive', seconds: 90 },
 };
 
+/** Stage 6B: base-siege with a bigger base: 80 px on a side (the old ones are 56), at the cap of 200 hit points and with fewer enemies, because a
+ * larger square is touched by more of them at once. The player stands a little further out so that it is not touching the larger square. Hold out for 60 s: you lose if you fall or if the base is destroyed. */
+const baseSiegeBig: ShooterLevel = {
+  kind: 'shooter-v1', title: 'Giữ căn cứ lớn', seed: 4411, width: 960, height: 540, theme,
+  player: { x: 396, y: 305, speed: 210, hp: 6 },
+  weapon: { cooldownMs: 200, bulletSpeed: 650, damage: 1, range: 550 },
+  obstacles: [
+    { x: 250, y: 190, width: 60, height: 60 }, { x: 710, y: 190, width: 60, height: 60 },
+    { x: 250, y: 420, width: 60, height: 60 }, { x: 710, y: 420, width: 60, height: 60 },
+  ],
+  spawnPoints: edgeSpawns,
+  waves: [
+    { atMs: 3000, type: 'swarmer', count: 1 },
+    { atMs: 9000, type: 'runner', count: 2 },
+    { atMs: 16000, type: 'swarmer', count: 2 },
+    { atMs: 23000, type: 'runner', count: 2 },
+    { atMs: 31000, type: 'brute', count: 1 },
+    { atMs: 34000, type: 'swarmer', count: 2 },
+    { atMs: 42000, type: 'runner', count: 2 },
+    { atMs: 49000, type: 'swarmer', count: 2 },
+  ],
+  base: { x: 480, y: 305, hp: 200, size: 80 },
+  win: { type: 'survive', seconds: 60 },
+};
+
+/** Stage 6B: base-boss with a bigger base (80 px): the huge boss comes out after 10 s and goes for you. Defeat the boss. */
+const baseBossBig: ShooterLevel = {
+  kind: 'shooter-v1', title: 'Căn cứ lớn và boss', seed: 4412, width: 960, height: 540, theme,
+  player: { x: 396, y: 305, speed: 210, hp: 8 },
+  weapon: { cooldownMs: 200, bulletSpeed: 650, damage: 1, range: 550 },
+  obstacles: [{ x: 250, y: 190, width: 60, height: 60 }, { x: 710, y: 420, width: 60, height: 60 }],
+  spawnPoints: edgeSpawns,
+  waves: [
+    { atMs: 2000, type: 'swarmer', count: 5 },
+    { atMs: 6000, type: 'runner', count: 3 },
+    { atMs: 10000, type: 'crusher', count: 1 },
+    { atMs: 16000, type: 'swarmer', count: 6 },
+  ],
+  bossHp: 30,
+  base: { x: 480, y: 305, hp: 150, size: 80 },
+  win: { type: 'boss' },
+};
+
 export const SHOOTER_LEVELS = {
   arena, pillars, wall, 'smoke-win': smokeWin, 'smoke-lose': smokeLose, 'shotgun-pit': shotgunPit, spitters, medic, 'boss-crusher': bossCrusher, 'boss-gunner': bossGunner,
-  'base-siege': baseSiege, 'base-boss': baseBoss, 'base-fall': baseFall, 'art-showcase': artShowcase, 'art-test': artTest, arsenal,
+  'base-siege': baseSiege, 'base-boss': baseBoss, 'base-fall': baseFall, 'art-showcase': artShowcase, 'art-test': artTest, arsenal, 'base-siege-big': baseSiegeBig, 'base-boss-big': baseBossBig,
 } as const satisfies Record<string, ShooterLevel>;
 
 export type ShooterLevelName = keyof typeof SHOOTER_LEVELS;

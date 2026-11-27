@@ -59,12 +59,13 @@ export function diffSnapshots(before: Snapshot, after: Snapshot, range: number):
 }
 
 /** Whether an enemy is touching the player or the base right now (what the simulation calls "reaching"): it plays `attack`. */
-export function isAttacking(enemy: { type: EnemyType; x: number; y: number }, state: Pick<ShooterState, 'player' | 'base'>): boolean {
+export function isAttacking(enemy: { type: EnemyType; x: number; y: number }, state: Pick<ShooterState, 'player' | 'base'> & { baseRect?: ShooterState['baseRect'] }): boolean {
   const radius = ENEMY_TYPES[enemy.type].radius;
   const dx = enemy.x - state.player.x;
   const dy = enemy.y - state.player.y;
   if (Math.sqrt(dx * dx + dy * dy) <= radius + PLAYER_RADIUS + 2) return true;
-  if (state.base) return pointRectDistance(enemy.x, enemy.y, baseRectOf(state.base)) <= radius + 2;
+  // (the base's square comes from the state, which knows the size of THIS level's base)
+  if (state.base) return pointRectDistance(enemy.x, enemy.y, state.baseRect ?? baseRectOf(state.base)) <= radius + 2;
   return false;
 }
 

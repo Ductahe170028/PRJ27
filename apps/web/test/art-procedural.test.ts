@@ -124,12 +124,12 @@ describe('procedural packs: manifests', () => {
   it('bases match the footprint the engine expects', () => {
     for (const pack of Object.values(BASE_PACKS)) {
       const m = pack.manifest;
-      expect(m.frame).toEqual({ w: 96, h: 96 });
+      expect(m.frame).toEqual({ w: 120, h: 120 }); // (Stage 6B: 96 before, for a base of 56)
       expect(m.columns).toBe(4);
-      expect(m.body).toEqual({ w: 56, h: 56 });
+      expect(m.body).toEqual({ w: 80, h: 80 });
       expect(m.overhang).toBe(24);
       expect(m.anchor?.x).toBe(0.5);
-      expect(m.anchor?.y).toBeCloseTo(0.5417, 4);
+      expect(m.anchor?.y).toBeCloseTo((24 + 40) / 120, 4); // the 80 square is at y 24..104, so that 24 px (the allowed overhang) are left above it
     }
   });
 

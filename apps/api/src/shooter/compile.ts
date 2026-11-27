@@ -2,12 +2,12 @@
 // deterministic: no I/O, no clock, no global randomness. The same brief and seed
 // give the same level on every machine.
 import {
-  BRUTE_CLEARANCE, ENEMY_TYPES, NAV_INFLATE, ShooterLevelSchema, baseRectOf, blockedCells, bossBlockedCells, freeSpaceConnected, type ShooterLevel,
+  BRUTE_CLEARANCE, ENEMY_TYPES, NAV_INFLATE, ShooterLevelSchema, baseRectOf, baseSizeOf, blockedCells, bossBlockedCells, freeSpaceConnected, type ShooterLevel,
 } from '@game-creator/contracts';
 import type { ShooterBrief } from './brief.js';
 import { pickLook } from './look.js';
 import { MAP_TEMPLATES, MAX_VARIANTS, SPAWN_CANDIDATES, gapsAreWide, type MapName, type Obstacle } from './maps.js';
-import { BASE_PLAYER, HEALTH_DROP_PCT, HEALTH_HP, PLAYER_SPEED, PLAYER_START, THEMES, WEAPONS, arsenalOf, baseFor, bossHpFor } from './presets.js';
+import { HEALTH_DROP_PCT, HEALTH_HP, PLAYER_SPEED, PLAYER_START, THEMES, WEAPONS, arsenalOf, baseFor, bossHpFor, playerGapFor } from './presets.js';
 import { deriveRng } from './rng.js';
 import { scheduleBossWaves, scheduleWaves } from './waves.js';
 
@@ -83,10 +83,10 @@ function usableLayout(obstacles: Obstacle[], bossRadius?: number, stand: Stand =
 const SIDES = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }] as const;
 
 /** Where the player may stand, in the order of preference. Without a base: the start of every level, as it always was. With one:
- * `BASE_PLAYER.gap` px from the base's center on one of the four sides, beginning with side `seed % 4` and going round. */
+ * `playerGapFor(size)` px from the base's center on one of the four sides, beginning with side `seed % 4` and going round. */
 function stands(seed: number, base?: Base): Stand[] {
   if (!base) return [{ player: PLAYER_START }];
-  return SIDES.map((_, k) => SIDES[(seed + k) % 4]!).map((side) => ({ base, player: { x: base.x + side.x * BASE_PLAYER.gap, y: base.y + side.y * BASE_PLAYER.gap } }));
+  return SIDES.map((_, k) => SIDES[(seed + k) % 4]!).map((side) => ({ base, player: { x: base.x + side.x * playerGapFor(baseSizeOf(base)), y: base.y + side.y * playerGapFor(baseSizeOf(base)) } }));
 }
 
 function chooseLayout(map: MapName, seed: number, options: CompileOptions, bossRadius?: number, base?: Base): { layout: Layout; map: MapName; variant: number; simplified: boolean } {

@@ -5,7 +5,7 @@ import { neededRefs } from '../src/game/art/refs';
 import { WEAPON_PACKS } from '../src/game/art/procedural/weapons';
 import {
   ARSENAL_HINT, BANNER_HINT, BASE_BAR_PLATE, BOSS_BAR_PLATE, HUD_STRIP_HEIGHT, WEAPON_CELL, WEAPON_GAP, WHEEL_NOTCH, arsenalLines, boxesOverlap, levelInfo, slotForKey,
-  waitShare, weaponBarLayout, weaponName, wheelStep, wrapSlot,
+  WEAPON_TEXT, waitShare, weaponBarLayout, weaponBlurb, weaponName, wheelStep, wrapSlot,
 } from '../src/lib/shooter-text';
 import { variantFromParams } from '../src/lib/shooter-variants';
 
@@ -85,19 +85,39 @@ describe('the bar of weapons', () => {
 });
 
 describe('what the screen says about the arsenal', () => {
-  it('names the five weapons, and gives an unknown id back as it is', () => {
-    expect(['pistol', 'shotgun', 'piercing', 'rapid', 'heavy'].map(weaponName)).toEqual(['Súng ngắn', 'Shotgun', 'Súng xuyên', 'Bắn nhanh', 'Súng nặng']);
+  it('has one table of names and plain sentences for the five weapons, in the order of the keys, and gives an unknown id back as it is', () => {
+    const ids = ['pistol', 'shotgun', 'piercing', 'rapid', 'heavy'];
+    expect(ids.map(weaponName)).toEqual(['Súng ngắn', 'Shotgun (súng săn)', 'Súng xuyên giáp', 'Súng bắn nhanh (liên thanh)', 'Súng nặng']);
+    expect(Object.keys(WEAPON_TEXT)).toEqual(ids);
+    expect(weaponBlurb('pistol')).toBe('Bắn từng phát, tầm xa vừa');
+    expect(weaponBlurb('rapid')).toBe('Bắn liên tục, mỗi viên yếu');
+    expect(weaponBlurb('heavy')).toBe('Chậm nhưng mỗi viên rất mạnh');
     expect(weaponName('grunt-gun')).toBe('grunt-gun');
+    expect(weaponBlurb('grunt-gun')).toBe('');
   });
 
-  it('lists the weapons and the one the player starts with, only for a level that has an arsenal', () => {
+  it('takes the numbers of the sentences from the weapon\'s own data, so that a level that changes them still reads true', () => {
+    const shotgun = LEVEL.arsenal![1]!.weapon;
+    expect(weaponBlurb('shotgun', shotgun)).toBe(`Bắn chùm ${shotgun.pellets} viên, rất mạnh ở gần`);
+    expect(weaponBlurb('shotgun', { ...shotgun, pellets: 9 })).toBe('Bắn chùm 9 viên, rất mạnh ở gần');
+    const piercing = LEVEL.arsenal![2]!.weapon;
+    expect(weaponBlurb('piercing', piercing)).toBe(`Đạn xuyên qua ${piercing.pierce} quái`);
+    expect(weaponBlurb('piercing', { ...piercing, pierce: 4 })).toBe('Đạn xuyên qua 4 quái');
+  });
+
+  it('lists all five weapons on the card with their key, name and sentence, then the one the player starts with, only for a level that has an arsenal', () => {
     expect(arsenalLines(LEVEL)).toEqual([
-      'Có 5 súng, đổi bằng phím 1–5 hoặc cuộn chuột: 1 Súng ngắn, 2 Shotgun, 3 Súng xuyên, 4 Bắn nhanh, 5 Súng nặng',
+      'Có 5 súng, đổi bằng phím 1–5 hoặc cuộn chuột:',
+      '1 · Súng ngắn: Bắn từng phát, tầm xa vừa',
+      '2 · Shotgun (súng săn): Bắn chùm 6 viên, rất mạnh ở gần',
+      '3 · Súng xuyên giáp: Đạn xuyên qua 2 quái',
+      '4 · Súng bắn nhanh (liên thanh): Bắn liên tục, mỗi viên yếu',
+      '5 · Súng nặng: Chậm nhưng mỗi viên rất mạnh',
       'Súng lúc đầu: Súng ngắn',
     ]);
     expect(levelInfo(LEVEL).arsenal).toEqual(arsenalLines(LEVEL));
     const rapidStart = { ...LEVEL, weapon: LEVEL.arsenal![3]!.weapon };
-    expect(arsenalLines(rapidStart)[1]).toBe('Súng lúc đầu: Bắn nhanh');
+    expect(arsenalLines(rapidStart).at(-1)).toBe('Súng lúc đầu: Súng bắn nhanh (liên thanh)');
     expect(arsenalLines(SHOOTER_LEVELS.arena)).toEqual([]);
     expect('arsenal' in levelInfo(SHOOTER_LEVELS.arena)).toBe(false);
   });

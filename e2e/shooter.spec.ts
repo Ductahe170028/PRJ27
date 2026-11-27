@@ -96,7 +96,7 @@ test('an unknown level lists the valid ones', async ({ page }) => {
   await page.goto('/?shooter=khong-ton-tai');
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('khong-ton-tai');
-  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic, boss-crusher, boss-gunner, base-siege, base-boss, base-fall, art-showcase, art-test');
+  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic, boss-crusher, boss-gunner, base-siege, base-boss, base-fall, art-showcase, art-test, arsenal, base-siege-big, base-boss-big');
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.goto('/?shooter=constructor');
   await expect(page.getByRole('alert')).toContainText('Level hợp lệ');

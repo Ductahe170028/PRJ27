@@ -105,3 +105,18 @@ describe('an enemy that is touching', () => {
     expect(at(40, 110)).toBe(false);
   });
 });
+
+describe('an enemy touching a bigger base (Stage 6B)', () => {
+  const state = createSim(structuredClone(SHOOTER_LEVELS['base-siege-big']));
+  const at = (x: number, y: number) => isAttacking({ type: 'runner', x, y }, state);
+
+  it('uses the square of THIS base (80), not the 56 of the older ones', () => {
+    const base = state.base!;
+    expect(state.baseRect).toEqual({ x: base.x, y: base.y, width: 80, height: 80 });
+    expect(at(base.x + 40 + 11 + 1, base.y)).toBe(true); // touching the edge of the 80 square
+    expect(at(base.x + 40 + 11 + 12, base.y)).toBe(false);
+    expect(at(base.x + 28 + 11 + 1, base.y)).toBe(true); // (inside what the 56 square would have been: it is at the wall of the big one)
+    // and without the rect (an older caller) it falls back to the base's own size
+    expect(isAttacking({ type: 'runner', x: base.x + 40 + 11 + 12, y: base.y }, { player: state.player, base: state.base! })).toBe(false);
+  });
+});

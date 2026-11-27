@@ -6,7 +6,7 @@ import { LOADOUTS, SHOOTER_THEMES, ShooterBriefSchema, WEAPONS, normalizeBrief, 
 import { compileShooter } from '../src/shooter/compile.js';
 import { compileAndGate } from '../src/shooter/compile-job.js';
 import { gateLevel } from '../src/shooter/gate.js';
-import { guardUnrequested, keywordNotices } from '../src/shooter/notices.js';
+import { keywordNotices } from '../src/shooter/notices.js';
 import { ARSENAL_ORDER, WEAPONS as PRESETS } from '../src/shooter/presets.js';
 import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema, describeBrief } from '../src/shooter/prompt.js';
 import { ShooterService } from '../src/shooter/service.js';
@@ -51,43 +51,6 @@ describe('the loadout of a brief', () => {
 
   it('keeps the system prompt short', () => {
     expect(SHOOTER_BRIEF_SYSTEM_PROMPT.length).toBeLessThan(5_200);
-  });
-});
-
-describe('the guard on the loadout: single stays only when the text limits the weapons', () => {
-  const guard = (prompt: string, loadout = 'single') => guardUnrequested({ healthDrops: 'none', base: 'none', loadout }, prompt);
-  const LIMITS = [
-    'Chỉ có súng ngắn, hạ 40 zombie', 'chỉ dùng shotgun thôi', 'chỉ được bắn bằng súng xuyên', 'một khẩu súng duy nhất', 'chỉ có một loại súng', 'chỉ 1 loại súng',
-    'không đổi súng', 'không thể đổi súng', 'súng cố định', 'Only a pistol', 'single weapon only', 'no weapon switching', 'just the shotgun', 'one weapon',
-    'chi co sung ngan', 'chỉ shotgun', 'only pistol, no switching',
-  ];
-  const NOT_LIMITS = ['Sống sót 60 giây', 'bảo vệ căn cứ, có boss cuối', 'Một màn bắn súng', 'zombie trong rừng tối, súng shotgun', 'hạ 40 quái bằng súng xuyên', 'a fast shooter with robots'];
-
-  it('keeps single when the user limited the weapons, in Vietnamese and in English, with or without accents', () => {
-    for (const prompt of LIMITS) expect(guard(prompt), prompt).toEqual({ brief: { healthDrops: 'none', base: 'none', loadout: 'single' }, removed: [] });
-  });
-
-  it('puts single back to all when the text says nothing of a limit, and records it as a removal (no notice, no message)', () => {
-    for (const prompt of NOT_LIMITS) {
-      const guarded = guard(prompt);
-      expect(guarded.brief.loadout, prompt).toBe('all');
-      expect(guarded.removed, prompt).toEqual(['loadout']);
-    }
-  });
-
-  it('never touches an all', () => {
-    for (const prompt of [...LIMITS, ...NOT_LIMITS]) expect(guard(prompt, 'all'), prompt).toEqual({ brief: { healthDrops: 'none', base: 'none', loadout: 'all' }, removed: [] });
-  });
-
-  it('is not fooled by a commander ("chỉ huy" is not a limit), but may keep a limit for "chỉ có zombie" (broad on purpose)', () => {
-    expect(guard('chỉ huy quân đội chống zombie').removed).toEqual(['loadout']);
-    expect(guard('Chỉ huy căn cứ quân sự').brief.loadout).toBe('all');
-    // the accepted false positive: "chỉ có" is in the list, so a brief with single and this sentence keeps its single
-    expect(guard('chỉ có zombie và robot, không có boss').brief.loadout).toBe('single');
-  });
-
-  it('lists the removal with the other guards, in the diagnostics', () => {
-    expect(guardUnrequested({ healthDrops: 'some', base: 'defend', loadout: 'single' }, 'một màn bắn súng').removed).toEqual(['healthDrops', 'base', 'loadout']);
   });
 });
 
@@ -143,7 +106,7 @@ describe('the notices: switching weapons is a feature now', () => {
   });
 });
 
-describe('the service: a single the user did not ask for is taken out, and the diagnostics say so', () => {
+describe('the service: the weapon guard decides, and the diagnostics say what it changed', () => {
   const setup = (prompt: string, answer: Record<string, unknown>) => {
     const finished: DiagnosticsFinish[] = [];
     const gateway = new AiGateway(mockRegistry([mockProvider('groq', async () => JSON.stringify(answer))]));
@@ -154,19 +117,21 @@ describe('the service: a single the user did not ask for is taken out, and the d
     return { run: () => service.generate({ prompt, providerId: 'groq' }, 'test', new AbortController().signal), finished };
   };
 
-  it('"một màn bắn súng" with loadout single: the level has the five weapons, no notice, a guardRemoved entry', async () => {
+  it('"một màn bắn súng" with loadout single: the level has the five weapons, no notice, a guardChanged entry', async () => {
     const { run, finished } = setup('một màn bắn súng', raw({ loadout: 'single' }));
     const project = await run();
     expect(project.level.arsenal).toHaveLength(5);
     expect(project.notices.join(' ')).not.toMatch(/súng|vũ khí/);
-    expect((finished[0]!.report as { guardRemoved?: string[] }).guardRemoved).toEqual(['loadout']);
+    expect((finished[0]!.report as { guardChanged?: unknown }).guardChanged).toEqual([{ field: 'loadout', from: 'single', to: 'all' }]);
+    expect(finished[0]!.report).not.toHaveProperty('guardRemoved');
   });
 
-  it('"Chỉ có súng ngắn" with loadout single: one weapon, no arsenal, no guard entry', async () => {
+  it('"Chỉ có súng ngắn" with loadout single and weapon pistol: one weapon, no arsenal, nothing changed', async () => {
     const { run, finished } = setup('Chỉ có súng ngắn, hạ 40 zombie', raw({ loadout: 'single', goal: { type: 'kill', count: 40 } }));
     const project = await run();
     expect('arsenal' in project.level).toBe(false);
-    expect(finished[0]!.report).not.toHaveProperty('guardRemoved');
+    expect(project.level.weapon).toEqual(PRESETS.pistol);
+    expect(finished[0]!.report).not.toHaveProperty('guardChanged');
   });
 
   it('the hand-made levels of the earlier stages still have no arsenal (only "arsenal" does)', () => {

@@ -121,8 +121,11 @@ export function lineOfSight(from: Vec, to: Vec, radius: number, rects: readonly 
   return true;
 }
 
-/** The square a base stands on: centered on the base, `BASE_SIZE` on a side. */
-export const baseRectOf = (base: Vec): Rect => ({ x: base.x, y: base.y, width: BASE_SIZE, height: BASE_SIZE });
+/** The side of a base (px): its own `size`, or BASE_SIZE (56) for a base without one, which is every base made before Stage 6B. */
+export const baseSizeOf = (base: { size?: number | undefined }): number => base.size ?? BASE_SIZE;
+
+/** The square a base stands on: centered on the base, `baseSizeOf(base)` on a side. */
+export const baseRectOf = (base: Vec & { size?: number | undefined }): Rect => ({ x: base.x, y: base.y, width: baseSizeOf(base), height: baseSizeOf(base) });
 
 /** Radians in one degree. */
 export const RADIANS_PER_DEGREE = Math.PI / 180;

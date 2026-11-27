@@ -79,8 +79,6 @@ export function normalizeBrief(raw: unknown): unknown {
   if (brief.enemyFamily === undefined) brief.enemyFamily = 'auto';
   // And a missing loadout means all the weapons.
   if (brief.loadout === undefined) brief.loadout = 'all';
-  // And a missing loadout means all the weapons.
-  if (brief.loadout === undefined) brief.loadout = 'all';
 
   if (Array.isArray(brief.enemies)) {
     const merged: unknown[] = [];

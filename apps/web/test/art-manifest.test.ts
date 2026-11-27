@@ -94,6 +94,10 @@ describe('where frames are in a sheet', () => {
     expect(bodyScale({ radius: 28 }, 14)).toBe(0.5);
     expect(bodyScale({ w: 56, h: 56 }, 56)).toBe(1);
     expect(bodyScale({ w: 112, h: 112 }, 56)).toBe(0.5);
+    // Stage 6B: the base art has an 80 body; the base of a level may be 56, 72 (the compiler's) or 80
+    expect(bodyScale({ w: 80, h: 80 }, 80)).toBe(1);
+    expect(bodyScale({ w: 80, h: 80 }, 72)).toBe(0.9);
+    expect(bodyScale({ w: 80, h: 80 }, 56)).toBe(0.7);
     expect(bodyScale(undefined, 14)).toBe(1);
   });
 });

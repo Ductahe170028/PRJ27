@@ -1,14 +1,18 @@
 // Base packs: `bunker` (concrete block, roof turret, sandbags, door on the +x side) and `outpost` (light building, tall mast,
-// radar dish, blinking light). Sheet: 96x96 frames, 4 per row, 9 frames (3 rows -> 384 x 288):
+// radar dish, blinking light). Sheet: 120x120 frames, 4 per row, 9 frames (3 rows -> 480 x 360):
 //   idle 0-1 | hit 2-3 | low 4-7 | destroyed 8.
-// The 56x56 square (the base's collision size) is at x 20..76, y 24..80 of each frame; masts and smoke rise above it (y 0..24).
+// The body is an 80x80 square (Stage 6B: the base is bigger than the 56 px of the older levels; the game scales the sprite to the size of
+// the level's base, 72 for the compiler's). It is at x 20..100, y 24..104 of each frame; masts and smoke rise above it (y 0..24).
 import type { Manifest } from '@game-creator/contracts';
 import type { ProceduralPack } from '../types';
 import { anim, at, box, clipped, disc, dot, frameOrigin, glow, hash32, oval, poly, rgba, shadow, stroke, unit, type Ctx, type Pt } from './draw';
 
-const FRAME = { w: 96, h: 96 };
+const FRAME = { w: 120, h: 120 };
 const COLUMNS = 4;
-const SQ = { x: 20, y: 24, w: 56, h: 56 };
+const SQ = { x: 20, y: 24, w: 80, h: 80 };
+/** The marks that were drawn for a square of 56 (sparks, cracks, smoke, rubble) are drawn on the 80 square by growing them about its corner. */
+const GROW = 80 / 56;
+const grown = (ctx: Ctx, draw: () => void): void => { ctx.save(); ctx.translate(SQ.x, SQ.y); ctx.scale(GROW, GROW); ctx.translate(-SQ.x, -SQ.y); draw(); ctx.restore(); };
 const FRAMES = 9;
 
 type Mode = 'idle' | 'hit' | 'low' | 'destroyed';
@@ -22,32 +26,36 @@ const blink = (ctx: Ctx, x: number, y: number, on: boolean, color: string, off: 
 
 const bunker: Building = (ctx, f) => {
   box(ctx, SQ.x, SQ.y, SQ.w, SQ.h, '#8b9096', 2); // concrete block
-  box(ctx, 26, 30, 44, 44, '#a3a8ae', 0);
-  dot(ctx, 26, 30, 44, 2, '#c6cacf'); dot(ctx, 26, 72, 44, 2, '#757a80');
-  for (const x of [38, 54]) dot(ctx, x, 32, 1, 40, '#8b9096'); // panel seams
-  box(ctx, 68, 42, 10, 22, '#5d646d', 1); box(ctx, 71, 45, 7, 16, '#262b32', 1); // door on the right side
-  dot(ctx, 72, 52, 2, 2, '#e0b93a');
-  disc(ctx, 42, 52, 9, '#5a6068', 1); box(ctx, 48, 50, 15, 5, '#262b32', 1); disc(ctx, 42, 52, 6, '#7c838d', 1); // roof turret
-  dot(ctx, 40, 50, 3, 2, '#b9c0c9');
-  for (let i = 0; i < 7; i += 1) oval(ctx, 25 + i * 8, 78, 5, 3.4, i % 2 ? '#bfa268' : '#cdb078', 1); // sandbag trim
-  for (let i = 0; i < 3; i += 1) oval(ctx, 22, 34 + i * 8, 3.4, 4.5, i % 2 ? '#cdb078' : '#bfa268', 1);
-  stroke(ctx, [[30, 28], [30, 12]], 2, '#4a5058', 1); // small antenna
-  blink(ctx, 30, 11, f % 2 === 0, '#ff4a4a', '#5a1c1c');
+  box(ctx, 27, 31, 66, 66, '#a3a8ae', 0);
+  dot(ctx, 27, 31, 66, 3, '#c6cacf'); dot(ctx, 27, 94, 66, 3, '#757a80');
+  for (const x of [43, 60, 77]) dot(ctx, x, 34, 1, 58, '#8b9096'); // panel seams
+  for (const y of [48, 66]) dot(ctx, 29, y, 62, 1, '#929aa1');
+  for (let i = 0; i < 4; i += 1) { dot(ctx, 31 + i * 17, 36, 2, 2, '#6c7279'); dot(ctx, 31 + i * 17, 90, 2, 2, '#6c7279'); } // rivets
+  box(ctx, 89, 55, 14, 30, '#5d646d', 1); box(ctx, 93, 59, 10, 22, '#262b32', 1); // door on the right side
+  dot(ctx, 97, 66, 2, 3, '#e0b93a'); dot(ctx, 97, 74, 2, 3, '#e0b93a');
+  box(ctx, 33, 40, 16, 9, '#454b52', 1); box(ctx, 35, 42, 12, 5, '#1a1e23', 0); // roof hatch
+  disc(ctx, 58, 66, 13, '#5a6068', 1); box(ctx, 66, 63, 22, 7, '#262b32', 1); disc(ctx, 58, 66, 9, '#7c838d', 1); box(ctx, 85, 62, 4, 9, '#454b52', 1); // roof turret
+  dot(ctx, 55, 62, 5, 3, '#b9c0c9');
+  for (let i = 0; i < 9; i += 1) oval(ctx, 26 + i * 8.5, 102, 6, 4.2, i % 2 ? '#bfa268' : '#cdb078', 1); // sandbag trim
+  for (let i = 0; i < 4; i += 1) oval(ctx, 22, 38 + i * 11, 4.2, 5.5, i % 2 ? '#cdb078' : '#bfa268', 1);
+  stroke(ctx, [[40, 32], [40, 10]], 2.5, '#4a5058', 1); stroke(ctx, [[34, 18], [46, 18]], 2, '#4a5058', 1); // antenna
+  blink(ctx, 40, 8, f % 2 === 0, '#ff4a4a', '#5a1c1c');
 };
 
 const outpost: Building = (ctx, f) => {
   box(ctx, SQ.x, SQ.y, SQ.w, SQ.h, '#d3dae2', 2); // light building
-  box(ctx, 25, 29, 46, 46, '#eef2f6', 0);
-  dot(ctx, 25, 29, 46, 3, '#ffffff'); dot(ctx, 25, 72, 46, 3, '#b3bcc7');
-  box(ctx, 25, 62, 46, 5, '#e0762e', 0); // orange stripe
-  for (let i = 0; i < 3; i += 1) box(ctx, 30 + i * 12, 44, 8, 10, '#3d5a80', 1); // windows
-  for (let i = 0; i < 3; i += 1) dot(ctx, 31 + i * 12, 45, 3, 2, '#9ec5ef');
-  box(ctx, 68, 42, 10, 22, '#5d6d80', 1); box(ctx, 71, 45, 7, 16, '#2a3646', 1); // door on the right side
-  stroke(ctx, [[34, 30], [34, 5]], 2.5, '#59616b', 1); // tall mast
-  stroke(ctx, [[28, 20], [40, 20]], 2, '#59616b', 1); stroke(ctx, [[30, 12], [38, 12]], 2, '#59616b', 1);
-  blink(ctx, 34, 4, true, f % 2 === 0 ? '#ff4a4a' : '#4ade80', '#000000'); // red, then green
-  stroke(ctx, [[58, 28], [58, 17]], 2, '#59616b', 1); // radar dish
-  at(ctx, 58, 14, () => { ctx.rotate(f * 0.28 - 0.14); oval(ctx, 0, 0, 13, 5, '#cfd6de', 1); dot(ctx, -1, -1, 3, 2, '#e04a3a'); });
+  box(ctx, 26, 30, 68, 68, '#eef2f6', 0);
+  dot(ctx, 26, 30, 68, 4, '#ffffff'); dot(ctx, 26, 94, 68, 4, '#b3bcc7');
+  box(ctx, 26, 82, 68, 7, '#e0762e', 0); // orange stripe
+  for (let i = 0; i < 4; i += 1) box(ctx, 31 + i * 15, 52, 11, 15, '#3d5a80', 1); // windows
+  for (let i = 0; i < 4; i += 1) { dot(ctx, 32 + i * 15, 53, 5, 3, '#9ec5ef'); dot(ctx, 31 + i * 15, 67, 11, 1, '#2a4263'); }
+  box(ctx, 89, 55, 14, 30, '#5d6d80', 1); box(ctx, 93, 59, 10, 22, '#2a3646', 1); // door on the right side
+  box(ctx, 66, 36, 14, 10, '#c4ccd6', 1); dot(ctx, 68, 38, 10, 2, '#e8edf2'); // roof unit
+  stroke(ctx, [[40, 32], [40, 6]], 3, '#59616b', 1); // tall mast
+  stroke(ctx, [[32, 22], [48, 22]], 2.5, '#59616b', 1); stroke(ctx, [[35, 13], [45, 13]], 2.5, '#59616b', 1);
+  blink(ctx, 40, 5, true, f % 2 === 0 ? '#ff4a4a' : '#4ade80', '#000000'); // red, then green
+  stroke(ctx, [[78, 32], [78, 18]], 2.5, '#59616b', 1); // radar dish
+  at(ctx, 78, 14, () => { ctx.rotate(f * 0.28 - 0.14); oval(ctx, 0, 0, 16, 6, '#cfd6de', 1); dot(ctx, -1, -1, 4, 2, '#e04a3a'); });
 };
 
 /** Sparks around the block: tiny crosses, different in every frame. */
@@ -90,18 +98,20 @@ function rubble(ctx: Ctx): void {
 }
 
 function paintBase(ctx: Ctx, building: Building, mode: Mode, f: number): void {
-  shadow(ctx, 48, 83, 35, 7, 0.32);
-  if (mode === 'destroyed') { rubble(ctx); return; }
+  shadow(ctx, 60, 108, 50, 8, 0.32);
+  if (mode === 'destroyed') { grown(ctx, () => rubble(ctx)); return; }
   building(ctx, f);
   if (mode === 'hit') {
     ctx.fillStyle = `rgba(255,255,255,${f === 0 ? 0.7 : 0.4})`; ctx.fillRect(SQ.x - 1, SQ.y - 1, SQ.w + 2, SQ.h + 2);
-    sparks(ctx, f);
+    grown(ctx, () => sparks(ctx, f));
   } else if (mode === 'low') {
     ctx.fillStyle = 'rgba(20,10,6,0.3)'; ctx.fillRect(SQ.x, SQ.y, SQ.w, SQ.h);
-    for (const c of CRACKS) stroke(ctx, c, 1.5, '#1c1612', 0);
-    poly(ctx, [[76, 24], [62, 24], [68, 31], [76, 38]], '#2b2420', 1); // a broken corner
-    if (f % 2 === 1) { dot(ctx, 49, 66, 3, 3, '#ff7a1a'); dot(ctx, 50, 65, 1, 2, '#ffd84a'); }
-    smoke(ctx, f);
+    grown(ctx, () => {
+      for (const c of CRACKS) stroke(ctx, c, 1.5, '#1c1612', 0);
+      poly(ctx, [[76, 24], [62, 24], [68, 31], [76, 38]], '#2b2420', 1); // a broken corner
+      if (f % 2 === 1) { dot(ctx, 49, 66, 3, 3, '#ff7a1a'); dot(ctx, 50, 65, 1, 2, '#ffd84a'); }
+      smoke(ctx, f);
+    });
   }
 }
 
@@ -114,7 +124,7 @@ const SEQUENCE: { mode: Mode; f: number }[] = [
 function basePack(id: string, building: Building): ProceduralPack {
   const manifest: Manifest = {
     version: 1, kind: 'base', id, source: 'procedural', license: 'procedural', author: '', origin: '',
-    frame: FRAME, columns: COLUMNS, body: { w: SQ.w, h: SQ.h }, anchor: { x: 0.5, y: 0.5417 }, overhang: 24,
+    frame: FRAME, columns: COLUMNS, body: { w: SQ.w, h: SQ.h }, anchor: { x: 0.5, y: (SQ.y + SQ.h / 2) / FRAME.h }, overhang: 24,
     animations: {
       idle: anim([0, 1], 2, true), hit: anim([2, 3], 20, false), low: anim([4, 5, 6, 7], 6, true), destroyed: anim([8], 1, false),
     },

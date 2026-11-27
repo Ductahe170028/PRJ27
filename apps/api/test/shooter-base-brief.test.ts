@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  BASE_SIZE, BRUTE_CLEARANCE, NAV_INFLATE, ShooterLevelSchema, baseRectOf, blockedCells, bossBlockedCells, freeSpaceConnected, ENEMY_TYPES,
+  BRUTE_CLEARANCE, NAV_INFLATE, ShooterLevelSchema, baseRectOf, blockedCells, bossBlockedCells, freeSpaceConnected, ENEMY_TYPES,
   type PlayResult, type ShooterLevel,
 } from '@game-creator/contracts';
 import { AiGateway } from '../src/services/ai-gateway.js';
@@ -10,7 +10,7 @@ import { MAP_SIMPLIFIED_NOTICE, compileShooter } from '../src/shooter/compile.js
 import { compileAndGate } from '../src/shooter/compile-job.js';
 import { BASE_HP_FACTOR, MAX_BASE_HP, THINNED_NOTICE, gateLevel } from '../src/shooter/gate.js';
 import { guardUnrequested, keywordNotices } from '../src/shooter/notices.js';
-import { BASE_HP_BY_INTENSITY, BASE_PLAYER, baseFor } from '../src/shooter/presets.js';
+import { BASE_HP_BY_INTENSITY, BASE_PLAYER, BASE_SIZE_COMPILED, baseFor, playerGapFor } from '../src/shooter/presets.js';
 import { SHOOTER_BRIEF_SYSTEM_PROMPT, briefJsonSchema, describeBrief } from '../src/shooter/prompt.js';
 import { ShooterService } from '../src/shooter/service.js';
 import { mockProvider, mockRegistry } from './fixtures.js';
@@ -55,16 +55,19 @@ describe('the brief takes a base', () => {
 });
 
 describe('compiling a brief with a base', () => {
-  it('puts the base in the middle, with the hit points of the intensity, and the player 64 px away on one side', () => {
-    expect(BASE_PLAYER.gap).toBeGreaterThanOrEqual(56);
-    expect(BASE_PLAYER.gap).toBeLessThanOrEqual(90);
+  it('puts the base in the middle, with the hit points of the intensity and the size the compiler gives its bases, and the player a margin from its edge on one side', () => {
+    expect(BASE_SIZE_COMPILED.size).toBeGreaterThanOrEqual(56);
+    expect(BASE_SIZE_COMPILED.size).toBeLessThanOrEqual(120);
+    expect(BASE_PLAYER.margin).toBeGreaterThanOrEqual(20);
+    expect(BASE_PLAYER.margin).toBeLessThanOrEqual(60);
+    expect(playerGapFor(56)).toBe(28 + BASE_PLAYER.margin); // half a side and the margin
     for (let intensity = 1; intensity <= 5; intensity += 1) {
       const level = compileShooter(brief({ intensity }), 8).level;
-      expect(level.base).toEqual({ x: 480, y: 305, hp: BASE_HP_BY_INTENSITY[intensity - 1] });
+      expect(level.base).toEqual({ x: 480, y: 305, hp: BASE_HP_BY_INTENSITY[intensity - 1], size: BASE_SIZE_COMPILED.size });
       expect(level.base).toEqual(baseFor(intensity));
       expect(ShooterLevelSchema.safeParse(level).success).toBe(true);
       const [dx, dy] = sideOf(level) as [number, number];
-      expect(Math.abs(dx) + Math.abs(dy)).toBe(BASE_PLAYER.gap);
+      expect(Math.abs(dx) + Math.abs(dy)).toBe(playerGapFor(level.base!.size!));
       expect(dx === 0 || dy === 0).toBe(true);
     }
     // the harder the level, the more a base can take (never less than the level before it)
@@ -74,8 +77,9 @@ describe('compiling a brief with a base', () => {
 
   it('the side of the player turns with seed % 4: up, down, left, right on an empty field', () => {
     const sides = [4, 5, 6, 7].map((seed) => sideOf(compileShooter(brief(), seed).level));
-    expect(sides).toEqual([[0, -64], [0, 64], [-64, 0], [64, 0]]);
-    expect(sideOf(compileShooter(brief(), 8).level)).toEqual([0, -64]); // 8 % 4 = 0 again
+    const gap = playerGapFor(BASE_SIZE_COMPILED.size);
+    expect(sides).toEqual([[0, -gap], [0, gap], [-gap, 0], [gap, 0]]);
+    expect(sideOf(compileShooter(brief(), 8).level)).toEqual([0, -gap]); // 8 % 4 = 0 again
   });
 
   it('a brief without a base compiles to a level that has no base and starts the player where it always did', () => {
@@ -107,7 +111,7 @@ describe('compiling a brief with a base', () => {
         expect(freeSpaceConnected({ ...level, player: { ...level.player, x: level.base!.x, y: level.base!.y } }, 0, blockedCells(level.obstacles, NAV_INFLATE)), label).toBe(true);
         expect(ShooterLevelSchema.safeParse(level).success, label).toBe(true);
         expect(level.spawnPoints.length).toBeGreaterThanOrEqual(3);
-        expect(level.obstacles.every((block) => Math.max(Math.abs(block.x - 480) - (block.width + BASE_SIZE) / 2, 0) ** 2 + Math.max(Math.abs(block.y - 305) - (block.height + BASE_SIZE) / 2, 0) ** 2 >= 48 * 48), label).toBe(true);
+        expect(level.obstacles.every((block) => Math.max(Math.abs(block.x - 480) - (block.width + level.base!.size!) / 2, 0) ** 2 + Math.max(Math.abs(block.y - 305) - (block.height + level.base!.size!) / 2, 0) ** 2 >= 48 * 48), label).toBe(true);
       }
     }
     expect(simplified).toBeLessThan(5 * 30); // (the share per map is measured in docs/shooter-calibration.md)
@@ -169,7 +173,7 @@ describe('the gate with a base', () => {
   it('a boss level with a base is eased too: fewer ordinary enemies, a weaker boss and a sturdier base; the boss wave stays', () => {
     const level = compileShooter(brief({ boss: 'crusher' }), 6).level;
     const { seen } = easeUntil(level, 1);
-    expect(seen[1]!.base!.hp).toBe(Math.ceil(level.base!.hp * 1.15));
+    expect(seen[1]!.base!.hp).toBe(Math.min(MAX_BASE_HP, Math.ceil(level.base!.hp * 1.15))); // (a base at the cap of 200 cannot be given more)
     expect(seen[1]!.bossHp!).toBeLessThan(level.bossHp!);
     expect(seen[1]!.waves.filter((w) => w.type === 'crusher')).toEqual(level.waves.filter((w) => w.type === 'crusher'));
   });
