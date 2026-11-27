@@ -1,7 +1,11 @@
 import Phaser from 'phaser';
-import { TICK_RATE, bossOf, createSim, elapsedSeconds, isBoss, isEnraged, step, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
+import { TICK_RATE, bossOf, createSim, elapsedSeconds, isBoss, isEnraged, step, type Look, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
+import { sourcesText, type LoadedArt } from './art/loader';
 import { hudLine, loseReason } from '../lib/shooter-text';
-import { createBanner, createBaseUi, createBossUi, createHud, drawBoard, drawState } from './shooter-draw';
+import { alphaOf } from './render/interpolate';
+import { lookText } from './render/look';
+import { WorldRenderer } from './render/world';
+import { createBanner, createBaseUi, createBossUi, createHud } from './shooter-ui';
 
 /** The boss's numbers for the hidden #game-hud (data-boss-*), empty strings when there is no boss on the field. */
 function bossValues(state: ShooterState) {
@@ -21,10 +25,11 @@ type Keys = Record<'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
 /** Draws a ShooterState and reads input. The game itself is `createSim`/`step`
  * in the contracts package: this scene has no rules, no physics and no
  * collision of its own, so what is drawn is exactly what was simulated.
- * What is drawn lives in shooter-draw.ts; the sentences in lib/shooter-text.ts. */
+ * The world is drawn by render/world.ts (sprites from art packs, smoothed between ticks), the writing and the bars by shooter-ui.ts; the
+ * sentences are in lib/shooter-text.ts. */
 export class ShooterScene extends Phaser.Scene {
   private state!: ShooterState;
-  private art!: Phaser.GameObjects.Graphics;
+  private world!: WorldRenderer;
   private hud!: Phaser.GameObjects.Text;
   private banner: ReturnType<typeof createBanner> | undefined;
   private bossUi: ReturnType<typeof createBossUi>;
@@ -36,37 +41,54 @@ export class ShooterScene extends Phaser.Scene {
   private mouseDown = false;
   private pointerSeen = false;
   private finished = false;
+  /** Real time since the game ended, while the world is still being drawn (the base falls, the hero drops) before the result is shown. */
+  private endingMs = 0;
+  private ending = false;
   private lastHud = '';
   private lastPublished = '';
+  /** How long the last frames of update() took, in ms: a rolling mean over 120 frames, shown on the hidden HUD (for performance checks). */
+  private frameMs: number[] = [];
+  private frameMsText = '';
 
-  constructor(private readonly level: ShooterLevel, private readonly onStarted: () => void) { super('shooter'); }
+  constructor(
+    private readonly level: ShooterLevel, private readonly art: LoadedArt, private readonly look: Look, private readonly onStarted: () => void,
+  ) { super('shooter'); }
 
   create() {
     const { level } = this;
     this.state = createSim(level);
-    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.lastHud = ''; this.lastPublished = ''; this.bannerMs = 0;
+    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.ending = false; this.endingMs = 0; this.lastHud = ''; this.lastPublished = ''; this.bannerMs = 0;
     this.cameras.main.setBackgroundColor(level.theme.background);
 
-    drawBoard(this, level);
+    this.world = new WorldRenderer(this, level, this.art, { look: this.look });
+    this.world.tick(this.state);
     this.hud = createHud(this, level);
-    this.art = this.add.graphics().setDepth(5);
     // The goal, for the first 3 seconds of every game (and again after R). The game runs underneath.
     this.banner = createBanner(this, level);
     this.bossUi = createBossUi(this, level);
     this.baseUi = createBaseUi(this, level);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { this.banner?.dispose(); this.bossUi?.dispose(); this.baseUi?.dispose(); });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { this.banner?.dispose(); this.bossUi?.dispose(); this.baseUi?.dispose(); this.world.dispose(); });
 
     this.setupControls();
     const result = document.getElementById('game-result');
     if (result) result.hidden = true;
     this.updateHud();
     this.publishState();
-    this.draw();
+    this.world.render(this.state, 0, 0);
     this.onStarted();
   }
 
   update(_time: number, delta: number) {
+    const started = performance.now();
+    this.runFrame(delta);
+    this.frameMs.push(performance.now() - started);
+    if (this.frameMs.length > 120) this.frameMs.shift();
+    if (this.frameMs.length % 30 === 0) this.frameMsText = (this.frameMs.reduce((a, b) => a + b, 0) / this.frameMs.length).toFixed(2);
+  }
+
+  private runFrame(delta: number) {
     if (this.finished) return;
+    if (this.ending) { this.keepDrawingUntilResult(delta); return; }
     this.bannerMs += delta;
     this.banner?.update(this.bannerMs);
     this.accumulator += Math.min(delta, 250);
@@ -74,16 +96,36 @@ export class ShooterScene extends Phaser.Scene {
     let ticks = 0;
     while (this.accumulator >= TICK_MS && ticks < MAX_TICKS_PER_FRAME && this.state.status === 'playing') {
       step(this.state, input);
+      this.world.tick(this.state);
       this.accumulator -= TICK_MS;
       ticks += 1;
     }
     if (ticks === MAX_TICKS_PER_FRAME) this.accumulator = 0; // too far behind: drop the rest
-    this.draw();
+    this.world.render(this.state, alphaOf(this.accumulator, TICK_MS), delta);
     this.bossUi?.update(this.state);
     this.baseUi?.update(this.state);
     this.updateHud();
     this.publishState();
-    if (this.state.status !== 'playing') this.finish();
+    if (this.state.status !== 'playing') this.beginEnding();
+  }
+
+  /** The game is over: a lost game keeps drawing for a moment (the base crumbles, the hero drops), then shows the result. A won game
+   * shows it at once. A timer makes sure the result appears whatever the drawing does. */
+  private beginEnding() {
+    this.mouseDown = false;
+    const wait = this.world.endingMs(this.state);
+    if (wait <= 0) { this.finish(); return; }
+    this.ending = true;
+    this.endingMs = 0;
+    this.time.delayedCall(wait + 400, () => { if (!this.finished) this.finish(); });
+  }
+
+  private keepDrawingUntilResult(delta: number) {
+    this.endingMs += delta;
+    this.world.render(this.state, 1, delta);
+    this.bossUi?.update(this.state);
+    this.baseUi?.update(this.state);
+    if (this.endingMs >= this.world.endingMs(this.state)) this.finish();
   }
 
   private readInput(): ShooterInput {
@@ -101,10 +143,6 @@ export class ShooterScene extends Phaser.Scene {
       aimY: this.pointerSeen ? pointer.worldY : player.y,
       fire: this.mouseDown,
     };
-  }
-
-  private draw() {
-    drawState(this.art, this.state, this.level);
   }
 
   private hudText(): string {
@@ -131,6 +169,9 @@ export class ShooterScene extends Phaser.Scene {
       hp: String(state.player.hp), playerAt: at(state.player), enemyBullets: String(state.enemyBullets.length),
       pickups: String(state.pickups.length), pickupAt: state.pickups.map(at).join(';'),
       ...bossValues(state),
+      // how the level looks and where each pack came from (the art, not the rules)
+      look: lookText(this.look), artFallbacks: String(this.art.fallbacks), artSources: sourcesText(this.art),
+      enemies: String(state.enemies.length), updateMs: this.frameMsText,
       // only in a level that has them: the base's hit points, the plates of the two bars as drawn, and who lost
       ...(state.base ? { baseHp: String(state.base.hp), baseMax: String(state.base.maxHp), baseBar: this.baseUi?.bounds() ?? '', lostBy: state.lostBy ?? '' } : {}),
       ...(this.bossUi ? { bossBar: this.bossUi.bounds() } : {}),

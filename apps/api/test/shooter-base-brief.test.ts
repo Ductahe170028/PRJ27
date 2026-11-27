@@ -18,7 +18,7 @@ import { mockProvider, mockRegistry } from './fixtures.js';
 vi.setConfig({ testTimeout: 120_000 });
 
 const raw = (patch: Record<string, unknown> = {}) => ({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'defend', title: 'Căn cứ', theme: 'military-base', map: 'open-arena',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'defend', enemyFamily: 'auto', title: 'Căn cứ', theme: 'military-base', map: 'open-arena',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [] as unknown[], ...patch,
 }) as Record<string, any>;
@@ -225,7 +225,7 @@ describe('what the model added that the user did not ask for', () => {
   it('a feature that is not there is never "removed", and the boss is left alone whatever the text says', () => {
     expect(asked('none', 'none', 'sống sót ở rừng tối')).toEqual({ brief: { healthDrops: 'none', base: 'none' }, removed: [] });
     for (const boss of ['crusher', 'gunner']) {
-      const guarded = guardUnrequested({ healthDrops: 'none', base: 'none', boss }, 'zombie');
+      const guarded = guardUnrequested({ healthDrops: 'none', base: 'none', enemyFamily: 'auto', boss }, 'zombie');
       expect(guarded.brief.boss).toBe(boss);
       expect(guarded.removed).toEqual([]);
     }

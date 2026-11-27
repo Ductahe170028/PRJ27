@@ -44,7 +44,7 @@ const SPECS: Spec[] = [
   const add = (c: GoldenCase) => cases.push({ ...c, lostBy: lostByOf(c.level, c.policy) });
   for (const spec of SPECS) {
     const brief = ShooterBriefSchema.parse({
-      version: 'brief-1', healthDrops: 'none', boss: spec.boss ?? 'none', base: 'defend', title: 'Golden base', theme: 'military-base',
+      version: 'brief-1', healthDrops: 'none', boss: spec.boss ?? 'none', base: 'defend', enemyFamily: 'auto', title: 'Golden base', theme: 'military-base',
       map: spec.map, enemies: spec.enemies, intensity: spec.intensity, playerHealth: 'normal', weapon: spec.weapon,
       goal: spec.goal ?? { type: 'survive', seconds: 60 }, unsupported: [],
     });

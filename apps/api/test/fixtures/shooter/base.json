@@ -2,7 +2,7 @@
   "version": "brief-1",
   "healthDrops": "none",
   "boss": "none",
-  "base": "defend",
+  "base": "defend","enemyFamily":"auto",
   "title": "Giữ căn cứ",
   "theme": "military-base",
   "map": "pillars",

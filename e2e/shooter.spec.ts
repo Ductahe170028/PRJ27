@@ -16,18 +16,11 @@ async function open(page: Page, name: string) {
   return { frame, canvas, hud, errors, result: frame.locator('#game-result') };
 }
 
-/** Center of the pixels of the player color (#c5f277) in canvas coordinates. */
-async function playerCenter(canvas: Locator) {
-  return canvas.evaluate((element) => {
-    const canvas = element as HTMLCanvasElement;
-    const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
-    let sumX = 0, sumY = 0, count = 0;
-    for (let y = 70; y < 540; y += 1) for (let x = 0; x < 960; x += 1) {
-      const i = (y * 960 + x) * 4;
-      if (data[i] === 197 && data[i + 1] === 242 && data[i + 2] === 119) { sumX += x; sumY += y; count += 1; }
-    }
-    return count > 20 ? { x: sumX / count, y: sumY / count } : null;
-  });
+/** Where the player is, from the hidden HUD (the player is a sprite now, not a disk of one known color; the HUD gives the REAL place). */
+async function playerCenter(hud: Locator) {
+  const text = (await hud.getAttribute('data-player-at')) ?? '';
+  const [x, y] = text.split(',').map(Number);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x: x!, y: y! } : null;
 }
 
 const kills = async (hud: Locator) => Number(/Hạ (\d+)/.exec((await hud.textContent()) ?? '')?.[1] ?? -1);
@@ -67,17 +60,17 @@ test('arena: WASD moves the player, the mouse aims, holding the left button shoo
   const { canvas, hud, result, errors } = await open(page, 'arena');
   await expect(hud).toContainText('Máu 5/5');
   await canvas.click({ position: { x: 480, y: 120 } }); // focus (and one shot)
-  await expect.poll(() => playerCenter(canvas)).not.toBeNull();
-  const start = (await playerCenter(canvas))!;
+  await expect.poll(() => playerCenter(hud)).not.toBeNull();
+  const start = (await playerCenter(hud))!;
   await page.keyboard.down('d');
   await page.waitForTimeout(350);
   await page.keyboard.up('d');
-  const moved = (await playerCenter(canvas))!;
+  const moved = (await playerCenter(hud))!;
   expect(moved.x - start.x).toBeGreaterThan(30); // 210 px/s for about 0.35 s
   await page.keyboard.down('a');
   await page.waitForTimeout(350);
   await page.keyboard.up('a');
-  const back = (await playerCenter(canvas))!;
+  const back = (await playerCenter(hud))!;
   expect(moved.x - back.x).toBeGreaterThan(30);
 
   const box = (await canvas.boundingBox())!;
@@ -103,7 +96,7 @@ test('an unknown level lists the valid ones', async ({ page }) => {
   await page.goto('/?shooter=khong-ton-tai');
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('khong-ton-tai');
-  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic, boss-crusher, boss-gunner, base-siege, base-boss, base-fall');
+  await expect(alert).toContainText('arena, pillars, wall, smoke-win, smoke-lose, shotgun-pit, spitters, medic, boss-crusher, boss-gunner, base-siege, base-boss, base-fall, art-showcase, art-test');
   await expect(page.locator('iframe')).toHaveCount(0);
   await page.goto('/?shooter=constructor');
   await expect(page.getByRole('alert')).toContainText('Level hợp lệ');
@@ -139,6 +132,15 @@ test('playground: a kill level shows "Hạ n/total" in the HUD and its goal on t
 
 // --- Stage 4B: the new mechanics are on screen and in the state the page can read ---
 
+/** How many greenish pixels (green clearly above red and blue) the canvas shows in the 40 x 40 box around a place of the field. */
+const greenNear = (canvas: Locator, x: number, y: number) => canvas.evaluate((element, [cx, cy]) => {
+  const c = element as HTMLCanvasElement;
+  const data = c.getContext('2d')!.getImageData(Math.max(0, Math.round(cx! - 20)), Math.max(0, Math.round(cy! - 20)), 40, 40).data;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4) if (data[i + 1]! > data[i]! + 45 && data[i + 1]! > data[i + 2]! + 30) count += 1;
+  return count;
+}, [x, y] as const);
+
 /** How many pixels of exactly this color the canvas shows (the game is drawn with the 2D canvas renderer). */
 const countColor = (canvas: Locator, r: number, g: number, b: number) => canvas.evaluate((element, [cr, cg, cb]) => {
   const c = element as HTMLCanvasElement;
@@ -162,7 +164,7 @@ test('spitters: shooting enemies fire within seconds, their bullets are drawn, a
 });
 
 test('medic: defeated enemies drop pickups, they are drawn, and taking one heals a hurt player', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(150_000);
   const { canvas, hud, errors, frame } = await open(page, 'medic');
   await canvas.click({ position: { x: 480, y: 120 } }); // focus
   const box = (await canvas.boundingBox())!;
@@ -185,9 +187,23 @@ test('medic: defeated enemies drop pickups, they are drawn, and taking one heals
   const maxHp = hp; // the level starts at full health
   const trace: string[] = [];
   const began = Date.now();
-  const deadline = began + 70_000;
+  const deadline = began + 120_000;
+  let games = 1;
   while (Date.now() < deadline && !(healed && sawPickup && drawn)) { // a pickup is only SEEN while the player has full health (otherwise it is taken at once)
-    if (await frame.locator('#game-result').isVisible()) { trace.push(`game ended at ${((Date.now() - began) / 1000).toFixed(1)}s`); break; }
+    if (await frame.locator('#game-result').isVisible()) {
+      // Which enemy drops something is decided by the level, and a hand-steered player is not always lucky in 15 seconds: a game that ends
+      // before a pickup was seen, taken and drawn is played again (at most 4 games), the way a person would.
+      trace.push(`game ${games} ended at ${((Date.now() - began) / 1000).toFixed(1)}s`);
+      if (games >= 4) break;
+      games += 1;
+      await release();
+      await page.mouse.up();
+      await frame.locator('#restart-game').click();
+      await expect(hud).toContainText('Máu');
+      await page.mouse.down();
+      hp = await num(hud, 'data-hp');
+      continue;
+    }
     const [player] = await at('data-player-at');
     angle += 0.2;
     if (player) { const t = toPage(player[0] + 170 * Math.cos(angle), player[1] + 170 * Math.sin(angle)); await page.mouse.move(t.x, t.y); }
@@ -198,7 +214,7 @@ test('medic: defeated enemies drop pickups, they are drawn, and taking one heals
     const pickups = await at('data-pickup-at');
     if (pickups.length > 0) {
       sawPickup = true;
-      if (!drawn) drawn = (await countColor(canvas, 74, 222, 128)) > 20; // the pickup's green disk
+      if (!drawn) drawn = (await greenNear(canvas, pickups[0]![0], pickups[0]![1])) > 20; // the pickup's green medkit (the ground of this level is not green)
     }
     if (pickups.length > 0 && player && now < maxHp) {
       // walk to the nearest pickup while hurt

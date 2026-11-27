@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "kind": "hero",
+  "id": "grunt-test",
+  "source": "png",
+  "license": "procedural",
+  "author": "",
+  "origin": "apps/web/scripts/make-test-art.mjs",
+  "sheet": "sheet.png",
+  "frame": {
+    "w": 48,
+    "h": 48
+  },
+  "columns": 8,
+  "body": {
+    "radius": 14
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.5
+  },
+  "animations": {
+    "idle": {
+      "frames": [
+        0
+      ],
+      "fps": 1,
+      "loop": true
+    },
+    "move": {
+      "frames": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "fps": 10,
+      "loop": true
+    },
+    "shoot": {
+      "frames": [
+        5,
+        0
+      ],
+      "fps": 14,
+      "loop": false
+    },
+    "hit": {
+      "frames": [
+        6
+      ],
+      "fps": 10,
+      "loop": false
+    },
+    "die": {
+      "frames": [
+        7
+      ],
+      "fps": 6,
+      "loop": false
+    }
+  }
+}

@@ -26,7 +26,7 @@ const degrees = (radians: number) => (radians * 180) / Math.PI;
 const aimOf = (state: ShooterState, input: ShooterInput) => ({ x: input.aimX - state.player.x, y: input.aimY - state.player.y });
 
 const hardBrief = (seed: number, patch: Record<string, unknown> = {}) => ShooterBriefSchema.parse({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: `Casual ${seed}`, theme: 'zombie-city', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', title: `Casual ${seed}`, theme: 'zombie-city', map: 'pillars',
   enemies: [{ type: 'runner', share: 4 }, { type: 'brute', share: 2 }, { type: 'swarmer', share: 4 }],
   intensity: 4, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [], ...patch,
 });

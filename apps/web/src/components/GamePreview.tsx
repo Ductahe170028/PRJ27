@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { RuntimeEventSchema, type RuntimeGame } from '@game-creator/contracts';
+import { neededRefs } from '../game/art/refs';
+import { effectiveLook } from '../game/render/look';
+import { fetchArtPacks, loadArtIndex } from '../lib/art-fetch';
 import { createPreviewDocument } from '../lib/preview-document';
 import { randomUuid } from '../lib/uuid';
 
@@ -39,10 +42,18 @@ export function GamePreview({ source, onStarted, onError }: GamePreviewProps) {
         case 'runtime:ready':
           if (initialized) return;
           initialized = true;
-          // '*' is required for a sandboxed recipient with an opaque origin.
-          frame.current?.contentWindow?.postMessage({
-            channel: 'game-creator', type: 'runtime:init', sessionId, game: latest.current.game,
-          }, '*');
+          // The game cannot load pictures itself (its CSP), so the PNG packs of this level are fetched here, with a time limit, and
+          // travel inside the init message. Whatever fails, the game starts anyway (it draws those packs with its own code).
+          void (async () => {
+            const game = latest.current.game;
+            let art: Awaited<ReturnType<typeof fetchArtPacks>> = { art: [], fallbacks: 0 };
+            try { art = await fetchArtPacks(neededRefs(effectiveLook(game)), await loadArtIndex()); } catch { /* the game draws everything itself */ }
+            // '*' is required for a sandboxed recipient with an opaque origin.
+            frame.current?.contentWindow?.postMessage({
+              channel: 'game-creator', type: 'runtime:init', sessionId, game,
+              ...(art.art.length > 0 ? { art: art.art } : {}), ...(art.fallbacks > 0 ? { artFallbacks: art.fallbacks } : {}),
+            }, '*');
+          })();
           break;
         case 'runtime:started':
           if (started || !initialized) return;

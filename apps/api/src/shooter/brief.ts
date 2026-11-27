@@ -14,6 +14,8 @@ export const MAX_BRIEF_ENEMIES = 4;
 export const BOSSES = ['none', 'crusher', 'gunner'] as const;
 /** Whether the level has a base to defend: none (default), or defend (one base in the middle of the field; the level is lost when it is destroyed). */
 export const BASES = ['none', 'defend'] as const;
+/** The family of enemies, for how they LOOK only (the numbers of the enemies never change): auto lets the engine choose from the level's seed. */
+export const ENEMY_FAMILIES = ['auto', 'bug', 'mutant', 'robot'] as const;
 
 export const TITLE_MAX = 40;
 export const UNSUPPORTED_MAX_ITEMS = 5;
@@ -31,6 +33,7 @@ export const ShooterBriefSchema = z.object({
   healthDrops: z.enum(HEALTH_DROPS),
   boss: z.enum(BOSSES),
   base: z.enum(BASES),
+  enemyFamily: z.enum(ENEMY_FAMILIES),
   goal: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(20, 180) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(10, 200) }).strict(),
@@ -69,6 +72,8 @@ export function normalizeBrief(raw: unknown): unknown {
   if (brief.boss === undefined) brief.boss = 'none';
   // And a missing base means none.
   if (brief.base === undefined) brief.base = 'none';
+  // And a missing enemy family means the user did not say: the engine picks one.
+  if (brief.enemyFamily === undefined) brief.enemyFamily = 'auto';
 
   if (Array.isArray(brief.enemies)) {
     const merged: unknown[] = [];

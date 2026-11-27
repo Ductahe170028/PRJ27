@@ -2,7 +2,7 @@
   "version": "brief-1",
   "healthDrops": "some",
   "boss": "none",
-  "base": "none",
+  "base": "none","enemyFamily":"auto",
   "title": "Desert Snipers",
   "theme": "desert-ruins",
   "map": "pillars",

@@ -35,7 +35,7 @@ for (const name of ['arena', 'wall', 'smoke-win', 'smoke-lose'] as const) cases.
 for (let i = 0; i < COMPILED; i += 1) {
   const survive = i % 2 === 0;
   const brief = ShooterBriefSchema.parse({
-    version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', title: `Golden ${i}`, theme: 'zombie-city',
+    version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', title: `Golden ${i}`, theme: 'zombie-city',
     map: SHOOTER_MAPS[i % SHOOTER_MAPS.length], enemies: MIXES[i % MIXES.length],
     intensity: ((Math.floor(i / 5) + i) % 5) + 1,
     playerHealth: PLAYER_HEALTHS[(i + Math.floor(i / 3)) % PLAYER_HEALTHS.length],

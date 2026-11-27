@@ -5,6 +5,7 @@ import {
   BRUTE_CLEARANCE, ENEMY_TYPES, NAV_INFLATE, ShooterLevelSchema, baseRectOf, blockedCells, bossBlockedCells, freeSpaceConnected, type ShooterLevel,
 } from '@game-creator/contracts';
 import type { ShooterBrief } from './brief.js';
+import { pickLook } from './look.js';
 import { MAP_TEMPLATES, MAX_VARIANTS, SPAWN_CANDIDATES, gapsAreWide, type MapName, type Obstacle } from './maps.js';
 import { BASE_PLAYER, HEALTH_DROP_PCT, HEALTH_HP, PLAYER_SPEED, PLAYER_START, THEMES, WEAPONS, baseFor, bossHpFor } from './presets.js';
 import { deriveRng } from './rng.js';
@@ -121,6 +122,7 @@ export function compileShooter(brief: ShooterBrief, seed: number, options: Compi
     ...(brief.healthDrops === 'none' ? {} : { drops: { healthChancePct: HEALTH_DROP_PCT[brief.healthDrops] } }),
     ...(boss ? { bossHp: bossHpFor(boss, brief.intensity) } : {}),
     ...(base ? { base } : {}),
+    look: pickLook(brief, levelSeed),
     win: boss ? { type: 'boss' } : brief.goal.type === 'survive' ? { type: 'survive', seconds: brief.goal.seconds } : { type: 'kill', count: brief.goal.count },
   };
   // The schema is the last word. Failing here is a bug in the compiler, never a user error.

@@ -2,7 +2,7 @@
   "version": "brief-1",
   "healthDrops": "none",
   "boss": "none",
-  "base": "none",
+  "base": "none","enemyFamily":"auto",
   "title": "Zombie City",
   "theme": "zombie-city",
   "map": "pillars",

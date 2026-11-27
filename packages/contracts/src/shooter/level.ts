@@ -3,6 +3,7 @@ import {
   BASE_CLEARANCE, EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
 } from './constants.js';
 import { baseRectOf, dist, pointRectDistance, rectInsideField } from './geometry.js';
+import { LookSchema } from './look.js';
 import { intBetween as integer, labelOf } from './schema-helpers.js';
 
 const label = labelOf(80);
@@ -39,6 +40,8 @@ export const ShooterLevelSchema = z.object({
   bossHp: integer(10, 400).optional(),
   /** A base to defend (absent = none): a square of BASE_SIZE centered here. The game is lost when its hit points reach zero. */
   base: z.object({ ...point, hp: integer(5, 200) }).strict().optional(),
+  /** How the level looks (ids of art packs). Only the renderer reads it: the simulation and its hash never do. Absent = the defaults. */
+  look: LookSchema.optional(),
   win: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(10, 300) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(1, 400) }).strict(),

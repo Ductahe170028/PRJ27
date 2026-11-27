@@ -254,9 +254,55 @@ const baseFall: ShooterLevel = {
   win: { type: 'survive', seconds: 60 },
 };
 
+/** Stage 5A: a level to LOOK at, not to win: a long survive with a base, a few obstacles, the four ordinary kinds of enemy (the spitter shoots)
+ * and a sturdy hero. The playground can change how it looks (&biome=...&hero=...&family=...&base=...&weapon=...), add a boss
+ * (&boss=crusher or &boss=gunner) or fill it with enemies (&stress=120). */
+const artShowcase: ShooterLevel = {
+  kind: 'shooter-v1', title: 'Xem diện mạo', seed: 5151, width: 960, height: 540, theme,
+  player: { x: 416, y: 305, speed: 210, hp: 10 },
+  weapon: { cooldownMs: 200, bulletSpeed: 650, damage: 1, range: 550 },
+  obstacles: [
+    { x: 250, y: 190, width: 60, height: 60 }, { x: 710, y: 190, width: 60, height: 60 },
+    { x: 250, y: 420, width: 60, height: 60 }, { x: 710, y: 420, width: 60, height: 60 },
+  ],
+  spawnPoints: edgeSpawns,
+  waves: [
+    { atMs: 2000, type: 'runner', count: 3 },
+    { atMs: 5000, type: 'swarmer', count: 5 },
+    { atMs: 9000, type: 'spitter', count: 2 },
+    { atMs: 13000, type: 'brute', count: 1 },
+    { atMs: 18000, type: 'runner', count: 4 },
+    { atMs: 24000, type: 'swarmer', count: 6 },
+    { atMs: 30000, type: 'spitter', count: 2 },
+    { atMs: 36000, type: 'brute', count: 2 },
+    { atMs: 44000, type: 'runner', count: 5 },
+    { atMs: 54000, type: 'swarmer', count: 8 },
+  ],
+  base: { x: 480, y: 305, hp: 200 },
+  look: { biome: 'military-base', hero: 'scout', family: 'bug', base: 'bunker', weapon: 'pistol' },
+  win: { type: 'survive', seconds: 120 },
+};
+
+/** Stage 5A: the same shape with the hero of the one PNG test pack (public/art/hero/grunt-test), to try the way pictures travel. */
+const artTest: ShooterLevel = {
+  kind: 'shooter-v1', title: 'Thử ảnh PNG', seed: 5152, width: 960, height: 540, theme,
+  player: { x: 416, y: 305, speed: 210, hp: 10 },
+  weapon: { cooldownMs: 300, bulletSpeed: 600, damage: 1, range: 600 },
+  obstacles: [{ x: 250, y: 190, width: 60, height: 60 }, { x: 710, y: 420, width: 60, height: 60 }],
+  spawnPoints: edgeSpawns,
+  waves: [
+    { atMs: 3000, type: 'runner', count: 2 },
+    { atMs: 9000, type: 'swarmer', count: 4 },
+    { atMs: 16000, type: 'runner', count: 3 },
+  ],
+  base: { x: 480, y: 305, hp: 120 },
+  look: { biome: 'zombie-city', hero: 'grunt-test', family: 'mutant', base: 'outpost', weapon: 'rapid' },
+  win: { type: 'survive', seconds: 60 },
+};
+
 export const SHOOTER_LEVELS = {
   arena, pillars, wall, 'smoke-win': smokeWin, 'smoke-lose': smokeLose, 'shotgun-pit': shotgunPit, spitters, medic, 'boss-crusher': bossCrusher, 'boss-gunner': bossGunner,
-  'base-siege': baseSiege, 'base-boss': baseBoss, 'base-fall': baseFall,
+  'base-siege': baseSiege, 'base-boss': baseBoss, 'base-fall': baseFall, 'art-showcase': artShowcase, 'art-test': artTest,
 } as const satisfies Record<string, ShooterLevel>;
 
 export type ShooterLevelName = keyof typeof SHOOTER_LEVELS;

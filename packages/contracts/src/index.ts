@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { SelectionSchema } from './ai.js';
+import { ArtListSchema } from './art.js';
 import { ShooterLevelSchema } from './shooter/level.js';
 export * from './ai.js';
 export * from './shooter/index.js';
+export * from './art.js';
 // The one zod of the workspace, for packages that build schemas of their own (the API's shooter brief).
 export { z } from 'zod';
 
@@ -61,7 +63,14 @@ export const RuntimeInitSchema = z.object({
   sessionId: z.string().uuid(),
   type: z.literal('runtime:init'),
   game: ShooterLevelSchema,
+  /** The art packs the page fetched for this level (at most 12). Absent = the game draws everything with its own code. */
+  art: ArtListSchema.optional(),
+  /** How many packs the page wanted as PNG but could not fetch (they are drawn by code); it is only shown on the hidden HUD. */
+  artFallbacks: z.number().int().min(0).max(12).optional(),
 }).strict();
+/** The same message with the art list left unchecked: the game iframe reads this one, then checks the art on its own, pack by pack,
+ * so that a bad pack never stops a game from starting. */
+export const RuntimeInitLooseSchema = RuntimeInitSchema.extend({ art: z.unknown().optional() });
 
 export type GenerateGameRequest = z.infer<typeof GenerateGameRequestSchema>;
 export type ErrorIssue = z.infer<typeof ErrorIssueSchema>;
