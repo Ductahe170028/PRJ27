@@ -76,11 +76,6 @@ export const NOTICE_GROUPS: readonly Group[] = [
     pattern: /\bno lan\b|\bten lua\b|\brockets?\b|\bgrenades?\b|\bluu dan\b|\bexplosi\w*|\barea damage\b|\bsat thuong lan\b/,
     notice: 'Chưa hỗ trợ: đạn nổ lan. Mỗi viên đạn chỉ trúng quái nó chạm.',
   },
-  {
-    id: 'weapons',
-    pattern: /\bdoi vu khi\b|\bnhieu vu khi\b|\bnhieu loai sung\b|\bmultiple weapons?\b|\b(switch|switching|swap|swapping) weapons?\b|\bweapon (switch|switching|wheel)\b/,
-    notice: 'Chưa hỗ trợ: đổi giữa nhiều vũ khí. Mỗi game dùng một vũ khí.',
-  },
   { id: 'crafting', pattern: /\bche tao\b|\bcrafting\b|\bcraft\b/, notice: 'Chưa hỗ trợ: chế tạo.' },
   { id: 'traps', pattern: /\btraps?\b|\bcai bay\b|\bdat bay\b|\bbay (gai|min|lua|sat)\b/, notice: 'Chưa hỗ trợ: bẫy.' },
 ];
@@ -153,16 +148,21 @@ const HEALTH_ASKED = /\b(?:hoi mau|hop mau|binh mau|mau|hoi phuc|heal\w*|health|
 /** Words that could mean a base to defend (`thanh phố` is a city, not a castle). */
 const BASE_ASKED = /\b(?:can cu|can ban|bao ve|giu|phong thu|thanh(?! pho)|nha|trai|phao dai|tru so|co so|base|defen[cs]e\w*|protect\w*|guard\w*|fort\w*|castle|camp|house|shelter)\b/;
 
-export interface Guarded<T> { brief: T; /** The features the guard took out, by the name of the brief's field. */ removed: Array<'healthDrops' | 'base'> }
+/** Words that could mean "limit me to one weapon" (folded text). "chi co" and "chi dung" also read "chỉ có zombie", on purpose: keeping a limit
+ * that was not asked for (the player then holds one weapon) is better than refusing one that was. "Chỉ huy" (a commander) is not among them. */
+const LIMIT_ASKED = /\b(?:chi (?:co|dung|duoc|sung|shotgun|pistol)\b|duy nhat|(?:mot|1) loai sung|khong (?:the )?doi sung|co dinh|only|single|just (?:a|an|one|the)\b|one weapon|no weapon (?:switch\w*|chang\w*))/;
+
+export interface Guarded<T> { brief: T; /** The features the guard took out, by the name of the brief's field. */ removed: Array<'healthDrops' | 'base' | 'loadout'> }
 
 /** Puts `healthDrops` back to 'none' and `base` back to 'none' when the user's text has no word that could mean them. The boss is left
  * alone (too many ways to say it, and losing a boss the user wanted is worse than keeping one they did not). Nothing is said to the
  * user about what was taken out: they did not ask for it. The caller records `removed` for the diagnostics. */
-export function guardUnrequested<T extends { healthDrops: string; base: string }>(brief: T, prompt: string): Guarded<T> {
+export function guardUnrequested<T extends { healthDrops: string; base: string; loadout?: string }>(brief: T, prompt: string): Guarded<T> {
   const text = fold(prompt);
   const removed: Guarded<T>['removed'] = [];
   let next = brief;
   if (brief.healthDrops !== 'none' && !HEALTH_ASKED.test(text)) { next = { ...next, healthDrops: 'none' }; removed.push('healthDrops'); }
   if (brief.base !== 'none' && !BASE_ASKED.test(text)) { next = { ...next, base: 'none' }; removed.push('base'); }
+  if (brief.loadout === 'single' && !LIMIT_ASKED.test(text)) { next = { ...next, loadout: 'all' }; removed.push('loadout'); }
   return { brief: next, removed };
 }

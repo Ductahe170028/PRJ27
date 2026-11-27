@@ -4,6 +4,7 @@
 export * from './constants.js';
 export * from './geometry.js';
 export * from './level.js';
+export { equipWeapon, isSlot, sameWeapon, startingSlot } from './equip.js';
 export * from './look.js';
 export { intBetween, labelOf } from './schema-helpers.js';
 export * from './navigation.js';

@@ -16,7 +16,8 @@ export function flyBullets(state: ShooterState, walls: readonly Rect[]) {
   const REACH = state.maxEnemyRadius + BULLET_RADIUS; // 20 + 4 unless the level has a boss
   for (const bullet of state.bullets) {
     const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy);
-    const stride = Math.min(speed / TICK_RATE, level.weapon.range - bullet.travelled);
+    const range = bullet.range ?? level.weapon.range; // (a bullet has its own only in a level with an arsenal)
+    const stride = Math.min(speed / TICK_RATE, range - bullet.travelled);
     const x0 = bullet.x;
     const y0 = bullet.y;
     const x1 = speed > 0 ? x0 + (bullet.vx / speed) * stride : x0;
@@ -41,7 +42,7 @@ export function flyBullets(state: ShooterState, walls: readonly Rect[]) {
       });
       // A wall at the same distance wins: the bullet never reaches the enemy.
       if (first.enemy && (wallHit === undefined || first.hit < wallHit)) {
-        damageEnemy(state, first.enemy, level.weapon.damage);
+        damageEnemy(state, first.enemy, bullet.damage ?? level.weapon.damage);
         continue; // the bullet is spent
       }
       if (wallHit !== undefined) continue;
@@ -49,7 +50,7 @@ export function flyBullets(state: ShooterState, walls: readonly Rect[]) {
     bullet.x = x1; bullet.y = y1;
     bullet.travelled += stride;
     const outside = x1 < FIELD.left || x1 > FIELD.right || y1 < FIELD.top || y1 > FIELD.bottom;
-    if (outside || bullet.travelled >= level.weapon.range) continue;
+    if (outside || bullet.travelled >= range) continue;
     kept.push(bullet);
   }
   state.bullets = kept;
@@ -71,7 +72,7 @@ function passThrough(state: ShooterState, bullet: ShooterBullet, x0: number, y0:
   hits.sort((a, b) => a.t - b.t || a.enemy.id - b.enemy.id);
   for (const { t, enemy } of hits) {
     if (wallHit !== undefined && t >= wallHit) return true;
-    damageEnemy(state, enemy, state.level.weapon.damage);
+    damageEnemy(state, enemy, bullet.damage ?? state.level.weapon.damage);
     hitIds.push(enemy.id);
     bullet.pierceLeft! -= 1;
     if (bullet.pierceLeft! <= 0) return true;

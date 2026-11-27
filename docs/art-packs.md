@@ -76,6 +76,7 @@ Một họ có đủ **6 loại quái** của game: `runner`, `brute`, `swarmer`
 - Khung gợi ý **40×24**, súng chĩa sang phải. `anchor` là **điểm nắm tay** (game đặt điểm này cách tâm nhân vật 10 px về phía trước). `muzzle` `{x, y}` là đầu nòng (px trong khung): tia lửa nòng xuất hiện ở đó.
 - `bullet`: kiểu đạn, `{ "style": "dot" | "streak", "color": "#rrggbb" }` (`dot` là chấm sáng, `streak` là vệt dài cho đạn xuyên).
 - Có đủ 5 súng của game: `pistol`, `rapid`, `heavy`, `shotgun`, `piercing`. Hoạt ảnh `idle` 1 khung, `fire` 2 đến 3 khung.
+- **Biểu tượng súng** (thanh súng ở dưới sân hiện một hình nhỏ của từng súng): thêm `"icon": <số khung>` vào manifest, chỉ khung nào dùng làm biểu tượng (không có thì dùng khung đầu của `idle`). Ô trên thanh là 40×40 px, hình được thu nhỏ vừa 32×24; kích thước gợi ý cho một biểu tượng riêng là **32×32**. Gói do code vẽ cho đủ 5 súng đều có `icon`.
 
 ### `biome` (phong cảnh)
 

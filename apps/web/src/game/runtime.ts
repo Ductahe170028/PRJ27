@@ -42,8 +42,8 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
   };
   // Packs first (PNGs are decoded; anything missing or broken is drawn by code), then the game. Whatever goes wrong with the art,
   // the game starts: it falls back to the packs drawn by code.
-  void loadArt(neededRefs(look), result.data.art, result.data.artFallbacks).catch(() => undefined).then(async (loaded) => {
-    const art = loaded ?? await loadArt(neededRefs(look), undefined, 0);
+  void loadArt(neededRefs(look, level.arsenal?.map((entry) => entry.id)), result.data.art, result.data.artFallbacks).catch(() => undefined).then(async (loaded) => {
+    const art = loaded ?? await loadArt(neededRefs(look, level.arsenal?.map((entry) => entry.id)), undefined, 0);
     startGame(art);
   }).catch(fail);
   function startGame(art: Awaited<ReturnType<typeof loadArt>>) {

@@ -143,4 +143,6 @@ export const BASE_DIRECT_RANGE = 140;
 export const BASE_TUNING = { hitIntervalMs: 800, targetSwitchMargin: 100, botLeash: 170 };
 
 /** Whole ticks in `ms` milliseconds, rounded up. */
+/** Switching weapons takes this long (ms): the player cannot fire meanwhile. */
+export const EQUIP_MS = 300;
 export const msToTicks = (ms: number) => Math.ceil((ms * TICK_RATE) / 1000);

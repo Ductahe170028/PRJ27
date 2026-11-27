@@ -2,6 +2,7 @@
 // Nothing here moves anything; the steps of a tick live in the files next to this one.
 import { ENEMY_TYPES, MAX_ENEMY_RADIUS, NAV_INFLATE, SPAWN_STAGGER_MS, TICK_RATE, msToTicks, type EnemyType } from './constants.js';
 import { createBase } from './base.js';
+import { startingSlot } from './equip.js';
 import { baseRectOf, type Rect } from './geometry.js';
 import { bossWaveOf, type ShooterLevel } from './level.js';
 import { blockedCells, bossBlockedCells, type FlowField } from './navigation.js';
@@ -13,6 +14,9 @@ export interface ShooterInput {
   aimX: number;
   aimY: number;
   fire: boolean;
+  /** Put the weapon of this arsenal slot (0 to 4) in hand. Optional: absent changes nothing. An invalid slot, or any slot in a level
+   * without an arsenal, is ignored (never an error). */
+  slot?: number | undefined;
 }
 
 /** `nextShotTick` only exists on enemies that shoot (a `ranged` kind). The other optional fields only exist on a boss:
@@ -30,7 +34,11 @@ export interface ShooterEnemy {
 export interface BaseState { x: number; y: number; hp: number; maxHp: number; nextHitTick: number; lastHitTick: number }
 /** vx, vy are in px per second. `pierceLeft` and `hitIds` only exist on bullets of a piercing weapon:
  * how many more enemies it may pass through, and the enemies it has already hit (never twice). */
-export interface ShooterBullet { id: number; x: number; y: number; vx: number; vy: number; travelled: number; pierceLeft?: number; hitIds?: number[] }
+export interface ShooterBullet {
+  id: number; x: number; y: number; vx: number; vy: number; travelled: number; pierceLeft?: number; hitIds?: number[];
+  /** Only in a level with an arsenal: the damage and range of the weapon that FIRED this bullet (the player may have switched since). */
+  damage?: number; range?: number;
+}
 
 /** A bullet shot by an enemy. vx, vy are in px per second; `range` is how far it flies before it vanishes. */
 export interface EnemyBullet { id: number; x: number; y: number; vx: number; vy: number; travelled: number; damage: number; radius: number; range: number }
@@ -83,6 +91,9 @@ export interface ShooterState {
   baseRect?: Rect;
   baseFlow?: { blocked: boolean[]; dist: number[] };
   lostBy?: 'player' | 'base';
+  /** Only in a level with an `arsenal`: the slot of the weapon in hand, and the tick until which the player is switching (cannot fire). */
+  weaponSlot?: number;
+  equipUntilTick?: number;
 }
 
 export const totalScheduledEnemies = (level: ShooterLevel) => level.waves.reduce((sum, wave) => sum + wave.count, 0);
@@ -114,6 +125,7 @@ export function createSim(level: ShooterLevel): ShooterState {
     maxEnemyRadius: bossWave ? Math.max(MAX_ENEMY_RADIUS, ENEMY_TYPES[bossWave.type].radius) : MAX_ENEMY_RADIUS,
     ...(bossWave && bossIndex >= 0 ? { bossIndex, bossSpawned: false, bossDown: false, bossBlocked: bossBlockedCells(walls, ENEMY_TYPES[bossWave.type].radius) } : {}),
     ...(square ? createBase(level, square) : {}),
+    ...(level.arsenal ? { weaponSlot: startingSlot(level), equipUntilTick: 0 } : {}),
   };
 }
 

@@ -11,6 +11,7 @@ export function LevelInfoCard({ info }: { info: LevelInfo }) {
       <div><dt>Máu tối đa</dt><dd data-info="health">{info.maxHealth}</dd></div>
       <div><dt>Quái tối đa</dt><dd data-info="enemies">{info.maxEnemies}</dd></div>
       <div><dt>Súng</dt><dd data-info="weapon">{info.weapon}<small>{info.weaponDetail}</small></dd></div>
+      {info.arsenal && <div><dt>Đổi súng</dt><dd data-info="arsenal">{info.arsenal.map((line) => <small key={line}>{line}</small>)}</dd></div>}
     </dl>
     {info.extras.length > 0 && <ul className="shooter-extras" aria-label="Điểm đặc biệt của màn">
       {info.extras.map((extra) => <li key={extra} data-info="extra">{extra}</li>)}

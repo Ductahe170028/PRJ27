@@ -37,5 +37,8 @@ export function snapshotHash(state: ShooterState): string {
   if (state.base) for (const value of [state.base.hp, state.base.nextHitTick, state.base.lastHitTick]) h = mix(h, value);
   for (const e of state.enemies) if (e.aimAtBase !== undefined) h = mix(h, e.aimAtBase ? 1 : 0);
   if (state.lostBy !== undefined) h = mix(h, state.lostBy === 'base' ? 1 : 2);
+  // A level with an arsenal only (Stage 6A): the weapon in hand and when the player is done switching.
+  if (state.weaponSlot !== undefined) for (const value of [state.weaponSlot, state.equipUntilTick ?? 0]) h = mix(h, value);
+  for (const b of state.bullets) if (b.damage !== undefined) for (const value of [b.damage, b.range ?? 0]) h = mix(h, value);
   return h.toString(16).padStart(8, '0');
 }

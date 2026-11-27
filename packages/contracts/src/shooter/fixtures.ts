@@ -300,9 +300,43 @@ const artTest: ShooterLevel = {
   win: { type: 'survive', seconds: 60 },
 };
 
+/** Stage 6A: all five weapons in hand's reach (keys 1 to 5: pistol, shotgun, piercing, rapid, heavy; scroll the wheel to go round),
+ * starting with the pistol. A mix of every kind of enemy, with a brute and spitters, for 90 s. The numbers are the compiler's own. */
+const arsenal: ShooterLevel = {
+  kind: 'shooter-v1', title: 'Kho súng', seed: 6101, width: 960, height: 540, theme,
+  player: { x: 480, y: 305, speed: 210, hp: 8 },
+  weapon: { cooldownMs: 300, bulletSpeed: 600, damage: 1, range: 600 },
+  arsenal: [
+    { id: 'pistol', weapon: { cooldownMs: 300, bulletSpeed: 600, damage: 1, range: 600 } },
+    { id: 'shotgun', weapon: { cooldownMs: 1000, bulletSpeed: 650, damage: 1, range: 320, pellets: 6, spreadDeg: 36 } },
+    { id: 'piercing', weapon: { cooldownMs: 600, bulletSpeed: 800, damage: 2, range: 800, pierce: 2 } },
+    { id: 'rapid', weapon: { cooldownMs: 150, bulletSpeed: 650, damage: 1, range: 500 } },
+    { id: 'heavy', weapon: { cooldownMs: 600, bulletSpeed: 700, damage: 3, range: 700 } },
+  ],
+  obstacles: [
+    { x: 300, y: 210, width: 70, height: 70 }, { x: 660, y: 210, width: 70, height: 70 },
+    { x: 300, y: 400, width: 70, height: 70 }, { x: 660, y: 400, width: 70, height: 70 },
+  ],
+  spawnPoints: edgeSpawns,
+  waves: [
+    { atMs: 3000, type: 'swarmer', count: 5 },
+    { atMs: 8000, type: 'runner', count: 4 },
+    { atMs: 14000, type: 'brute', count: 1 },
+    { atMs: 20000, type: 'spitter', count: 2 },
+    { atMs: 28000, type: 'swarmer', count: 8 },
+    { atMs: 36000, type: 'runner', count: 5 },
+    { atMs: 44000, type: 'brute', count: 2 },
+    { atMs: 52000, type: 'spitter', count: 2 },
+    { atMs: 60000, type: 'swarmer', count: 10 },
+    { atMs: 70000, type: 'runner', count: 6 },
+    { atMs: 78000, type: 'brute', count: 1 },
+  ],
+  win: { type: 'survive', seconds: 90 },
+};
+
 export const SHOOTER_LEVELS = {
   arena, pillars, wall, 'smoke-win': smokeWin, 'smoke-lose': smokeLose, 'shotgun-pit': shotgunPit, spitters, medic, 'boss-crusher': bossCrusher, 'boss-gunner': bossGunner,
-  'base-siege': baseSiege, 'base-boss': baseBoss, 'base-fall': baseFall, 'art-showcase': artShowcase, 'art-test': artTest,
+  'base-siege': baseSiege, 'base-boss': baseBoss, 'base-fall': baseFall, 'art-showcase': artShowcase, 'art-test': artTest, arsenal,
 } as const satisfies Record<string, ShooterLevel>;
 
 export type ShooterLevelName = keyof typeof SHOOTER_LEVELS;

@@ -68,6 +68,8 @@ export const ManifestSchema = z.object({
   /** weapon: where the barrel ends (px of the frame, the gun points to +x) and what its bullet looks like. */
   muzzle: PointSchema.optional(),
   bullet: z.object({ style: z.enum(['dot', 'streak']), color: hexColor }).strict().optional(),
+  /** weapon: the frame (by index) shown as the weapon's icon on the weapon bar; absent = the first frame of `idle`. */
+  icon: integer(0, 255).optional(),
   /** biome: ground tiles of 64x64 (`count` variants in a row, starting at `offset`), a wall texture that tiles, small props, the air. */
   tiles: z.object({ count: integer(1, 16), offset: PointSchema.optional() }).strict().optional(),
   wall: z.object({ x: integer(0, 4096), y: integer(0, 4096), w: integer(8, 256), h: integer(8, 256) }).strict().optional(),

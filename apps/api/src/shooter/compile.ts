@@ -7,7 +7,7 @@ import {
 import type { ShooterBrief } from './brief.js';
 import { pickLook } from './look.js';
 import { MAP_TEMPLATES, MAX_VARIANTS, SPAWN_CANDIDATES, gapsAreWide, type MapName, type Obstacle } from './maps.js';
-import { BASE_PLAYER, HEALTH_DROP_PCT, HEALTH_HP, PLAYER_SPEED, PLAYER_START, THEMES, WEAPONS, baseFor, bossHpFor } from './presets.js';
+import { BASE_PLAYER, HEALTH_DROP_PCT, HEALTH_HP, PLAYER_SPEED, PLAYER_START, THEMES, WEAPONS, arsenalOf, baseFor, bossHpFor } from './presets.js';
 import { deriveRng } from './rng.js';
 import { scheduleBossWaves, scheduleWaves } from './waves.js';
 
@@ -122,6 +122,8 @@ export function compileShooter(brief: ShooterBrief, seed: number, options: Compi
     ...(brief.healthDrops === 'none' ? {} : { drops: { healthChancePct: HEALTH_DROP_PCT[brief.healthDrops] } }),
     ...(boss ? { bossHp: bossHpFor(boss, brief.intensity) } : {}),
     ...(base ? { base } : {}),
+    // A loadout of `all` puts the five weapons in the player's hands (the bots, and so every calibration, keep to `weapon`, the one it starts with).
+    ...(brief.loadout === 'all' ? { arsenal: arsenalOf() } : {}),
     look: pickLook(brief, levelSeed),
     win: boss ? { type: 'boss' } : brief.goal.type === 'survive' ? { type: 'survive', seconds: brief.goal.seconds } : { type: 'kill', count: brief.goal.count },
   };

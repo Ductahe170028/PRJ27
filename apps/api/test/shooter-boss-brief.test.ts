@@ -14,7 +14,7 @@ import type { PlayResult } from '@game-creator/contracts';
 vi.setConfig({ testTimeout: 60_000 });
 
 const raw = (patch: Record<string, unknown> = {}) => ({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', title: 'Boss', theme: 'military-base', map: 'pillars',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', loadout: 'all', title: 'Boss', theme: 'military-base', map: 'pillars',
   enemies: [{ type: 'runner', share: 5 }, { type: 'swarmer', share: 5 }],
   intensity: 3, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 90 }, unsupported: [] as unknown[], ...patch,
 }) as Record<string, any>;
@@ -157,7 +157,7 @@ describe('compiling a brief with a boss', () => {
     for (let i = 0; i < 30; i += 1) {
       const survive = i % 2 === 0;
       const b = ShooterBriefSchema.parse({
-        version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', title: `Golden ${i}`, theme: 'zombie-city',
+        version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', loadout: 'all', title: `Golden ${i}`, theme: 'zombie-city',
         map: SHOOTER_MAPS[i % SHOOTER_MAPS.length], enemies: MIXES[i % MIXES.length], intensity: ((Math.floor(i / 5) + i) % 5) + 1,
         playerHealth: PLAYER_HEALTHS[(i + Math.floor(i / 3)) % PLAYER_HEALTHS.length], weapon: OLD_WEAPONS[i % OLD_WEAPONS.length],
         goal: survive ? { type: 'survive', seconds: SURVIVE[(i >> 1) % SURVIVE.length] } : { type: 'kill', count: KILL[(i >> 1) % KILL.length] }, unsupported: [],
@@ -165,7 +165,7 @@ describe('compiling a brief with a boss', () => {
       const stored = golden.cases.find((c) => c.name === `compiled:${i}`)!.level;
       const now = compileShooter(b, 9000 + i * 37).level;
       // (the `look` of Stage 5A is clothes only: the level is compared without it, the golden file stays as it was)
-      const { look: _look, ...bare } = now;
+      const { look: _look, arsenal: _arsenal, ...bare } = now; // (the look and the arsenal of the later stages are not part of this old golden)
       expect(JSON.stringify(bare), `compiled:${i}`).toBe(JSON.stringify(stored));
       expect(now.look, `compiled:${i}`).toBeDefined();
       expect('bossHp' in now).toBe(false);

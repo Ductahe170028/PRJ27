@@ -33,6 +33,10 @@ export function manifestFits(manifest: Manifest, sheetWidth: number, sheetHeight
   for (const entry of Object.values(manifest.kinds ?? {})) {
     if (!framesFit({ frame: entry.frame, columns: entry.columns, offset: entry.offset, animations: entry.animations }, sheetWidth, sheetHeight)) return false;
   }
+  if (manifest.icon !== undefined && manifest.frame && manifest.columns) {
+    const rect = frameRect(manifest.frame, manifest.columns, manifest.icon);
+    if (rect.x + rect.w > sheetWidth || rect.y + rect.h > sheetHeight) return false;
+  }
   if (manifest.tiles) {
     const offset = manifest.tiles.offset ?? { x: 0, y: 0 };
     if (offset.x + manifest.tiles.count * 64 > sheetWidth || offset.y + 64 > sheetHeight) return false;

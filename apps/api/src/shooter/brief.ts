@@ -14,6 +14,8 @@ export const MAX_BRIEF_ENEMIES = 4;
 export const BOSSES = ['none', 'crusher', 'gunner'] as const;
 /** Whether the level has a base to defend: none (default), or defend (one base in the middle of the field; the level is lost when it is destroyed). */
 export const BASES = ['none', 'defend'] as const;
+/** The weapons the player can use: all (the default: the five weapons, switched with keys 1-5 or the mouse wheel, starting with `weapon`) or single (only `weapon`). */
+export const LOADOUTS = ['all', 'single'] as const;
 /** The family of enemies, for how they LOOK only (the numbers of the enemies never change): auto lets the engine choose from the level's seed. */
 export const ENEMY_FAMILIES = ['auto', 'bug', 'mutant', 'robot'] as const;
 
@@ -34,6 +36,7 @@ export const ShooterBriefSchema = z.object({
   boss: z.enum(BOSSES),
   base: z.enum(BASES),
   enemyFamily: z.enum(ENEMY_FAMILIES),
+  loadout: z.enum(LOADOUTS),
   goal: z.discriminatedUnion('type', [
     z.object({ type: z.literal('survive'), seconds: integer(20, 180) }).strict(),
     z.object({ type: z.literal('kill'), count: integer(10, 200) }).strict(),
@@ -74,6 +77,10 @@ export function normalizeBrief(raw: unknown): unknown {
   if (brief.base === undefined) brief.base = 'none';
   // And a missing enemy family means the user did not say: the engine picks one.
   if (brief.enemyFamily === undefined) brief.enemyFamily = 'auto';
+  // And a missing loadout means all the weapons.
+  if (brief.loadout === undefined) brief.loadout = 'all';
+  // And a missing loadout means all the weapons.
+  if (brief.loadout === undefined) brief.loadout = 'all';
 
   if (Array.isArray(brief.enemies)) {
     const merged: unknown[] = [];

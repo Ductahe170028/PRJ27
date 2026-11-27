@@ -18,7 +18,7 @@ async function knownPacks(): Promise<KnownIds> {
 
 /** Developer page for the hand-made shooter levels: /?shooter=<name>. It calls
  * no API and needs no backend. The main UI does not link here. The address can also change how the level looks and what is in it:
- * &biome=ice-base&hero=armor&family=robot&base=outpost&weapon=shotgun, &boss=crusher|gunner, &stress=120 (an id or value it does not know is ignored). */
+ * &biome=ice-base&hero=armor&family=robot&base=outpost&weapon=shotgun, &boss=crusher|gunner, &stress=120, &loadout=single (an id or value it does not know is ignored). */
 export function ShooterPlayground({ name }: { name: string }) {
   const base = shooterLevel(name);
   const params = useMemo(() => new URLSearchParams(window.location.search), []);

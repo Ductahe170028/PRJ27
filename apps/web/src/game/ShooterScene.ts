@@ -1,11 +1,11 @@
 import Phaser from 'phaser';
 import { TICK_RATE, bossOf, createSim, elapsedSeconds, isBoss, isEnraged, step, type Look, type ShooterInput, type ShooterLevel, type ShooterState } from '@game-creator/contracts';
 import { sourcesText, type LoadedArt } from './art/loader';
-import { hudLine, loseReason } from '../lib/shooter-text';
+import { hudLine, loseReason, slotForKey, wheelStep, wrapSlot } from '../lib/shooter-text';
 import { alphaOf } from './render/interpolate';
 import { lookText } from './render/look';
 import { WorldRenderer } from './render/world';
-import { createBanner, createBaseUi, createBossUi, createHud } from './shooter-ui';
+import { createBanner, createBaseUi, createBossUi, createHud, createWeaponBar } from './shooter-ui';
 
 /** The boss's numbers for the hidden #game-hud (data-boss-*), empty strings when there is no boss on the field. */
 function bossValues(state: ShooterState) {
@@ -34,6 +34,11 @@ export class ShooterScene extends Phaser.Scene {
   private banner: ReturnType<typeof createBanner> | undefined;
   private bossUi: ReturnType<typeof createBossUi>;
   private baseUi: ReturnType<typeof createBaseUi>;
+  private weaponBar: ReturnType<typeof createWeaponBar>;
+  /** A weapon switch the player asked for (key or wheel) and that no tick has used yet: it goes in with the FIRST tick that runs after it, once. */
+  private pendingSlot: number | undefined;
+  private wheelStored = 0;
+  private lastWheelAt = -1e9;
   private bannerMs = 0;
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | undefined;
   private keys: Keys | undefined;
@@ -57,7 +62,7 @@ export class ShooterScene extends Phaser.Scene {
   create() {
     const { level } = this;
     this.state = createSim(level);
-    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.ending = false; this.endingMs = 0; this.lastHud = ''; this.lastPublished = ''; this.bannerMs = 0;
+    this.accumulator = 0; this.mouseDown = false; this.pointerSeen = false; this.finished = false; this.ending = false; this.endingMs = 0; this.pendingSlot = undefined; this.wheelStored = 0; this.lastHud = ''; this.lastPublished = ''; this.bannerMs = 0;
     this.cameras.main.setBackgroundColor(level.theme.background);
 
     this.world = new WorldRenderer(this, level, this.art, { look: this.look });
@@ -67,7 +72,8 @@ export class ShooterScene extends Phaser.Scene {
     this.banner = createBanner(this, level);
     this.bossUi = createBossUi(this, level);
     this.baseUi = createBaseUi(this, level);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { this.banner?.dispose(); this.bossUi?.dispose(); this.baseUi?.dispose(); this.world.dispose(); });
+    this.weaponBar = createWeaponBar(this, level, this.art, this.look);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { this.banner?.dispose(); this.bossUi?.dispose(); this.baseUi?.dispose(); this.weaponBar?.dispose(); this.world.dispose(); });
 
     this.setupControls();
     const result = document.getElementById('game-result');
@@ -95,7 +101,9 @@ export class ShooterScene extends Phaser.Scene {
     const input = this.readInput();
     let ticks = 0;
     while (this.accumulator >= TICK_MS && ticks < MAX_TICKS_PER_FRAME && this.state.status === 'playing') {
-      step(this.state, input);
+      // a weapon switch asked for rides on the first tick that runs after it, and only that one (a frame may run no tick at all: it waits)
+      step(this.state, this.pendingSlot === undefined ? input : { ...input, slot: this.pendingSlot });
+      this.pendingSlot = undefined;
       this.world.tick(this.state);
       this.accumulator -= TICK_MS;
       ticks += 1;
@@ -104,6 +112,7 @@ export class ShooterScene extends Phaser.Scene {
     this.world.render(this.state, alphaOf(this.accumulator, TICK_MS), delta);
     this.bossUi?.update(this.state);
     this.baseUi?.update(this.state);
+    this.weaponBar?.update(this.state, delta);
     this.updateHud();
     this.publishState();
     if (this.state.status !== 'playing') this.beginEnding();
@@ -125,6 +134,7 @@ export class ShooterScene extends Phaser.Scene {
     this.world.render(this.state, 1, delta);
     this.bossUi?.update(this.state);
     this.baseUi?.update(this.state);
+    this.weaponBar?.update(this.state, delta);
     if (this.endingMs >= this.world.endingMs(this.state)) this.finish();
   }
 
@@ -171,7 +181,12 @@ export class ShooterScene extends Phaser.Scene {
       ...bossValues(state),
       // how the level looks and where each pack came from (the art, not the rules)
       look: lookText(this.look), artFallbacks: String(this.art.fallbacks), artSources: sourcesText(this.art),
-      enemies: String(state.enemies.length), updateMs: this.frameMsText,
+      enemies: String(state.enemies.length), bullets: String(state.bullets.length), updateMs: this.frameMsText,
+      // only in a level with an arsenal: the weapon in hand (its id), its slot, whether the player is switching, and the plate of the weapon bar
+      ...(state.weaponSlot !== undefined && this.level.arsenal ? {
+        weapon: this.level.arsenal[state.weaponSlot]?.id ?? '', slot: String(state.weaponSlot), equip: state.tick < (state.equipUntilTick ?? 0) ? 'yes' : 'no',
+        weaponBar: this.weaponBar?.bounds() ?? '',
+      } : {}),
       // only in a level that has them: the base's hit points, the plates of the two bars as drawn, and who lost
       ...(state.base ? { baseHp: String(state.base.hp), baseMax: String(state.base.maxHp), baseBar: this.baseUi?.bounds() ?? '', lostBy: state.lostBy ?? '' } : {}),
       ...(this.bossUi ? { bossBar: this.bossUi.bounds() } : {}),
@@ -189,6 +204,7 @@ export class ShooterScene extends Phaser.Scene {
     this.banner?.dispose();
     this.bossUi?.dispose();
     this.baseUi?.dispose();
+    this.weaponBar?.dispose();
     const { state, level } = this;
     const won = state.status === 'won';
     const result = document.getElementById('game-result');
@@ -210,12 +226,33 @@ export class ShooterScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu();
     this.input.setDefaultCursor('crosshair');
 
-    const restart = (event?: KeyboardEvent) => { if (!event?.repeat) this.scene.restart(); };
+    // Keys 1-5 (the digit row and the number pad) and the mouse wheel ask for a weapon; only in a level with an arsenal (elsewhere they do
+    // nothing, and nothing is stopped from reaching the page). The request waits for the next tick (see runFrame).
+    const arsenalSize = this.level.arsenal?.length ?? 0;
+    const ask = (slot: number) => { if (arsenalSize > 0 && !this.finished && !this.ending) this.pendingSlot = slot; };
+    const onKey = (event: KeyboardEvent) => {
+      if (arsenalSize === 0 || event.repeat) return;
+      const slot = slotForKey(event.code, arsenalSize);
+      if (slot !== undefined) ask(slot);
+    };
+    this.input.keyboard?.on('keydown', onKey);
+    const canvas = this.game.canvas;
+    const onWheel = (event: WheelEvent) => {
+      if (arsenalSize === 0) return;
+      event.preventDefault(); // the wheel switches weapons here, it must not scroll the page around the game
+      if (event.timeStamp - this.lastWheelAt > 250) this.wheelStored = 0; // an old, unfinished notch is forgotten
+      this.lastWheelAt = event.timeStamp;
+      const { step: direction, rest } = wheelStep(this.wheelStored, event.deltaY);
+      this.wheelStored = rest;
+      if (direction !== 0) ask(wrapSlot(this.pendingSlot ?? this.state.weaponSlot ?? 0, direction, arsenalSize));
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    const restart = (event?: KeyboardEvent) => { if (!event?.repeat) { this.pendingSlot = undefined; this.scene.restart(); } };
     const press = (pointer: Phaser.Input.Pointer) => { if (pointer.leftButtonDown()) this.mouseDown = true; };
     const release = (pointer: Phaser.Input.Pointer) => { if (!pointer.leftButtonDown()) this.mouseDown = false; };
     const move = () => { this.pointerSeen = true; };
     // Losing focus must not leave a key or the trigger held down.
-    const clear = () => { this.mouseDown = false; this.input.keyboard?.resetKeys(); };
+    const clear = () => { this.mouseDown = false; this.pendingSlot = undefined; this.wheelStored = 0; this.input.keyboard?.resetKeys(); };
     this.input.keyboard?.on('keydown-R', restart);
     this.input.on('pointerdown', press);
     this.input.on('pointerup', release);
@@ -232,6 +269,8 @@ export class ShooterScene extends Phaser.Scene {
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.keyboard?.off('keydown-R', restart);
+      this.input.keyboard?.off('keydown', onKey);
+      canvas.removeEventListener('wheel', onWheel);
       this.input.off('pointerdown', press);
       this.input.off('pointerup', release);
       this.input.off('pointerupoutside', release);

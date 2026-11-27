@@ -4,7 +4,7 @@
 // stays as it was. Sprites are reused (pools): nothing is created per frame once the game is running.
 import Phaser from 'phaser';
 import {
-  BASE_SIZE, BULLET_RADIUS, ENEMY_TYPES, PLAYER_RADIUS, TICK_RATE, isBoss, rangedOf,
+  BASE_SIZE, BULLET_RADIUS, ENEMY_TYPES, EQUIP_MS, PLAYER_RADIUS, TICK_RATE, isBoss, rangedOf, startingSlot,
   type EnemyType, type Look, type ShooterEnemy, type ShooterLevel, type ShooterState,
 } from '@game-creator/contracts';
 import { packKey, type LoadedArt, type LoadedPack } from '../art/loader';
@@ -66,7 +66,12 @@ export class WorldRenderer {
   private readonly hero: Sheet;
   private readonly family: Sheet;
   private readonly base: Sheet;
-  private readonly weapon: Sheet;
+  /** The weapon packs: one per slot of the arsenal (the starting slot uses the level's look), or just the one weapon. */
+  private readonly weapons: Sheet[];
+  private readonly startSlot: number;
+  private slotNow = 0;
+  private equipAt = -1e9;
+  private lastSlot: number | undefined;
   private readonly pickupSheet: Sheet;
   private readonly fxSheet: Sheet;
   private readonly reduced: boolean;
@@ -88,7 +93,7 @@ export class WorldRenderer {
   private baseImg: Phaser.GameObjects.Image | undefined;
   private background!: Phaser.GameObjects.Image;
   private readonly ambient: Ambient;
-  private readonly bulletStyle: 'dot' | 'streak';
+  private bulletKinds: Array<{ dotKey: string; streakKey: string; style: 'dot' | 'streak' }> = [];
   private previous: Snapshot | undefined;
   private now = 0;
   private playerAngle = 0;
@@ -108,13 +113,14 @@ export class WorldRenderer {
     this.hero = sheetOf('hero', look.hero);
     this.family = sheetOf('family', look.family);
     this.base = sheetOf('base', look.base);
-    this.weapon = sheetOf('weapon', look.weapon);
+    const arsenal = level.arsenal;
+    this.startSlot = arsenal ? startingSlot(level) : 0;
+    this.weapons = arsenal ? arsenal.map((entry, i) => sheetOf('weapon', i === this.startSlot ? look.weapon : entry.id)) : [sheetOf('weapon', look.weapon)];
     this.pickupSheet = sheetOf('pickup', 'health');
     this.fxSheet = sheetOf('fx', 'basic');
     this.reduced = options.reducedMotion ?? prefersReducedMotion();
     const biome = art.packs.get(packKey('biome', look.biome));
     this.ambient = biome?.manifest.ambient ?? 'none';
-    this.bulletStyle = this.weapon.manifest.bullet?.style ?? 'dot';
     this.bars = scene.add.graphics().setDepth(DEPTH.bars);
     this.rings = scene.add.graphics().setDepth(DEPTH.enemy + 0.5);
     if (biome) this.bakeGround(biome);
@@ -147,31 +153,48 @@ export class WorldRenderer {
     this.background = scene.add.image(0, 0, groundKey).setOrigin(0, 0).setDepth(DEPTH.ground);
   }
 
-  /** The three bullet textures, painted in their colors once (a Canvas renderer is slow at tinting, so nothing is tinted at run time):
-   * the player's round bullet, its long piercing streak, and the enemies' bullet (lighter, with a white rim). */
+  /** The weapon in hand (the pack of the slot the state says is in hand). */
+  private get weapon(): Sheet { return this.weapons[this.slotNow] ?? this.weapons[0]!; }
+
+  /** The bullet textures, painted in their colors once (a Canvas renderer is slow at tinting, so nothing is tinted at run time): for each
+   * weapon its round bullet and its long streak (the piercing one), and the enemies' bullet (lighter, with a white rim). */
   private makeBulletTextures() {
     const { textures } = this.scene;
-    const mine = this.weapon.manifest.bullet?.color ?? this.level.theme.bullet;
     const theirs = this.level.theme.enemy;
-    this.dotKey = `bullet:dot:${mine}`; this.streakKey = `bullet:streak:${mine}`; this.enemyKey = `bullet:enemy:${theirs}`;
+    this.enemyKey = `bullet:enemy:${theirs}`;
     const paint = (name: string, w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void) => {
       if (textures.exists(name)) return;
       const canvasTexture = textures.createCanvas(name, w, h);
       const ctx = canvasTexture?.getContext();
       if (ctx) { draw(ctx); canvasTexture?.refresh(); }
     };
-    paint(this.dotKey, 12, 12, (ctx) => { ctx.fillStyle = mine; ctx.beginPath(); ctx.arc(6, 6, 5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(6, 6, 2.2, 0, Math.PI * 2); ctx.fill(); });
-    paint(this.streakKey, 28, 8, (ctx) => {
-      const g = ctx.createLinearGradient(0, 0, 28, 0);
-      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, mine);
-      ctx.fillStyle = g; ctx.fillRect(0, 2, 28, 4); ctx.fillStyle = '#ffffff'; ctx.fillRect(23, 3, 5, 2);
+    this.bulletKinds = this.weapons.map((sheet) => {
+      const mine = sheet.manifest.bullet?.color ?? this.level.theme.bullet;
+      const dotKey = `bullet:dot:${mine}`;
+      const streakKey = `bullet:streak:${mine}`;
+      paint(dotKey, 12, 12, (ctx) => { ctx.fillStyle = mine; ctx.beginPath(); ctx.arc(6, 6, 5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(6, 6, 2.2, 0, Math.PI * 2); ctx.fill(); });
+      paint(streakKey, 28, 8, (ctx) => {
+        const g = ctx.createLinearGradient(0, 0, 28, 0);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, mine);
+        ctx.fillStyle = g; ctx.fillRect(0, 2, 28, 4); ctx.fillStyle = '#ffffff'; ctx.fillRect(23, 3, 5, 2);
+      });
+      return { dotKey, streakKey, style: sheet.manifest.bullet?.style ?? 'dot' };
     });
     paint(this.enemyKey, 16, 16, (ctx) => {
       ctx.fillStyle = lightHex(theirs); ctx.beginPath(); ctx.arc(8, 8, 7, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(8, 8, 6.6, 0, Math.PI * 2); ctx.stroke();
     });
   }
-  private dotKey = ''; private streakKey = ''; private enemyKey = '';
+  private enemyKey = '';
+
+  /** Which weapon fired a bullet: in a level with an arsenal the bullet carries its weapon's damage and range, and the weapons differ in
+   * that pair; any other bullet is the one weapon's. */
+  private kindOf(bullet: { damage?: number | undefined; range?: number | undefined }): number {
+    const arsenal = this.level.arsenal;
+    if (!arsenal || bullet.damage === undefined) return 0;
+    const index = arsenal.findIndex((entry) => entry.weapon.damage === bullet.damage && entry.weapon.range === bullet.range);
+    return index < 0 ? this.slotNow : index;
+  }
 
   private makePlayer() {
     const { scene } = this;
@@ -179,6 +202,7 @@ export class WorldRenderer {
     this.playerImg = scene.add.image(0, 0, this.hero.textureKey, '0').setOrigin(anchor.x, anchor.y).setDepth(DEPTH.player);
     this.playerFlash = scene.add.image(0, 0, this.hero.textureKey, '0').setOrigin(anchor.x, anchor.y).setDepth(DEPTH.player + 0.05).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
     const grip = this.weapon.manifest.anchor ?? { x: 0.3, y: 0.5 };
+    this.slotNow = this.startSlot;
     this.gunImg = scene.add.image(0, 0, this.weapon.textureKey, '0').setOrigin(grip.x, grip.y).setDepth(DEPTH.weaponGun);
   }
 
@@ -199,6 +223,7 @@ export class WorldRenderer {
   /** Draws one frame. `alpha` is how far through the current tick the frame is (0..1); `deltaMs` is the real time since the last frame. */
   render(state: ShooterState, alpha: number, deltaMs: number): void {
     this.now += deltaMs;
+    this.trackSlot(state);
     const after = snapshotOf(state);
     const events = this.previous ? diffSnapshots(this.previous, after, this.level.weapon.range) : undefined;
     this.previous = after;
@@ -228,6 +253,15 @@ export class WorldRenderer {
     this.specks.length = 0;
     this.playerImg?.destroy(); this.playerFlash?.destroy(); this.gunImg?.destroy(); this.baseImg?.destroy(); this.background?.destroy();
     this.bars.destroy(); this.rings.destroy();
+  }
+
+  /** Notices that the player put another weapon in hand (the state says which slot is in hand), to play the switch. */
+  private trackSlot(state: ShooterState): void {
+    const slot = state.weaponSlot;
+    if (slot === undefined) return;
+    if (this.lastSlot !== undefined && slot !== this.lastSlot) this.equipAt = this.now;
+    this.lastSlot = slot;
+    this.slotNow = slot;
   }
 
   // --- reacting to what changed -----------------------------------------------------------------------------------------------
@@ -292,15 +326,20 @@ export class WorldRenderer {
     const flashing = !this.reduced && !this.anim(sheet, 'hit') && this.now - this.playerHurtAt < 80;
     this.playerFlash.setVisible(flashing);
     if (flashing) this.playerFlash.setFrame(frameName(index)).setPosition(x, y).setRotation(aim).setScale(scale).setAlpha(flashAlpha(this.now - this.playerHurtAt));
-    // the gun, held in front, kicking when it fires; its barrel end is where the muzzle flash appears
+    // the gun in hand, held in front, kicking when it fires; its barrel end is where the muzzle flash appears. When the weapon has just
+    // been switched it comes up from below over EQUIP_MS (no movement for a player who asked for less of it)
     const gm = this.weapon.manifest;
+    const sinceSwitch = this.now - this.equipAt;
+    const raise = !this.reduced && sinceSwitch < EQUIP_MS ? 1 - sinceSwitch / EQUIP_MS : 0;
+    const gunAngle = aim - raise * 1.1;
     const gunFrames = this.anim(this.weapon, sinceShot < 200 ? 'fire' : 'idle');
     const gunIndex = gunFrames ? frameAt(gunFrames, sinceShot < 200 ? sinceShot : this.now) : 0;
     const gx = x + ux * HAND * scale;
     const gy = y + uy * HAND * scale;
-    this.gunImg.setFrame(frameName(gunIndex)).setPosition(gx, gy).setRotation(aim).setScale(scale).setAlpha(protectedNow ? 0.35 : 1).setVisible(!lost);
-    const frameSize = gm.frame ?? { w: 40, h: 24 };
     const grip = gm.anchor ?? { x: 0.3, y: 0.5 };
+    this.gunImg.setTexture(this.weapon.textureKey, frameName(gunIndex)).setOrigin(grip.x, grip.y).setPosition(gx, gy).setRotation(gunAngle).setScale(scale)
+      .setAlpha((protectedNow ? 0.35 : 1) * (sinceSwitch < EQUIP_MS ? 0.55 + 0.45 * (sinceSwitch / EQUIP_MS) : 1)).setVisible(!lost);
+    const frameSize = gm.frame ?? { w: 40, h: 24 };
     const muzzle = gm.muzzle ?? { x: frameSize.w, y: frameSize.h / 2 };
     const mx = (muzzle.x - grip.x * frameSize.w) * scale;
     const my = (muzzle.y - grip.y * frameSize.h) * scale;
@@ -393,9 +432,10 @@ export class WorldRenderer {
   private drawBullets(state: ShooterState, alpha: number): void {
     state.bullets.forEach((bullet, index) => {
       const p = this.bulletHistory.at(bullet.id, alpha) ?? bullet;
-      const streak = this.bulletStyle === 'streak' || bullet.pierceLeft !== undefined;
-      const img = this.pooled(this.bullets, index, this.dotKey, DEPTH.bullet);
-      img.setTexture(streak ? this.streakKey : this.dotKey).setVisible(true).setPosition(p.x, p.y);
+      const kind = this.bulletKinds[this.kindOf(bullet)] ?? this.bulletKinds[0]!;
+      const streak = kind.style === 'streak' || bullet.pierceLeft !== undefined;
+      const img = this.pooled(this.bullets, index, kind.dotKey, DEPTH.bullet);
+      img.setTexture(streak ? kind.streakKey : kind.dotKey).setVisible(true).setPosition(p.x, p.y);
       if (streak) img.setOrigin(1, 0.5).setRotation(Math.atan2(bullet.vy, bullet.vx)).setScale(1);
       else img.setOrigin(0.5, 0.5).setRotation(0).setScale((BULLET_RADIUS * 2) / 12);
     });

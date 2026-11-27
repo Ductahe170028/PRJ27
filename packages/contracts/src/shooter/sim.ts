@@ -11,6 +11,7 @@ import { hurtBase } from './base.js';
 import { advanceClock, hurtPlayer } from './combat.js';
 import { bossesFire } from './boss.js';
 import { enemiesShoot, flyEnemyBullets } from './enemy-fire.js';
+import { equipWeapon } from './equip.js';
 import { moveEnemies } from './enemies.js';
 import type { Rect } from './geometry.js';
 import { aimPlayer, movePlayer } from './player.js';
@@ -24,7 +25,8 @@ import { fireWeapon } from './weapons.js';
  *  1. a finished game does nothing
  *  2. the player moves (diagonals normalized), slides along walls and edges
  *  3. the aim is updated from the aim point
- *  4. the weapon fires if asked and ready, and the bullet cap allows
+ *  3b. a level with an arsenal: the player may put another weapon in hand (it takes 300 ms, during which nothing fires; equip.ts)
+ *  4. the weapon in hand fires if asked and ready (and not switching), and the bullet cap allows
  *  5. due enemies spawn (waiting ones stay queued, none is dropped)
  *  6. enemies move (straight at the player in plain sight, else along the flow
  *     field; a shooting enemy stops within its hold range), push each other apart, then leave walls
@@ -45,6 +47,7 @@ export function step(state: ShooterState, input: ShooterInput): void {
 
   movePlayer(state, input, walls);
   aimPlayer(state, input);
+  equipWeapon(state, input, t);
   fireWeapon(state, input, t);
   spawnDue(state, t);
   moveEnemies(state, t, walls);

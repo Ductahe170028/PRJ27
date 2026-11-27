@@ -2,7 +2,7 @@
   "version": "brief-1",
   "healthDrops": "none",
   "boss": "none",
-  "base": "none","enemyFamily":"auto",
+  "base": "none","enemyFamily":"auto","loadout":"all",
   "title": "Boss Rush",
   "theme": "neon-arena",
   "map": "open-arena",

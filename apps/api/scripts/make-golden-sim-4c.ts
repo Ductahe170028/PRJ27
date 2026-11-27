@@ -41,7 +41,7 @@ const SPECS: Spec[] = [
 const cases: GoldenCase[] = [];
 for (const spec of SPECS) {
   const brief = ShooterBriefSchema.parse({
-    version: 'brief-1', healthDrops: 'none', boss: spec.boss, base: 'none', enemyFamily: 'auto', title: spec.name.slice(0, 30).replace(/[^A-Za-z0-9 ]/g, ' ').trim() || 'Golden', theme: 'military-base',
+    version: 'brief-1', healthDrops: 'none', boss: spec.boss, base: 'none', enemyFamily: 'auto', loadout: 'single', title: spec.name.slice(0, 30).replace(/[^A-Za-z0-9 ]/g, ' ').trim() || 'Golden', theme: 'military-base',
     map: spec.map, enemies: spec.enemies, intensity: spec.intensity, playerHealth: 'normal', weapon: spec.weapon,
     goal: spec.goal ?? { type: 'survive', seconds: 60 }, unsupported: [],
   });

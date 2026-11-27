@@ -40,7 +40,7 @@ ShooterBrief (AI sinh, chỉ ngữ nghĩa, không tọa độ)
 
 ## Ngoài MVP
 
-Pickup đạn, mobile/cảm ứng, chỉnh game bằng prompt, bot mô phỏng. (Bảo vệ căn cứ đã có từ Stage 4D, xem bên dưới.)
+Pickup đạn, mobile/cảm ứng, chỉnh game bằng prompt, bot mô phỏng. (Đổi súng trong game có từ Stage 6A.) (Bảo vệ căn cứ đã có từ Stage 4D, xem bên dưới.)
 
 ## Lộ trình
 
@@ -121,6 +121,15 @@ Pickup đạn, mobile/cảm ứng, chỉnh game bằng prompt, bot mô phỏng. 
 - **Dựng hình** (`apps/web/src/game/render/`): sprite theo id, làm mượt giữa hai nhịp (nội suy), hoạt ảnh theo thời gian thật, xoay dần, trạng thái hoạt ảnh suy ra từ thay đổi giữa hai khung hình (không thêm gì vào mô phỏng), nền vẽ một lần vào một canvas, vật trang trí rải theo hạt giống, rung màn hình (tắt khi `prefers-reduced-motion`). `#game-hud` thêm `data-look`, `data-art-fallbacks`, `data-art-sources`, `data-enemies`, `data-update-ms`; các `data-*` cũ giữ nguyên và vẫn là vị trí mô phỏng thật.
 - **Xem thử**: `/?shooter=art-showcase&biome=…&hero=…&family=…&base=…&weapon=…&boss=crusher|gunner&stress=120`, và `art-test` dùng gói PNG thật `hero/grunt-test` (làm bởi `apps/web/scripts/make-test-art.mjs`).
 - **Chưa làm**: ảnh thật (Stage 5B), âm thanh, cảm ứng.
+## Stage 6A: đổi súng ngay trong game
+
+- **Mục đích**: mỗi màn có một súng cố định do câu lệnh chọn; người chơi giờ đổi được súng khi chơi: phím **1–5** (cả phím số phụ) và **cuộn chuột** (vòng tròn). Thứ tự: 1 `pistol`, 2 `shotgun`, 3 `piercing`, 4 `rapid`, 5 `heavy`.
+- **Lõi** (`packages/contracts/src/shooter/equip.ts`, bước **3b `equipWeapon`** giữa "ngắm" và "bắn"): màn có `arsenal` (2..5 mục `{id, weapon}`; `weapon` của màn phải giống hệt một mục, đó là súng khởi đầu) có thêm `state.weaponSlot` và `state.equipUntilTick`; `ShooterInput.slot` tùy chọn, giá trị không hợp lệ (không nguyên, âm, ≥ số ô, NaN, vô cực, chuỗi) bị bỏ qua. Đổi súng mất `EQUIP_MS = 300` ms không bắn được; `player.nextShotTick` dùng chung nên đổi súng không làm bắn nhanh hơn. Mỗi viên đạn giữ `damage` và `range` của súng đã bắn nó (chỉ trong màn có `arsenal`), vì người chơi có thể đổi súng khi đạn đang bay. `snapshotHash` thêm `weaponSlot`, `equipUntilTick` (và damage/range của đạn) ở cuối, chỉ khi có.
+- **Cộng thêm**: màn không có `arsenal` (mọi màn cũ, màn đã lưu, `loadout: single`) chạy ra đúng từng bit; bốn bản chụp vàng cũ và bốn lát hiệu chỉnh `old|new|boss|base` không đổi. Bot (`botInput`, `createCasualBot`) không bao giờ gửi `slot`, nên cổng và hiệu chỉnh vẫn đo bằng súng khởi đầu; người chơi thật đổi được súng sẽ dễ thắng hơn bot một chút (chấp nhận).
+- **Brief**: `loadout: all|single` (bắt buộc, `normalizeBrief` điền `all`); `weapon` nay là súng **khởi đầu**. `guardUnrequested` giữ `single` chỉ khi câu của người dùng có ý giới hạn súng (từ khóa rộng, VN và EN; không báo người dùng, ghi vào `guardRemoved`); từ khóa rộng nên "chỉ có zombie" cũng giữ `single` (chấp nhận), còn "chỉ huy" thì không. Nhóm thông báo "đổi giữa nhiều vũ khí" bị bỏ (đã hỗ trợ); hết đạn, nâng cấp, nhặt súng vẫn báo chưa hỗ trợ.
+- **Biên dịch**: `loadout: all` ra `arsenal` đủ 5 súng theo thứ tự phím (số liệu của bảng `WEAPONS`), `level.weapon` là súng của `brief.weapon`; `single` không có `arsenal`. Cổng và các số hiệu chỉnh không đổi.
+- **Giao diện**: thanh súng giữa phía dưới sân (chỉ khi có `arsenal`; ô 40×40 có số phím, biểu tượng súng từ trường `icon` của gói `weapon`, ô đang cầm viền trắng, lớp tối quét theo thời gian chờ); nhân vật cầm đúng súng đang dùng, súng "nhấc lên" trong 300 ms khi đổi; dòng gợi ý "1–5 hoặc cuộn chuột: đổi súng" trong biểu ngữ; thẻ thông tin có hàng "Đổi súng". `#game-hud` thêm `data-weapon`, `data-slot`, `data-equip`, `data-weapon-bar`, `data-bullets` (chỉ khi có `arsenal`, trừ `data-bullets`). Màn tay mới `arsenal`; playground có `&loadout=single`.
+- **Chưa làm**: hết đạn, nạp đạn, nhặt súng, nâng cấp súng, bot biết đổi súng. Số liệu bot thắng theo súng cho thấy `rapid` vượt trội và `pistol` yếu nhất (xem báo cáo của Stage 6A); đề xuất chưa thực hiện: giới hạn đạn cho súng mạnh.
 
 ## Dọn nhà: shooter là sản phẩm duy nhất
 

@@ -1,6 +1,7 @@
 // Step 4 of a tick: the weapon fires. The numbers (cooldown, speed, damage, range and the optional
-// pellets, spread and pierce) come from `level.weapon`, never from a weapon's name.
+// pellets, spread and pierce) come from `level.weapon` (or, in a level with an arsenal, the weapon in hand), never from a weapon's name.
 import { BULLET_RADIUS, MAX_BULLETS, PLAYER_RADIUS, msToTicks } from './constants.js';
+import { activeWeapon } from './equip.js';
 import { RADIANS_PER_DEGREE, tanSmall } from './geometry.js';
 import type { ShooterBullet, ShooterInput, ShooterState } from './state.js';
 
@@ -9,9 +10,10 @@ import type { ShooterBullet, ShooterInput, ShooterState } from './state.js';
  * around the aim; one pellet goes exactly along the aim. Each bullet has its own id, in order. */
 export function fireWeapon(state: ShooterState, input: ShooterInput, t: number) {
   const { level, player } = state;
-  const weapon = level.weapon;
+  const weapon = state.weaponSlot === undefined ? level.weapon : activeWeapon(state);
   const pellets = weapon.pellets ?? 1;
-  if (!input.fire || t < player.nextShotTick || state.bullets.length + pellets > MAX_BULLETS) return;
+  // (`equipUntilTick` only exists in a level with an arsenal: elsewhere it is 0 and this line is what it always was)
+  if (!input.fire || t < player.nextShotTick || t < (state.equipUntilTick ?? 0) || state.bullets.length + pellets > MAX_BULLETS) return;
   const reach = PLAYER_RADIUS + BULLET_RADIUS + 1;
   const x = player.x + state.aimX * reach;
   const y = player.y + state.aimY * reach;
@@ -31,6 +33,8 @@ export function fireWeapon(state: ShooterState, input: ShooterInput, t: number) 
     }
     const bullet: ShooterBullet = { id: state.nextId, x, y, vx: dx * weapon.bulletSpeed, vy: dy * weapon.bulletSpeed, travelled: 0 };
     if (pierce > 1) { bullet.pierceLeft = pierce; bullet.hitIds = []; }
+    // A bullet keeps the numbers of the weapon that fired it (only in a level with an arsenal, where the player can switch in flight).
+    if (state.weaponSlot !== undefined) { bullet.damage = weapon.damage; bullet.range = weapon.range; }
     state.bullets.push(bullet);
     state.nextId += 1;
   }

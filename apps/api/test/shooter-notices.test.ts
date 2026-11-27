@@ -26,7 +26,6 @@ describe('keyword notices, one group at a time', () => {
     ['ammo', ['hết đạn thì nạp đạn', 'het dan', 'reload', 'Reloading', 'ammo', 'đạn có hạn']],
     ['pickups', ['nâng cấp', 'nhặt vật phẩm', 'nhặt vật phẩm tăng tốc', 'power-up', 'powerups', 'nâng cấp súng', 'upgrades', 'pickups', 'pick up speed boosts']],
     ['explosion', ['đạn nổ lan', 'tên lửa', 'rocket launcher', 'ném lựu đạn', 'grenades', 'explosions everywhere', 'sát thương lan', 'area damage', 'nổ lan ra xung quanh']],
-    ['weapons', ['đổi vũ khí', 'nhiều vũ khí', 'multiple weapons', 'switch weapons', 'weapon switching', 'swap weapon']],
     ['crafting', ['chế tạo', 'crafting', 'craft items']],
     ['traps', ['đặt bẫy', 'trap', 'traps', 'cái bẫy', 'bẫy gai']],
     ['no-enemies', ['không có quái', 'màn không quái', 'hòa bình', 'no enemies', 'no monsters', 'no zombies', 'peaceful', 'không có quái nhưng hạ 50 quái', 'một thế giới hòa bình, không có quái vật']],
@@ -81,12 +80,12 @@ describe('keyword notices, one group at a time', () => {
   });
 
   it('every group has a fixed Vietnamese sentence of at most 160 characters', () => {
-    expect(NOTICE_GROUPS).toHaveLength(15);
+    expect(NOTICE_GROUPS).toHaveLength(14);
     for (const group of NOTICE_GROUPS) {
       expect(group.notice.length).toBeLessThanOrEqual(NOTICE_MAX_CHARS);
       expect(group.notice.startsWith('Chưa hỗ trợ:')).toBe(true);
     }
-    expect(new Set(NOTICE_GROUPS.map((group) => group.notice)).size).toBe(15);
+    expect(new Set(NOTICE_GROUPS.map((group) => group.notice)).size).toBe(14);
   });
 
   it('adds nothing for ordinary prompts', () => {
@@ -183,15 +182,23 @@ describe('collectNotices', () => {
   });
 
   it('keeps at most 8 and at most 160 characters each, dropping standard sentences first', () => {
-    const everything = 'nhiều boss xe multiplayer xây tháp nhiều căn cứ sửa căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy';
+    const everything = 'nhiều boss xe multiplayer xây tháp nhiều căn cứ sửa căn cứ hết đạn nâng cấp chế tạo bẫy';
     const model = ['m1', 'm2', 'm3', 'm4', 'm5'];
     const engine = ['e1', 'e2', 'e3'];
     const list = collectNotices({ prompt: everything, unsupported: model, engine });
     expect(list).toHaveLength(MAX_NOTICES);
     for (const item of [...model, ...engine]) expect(list).toContain(item);
-    expect(collectNotices({ prompt: everything, unsupported: [], engine: [] })).toHaveLength(MAX_NOTICES); // eleven standard sentences, eight kept
+    expect(collectNotices({ prompt: everything, unsupported: [], engine: [] })).toHaveLength(MAX_NOTICES); // ten standard sentences, eight kept
     const long = collectNotices({ prompt: 'x', unsupported: ['y'.repeat(500)], engine: [] });
     expect(long[0]!.length).toBe(NOTICE_MAX_CHARS);
+  });
+
+  it('switching weapons is a feature now: asking for it says nothing (what stays unsupported is ammo, upgrades and pick-ups)', () => {
+    for (const text of ['đổi vũ khí', 'nhiều vũ khí', 'có nhiều loại súng để đổi', 'multiple weapons', 'switch weapons with the number keys', 'weapon switching', 'swap weapons']) {
+      expect(keywordNotices(text, []), text).toEqual([]);
+    }
+    expect(NOTICE_GROUPS.some((group) => group.id === 'weapons')).toBe(false);
+    expect(keywordNotices('đổi vũ khí, hết đạn thì nạp đạn, nâng cấp súng', []).length).toBe(2);
   });
 
   it('is empty when there is nothing to say', () => {
@@ -248,7 +255,7 @@ describe('an `unsupported` entry that only repeats the prompt', () => {
   });
 
   it('keeps the order (model, keyword, engine) and the limit of 8, the generic sentence counting as a model entry', () => {
-    const everything = 'nhiều boss xe multiplayer xây tháp nhiều căn cứ sửa căn cứ hết đạn nâng cấp đổi vũ khí chế tạo bẫy và còn nhiều thứ khác nữa';
+    const everything = 'nhiều boss xe multiplayer xây tháp nhiều căn cứ sửa căn cứ hết đạn nâng cấp chế tạo bẫy và còn nhiều thứ khác nữa';
     const list = collectNotices({ prompt: everything, unsupported: ['m1', everything, 'm2'], engine: ['e1'] });
     expect(list).toHaveLength(MAX_NOTICES);
     expect(list.slice(0, 3)).toEqual(['m1', GENERIC_UNSUPPORTED_NOTICE, 'm2']);

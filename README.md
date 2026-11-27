@@ -12,8 +12,9 @@ lời mô tả  →  AI (Gemini hoặc Groq) chọn từ danh sách có sẵn  �
 2. **Engine dựng màn** từ brief (cùng brief và cùng số `seed` luôn ra cùng một màn): đặt vật cản, lên lịch quái, tính máu boss.
 3. **Một bot "người chơi bình thường" thử chơi** màn đó. Nếu bot thua quá nhiều thì engine giảm số quái cho tới khi chơi được, và báo cho người dùng.
 4. **Căn cứ cần bảo vệ** có trong game (một tòa nhà vuông giữa sân: quái có thể đánh nó, thua nếu nó bị phá hoặc bạn bị hạ). **Những gì engine chưa làm được** (xây tháp, nhiều căn cứ, nhiều boss, hết đạn...) được liệt kê trong khối "Chưa hỗ trợ / điều chỉnh"; game vẫn chạy.
-5. **Diện mạo** (nhân vật, súng, kiểu căn cứ, họ quái, phong cảnh) là các "gói ảnh": mỗi màn chọn một bộ theo hạt giống, và có thể thả ảnh thật vào mà không sửa code (xem [docs/art-packs.md](docs/art-packs.md)). Xem thử không cần backend: `/?shooter=art-showcase&biome=ice-base&hero=armor&family=robot&base=outpost&weapon=shotgun`.
-6. Phaser chỉ **vẽ**: luật chơi nằm trong một mô-đun TypeScript thuần (`packages/contracts/src/shooter/`), nên kết quả giống nhau trên mọi máy.
+5. **Đổi súng** ngay khi chơi: phím **1–5** hoặc **cuộn chuột** (súng ngắn, shotgun, súng xuyên, bắn nhanh, súng nặng). `weapon` trong brief là súng lúc đầu; chỉ khi bạn nói rõ muốn giới hạn ("chỉ có súng ngắn") thì màn chỉ có một súng. Đổi súng mất 0,3 giây không bắn được và dùng chung thời gian chờ giữa hai phát bắn.
+6. **Diện mạo** (nhân vật, súng, kiểu căn cứ, họ quái, phong cảnh) là các "gói ảnh": mỗi màn chọn một bộ theo hạt giống, và có thể thả ảnh thật vào mà không sửa code (xem [docs/art-packs.md](docs/art-packs.md)). Xem thử không cần backend: `/?shooter=art-showcase&biome=ice-base&hero=armor&family=robot&base=outpost&weapon=shotgun`.
+7. Phaser chỉ **vẽ**: luật chơi nằm trong một mô-đun TypeScript thuần (`packages/contracts/src/shooter/`), nên kết quả giống nhau trên mọi máy.
 
 Có chọn "Demo" trong Settings thì không gọi AI: luôn chạy màn tay "Đấu trường".
 
@@ -43,7 +44,7 @@ Mở http://127.0.0.1:5173. `npm run dev` dựng thư viện dùng chung rồi c
 
 ### Sân chơi các màn viết tay (không gọi AI)
 
-`http://127.0.0.1:5173/?shooter=<tên>`; tên hiện có: `arena`, `pillars`, `wall`, `smoke-win`, `smoke-lose`, `shotgun-pit`, `spitters`, `medic`, `boss-crusher`, `boss-gunner`, `base-siege`, `base-boss`, `base-fall`, `art-showcase`, `art-test`. Sai tên thì trang liệt kê các tên đúng.
+`http://127.0.0.1:5173/?shooter=<tên>`; tên hiện có: `arena`, `pillars`, `wall`, `smoke-win`, `smoke-lose`, `shotgun-pit`, `spitters`, `medic`, `boss-crusher`, `boss-gunner`, `base-siege`, `base-boss`, `base-fall`, `art-showcase`, `art-test`, `arsenal`. Sai tên thì trang liệt kê các tên đúng.
 
 ## Biến môi trường
 

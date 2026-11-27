@@ -92,7 +92,7 @@ function* grid(): Generator<{ combo: Combo; brief: ShooterBrief }> {
     for (const weapon of WEAPONS) for (const health of PLAYER_HEALTHS) for (const seed of SEEDS.slice(0, seedCount)) {
       if (!inSet(mix.name, weapon)) continue;
       const brief = ShooterBriefSchema.parse({
-        version: 'brief-1', healthDrops: 'none', boss, base: SET === 'base' ? 'defend' : 'none', enemyFamily: 'auto', title: 'Calibration', theme: 'zombie-city', map, enemies: mix.enemies, intensity,
+        version: 'brief-1', healthDrops: 'none', boss, base: SET === 'base' ? 'defend' : 'none', enemyFamily: 'auto', loadout: 'all', title: 'Calibration', theme: 'zombie-city', map, enemies: mix.enemies, intensity,
         playerHealth: health, weapon, goal: GOAL, unsupported: [],
       });
       yield { combo: { intensity, boss, mix: mix.name, map, weapon, health, seed }, brief };

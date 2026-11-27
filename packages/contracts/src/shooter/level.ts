@@ -3,6 +3,7 @@ import {
   BASE_CLEARANCE, EDGE_MARGIN, ENEMY_TYPE_NAMES, FIELD, MAX_SCHEDULED_ENEMIES, OBSTACLE_MARGIN, SPAWN_SAFE_DISTANCE, bossOf,
 } from './constants.js';
 import { baseRectOf, dist, pointRectDistance, rectInsideField } from './geometry.js';
+import { sameWeapon } from './equip.js';
 import { LookSchema } from './look.js';
 import { intBetween as integer, labelOf } from './schema-helpers.js';
 
@@ -12,6 +13,17 @@ const point = { x: integer(FIELD.left, FIELD.right), y: integer(FIELD.top, FIELD
 
 /** A hand-made or compiled level. Every coordinate, spawn time and balance
  * number is in the data: nothing hidden lives in the engine. */
+/** A weapon: the numbers of one gun. The level's own `weapon` and every entry of an `arsenal` are checked by this. */
+export const WeaponSchema = z.object({
+  cooldownMs: integer(80, 1000), bulletSpeed: integer(300, 900), damage: integer(1, 5), range: integer(200, 1000),
+  /** Bullets per shot (absent = 1), the whole width of their fan in degrees (absent = 0) and how many
+   * enemies one bullet passes through (absent = 1). All optional: a level without them plays as before. */
+  pellets: integer(1, 9).optional(), spreadDeg: integer(0, 60).optional(), pierce: integer(1, 5).optional(),
+}).strict();
+
+/** A weapon the player can switch to (Stage 6A). `id` is only a name for the screen: the simulation never reads it. */
+export const ArsenalEntrySchema = z.object({ id: z.string().regex(/^[a-z0-9-]{1,30}$/), weapon: WeaponSchema }).strict();
+
 export const ShooterLevelSchema = z.object({
   kind: z.literal('shooter-v1'),
   title: label,
@@ -21,12 +33,10 @@ export const ShooterLevelSchema = z.object({
     background: color, wall: color, player: color, enemy: color, bullet: color, accent: color,
   }).strict(),
   player: z.object({ ...point, speed: integer(120, 320), hp: integer(1, 10) }).strict(),
-  weapon: z.object({
-    cooldownMs: integer(80, 1000), bulletSpeed: integer(300, 900), damage: integer(1, 5), range: integer(200, 1000),
-    /** Bullets per shot (absent = 1), the whole width of their fan in degrees (absent = 0) and how many
-     * enemies one bullet passes through (absent = 1). All optional: a level without them plays as before. */
-    pellets: integer(1, 9).optional(), spreadDeg: integer(0, 60).optional(), pierce: integer(1, 5).optional(),
-  }).strict(),
+  weapon: WeaponSchema,
+  /** The weapons the player can switch between (2 to 5), absent = the one `weapon`, as it always was. `weapon` must be one of them: it is
+   * the weapon the player starts with. */
+  arsenal: z.array(ArsenalEntrySchema).min(2).max(5).optional(),
   obstacles: z.array(z.object({
     ...point, width: integer(20, 400), height: integer(20, 400),
   }).strict()).max(12),
@@ -78,6 +88,11 @@ export const ShooterLevelSchema = z.object({
       if (pointRectDistance(spawn.x, spawn.y, square) < OBSTACLE_MARGIN) issue(['spawnPoints', index], 'Điểm xuất hiện của quái nằm trong hoặc sát căn cứ.');
       if (dist(spawn.x - level.base!.x, spawn.y - level.base!.y) < SPAWN_SAFE_DISTANCE) issue(['spawnPoints', index], 'Điểm xuất hiện của quái quá gần căn cứ.');
     });
+  }
+  if (level.arsenal) {
+    const ids = level.arsenal.map((entry) => entry.id);
+    if (new Set(ids).size !== ids.length) issue(['arsenal'], 'Hai súng trong kho có cùng id.');
+    if (!level.arsenal.some((entry) => sameWeapon(entry.weapon, level.weapon))) issue(['weapon'], 'Súng khởi đầu phải là một súng trong kho.');
   }
   const total = level.waves.reduce((sum, wave) => sum + wave.count, 0);
   if (total > MAX_SCHEDULED_ENEMIES) issue(['waves'], `Tổng số quái theo lịch vượt ${MAX_SCHEDULED_ENEMIES}.`);

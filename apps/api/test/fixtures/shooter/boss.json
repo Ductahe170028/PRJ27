@@ -2,7 +2,7 @@
   "version": "brief-1",
   "healthDrops": "none",
   "boss": "crusher",
-  "base": "none","enemyFamily":"auto",
+  "base": "none","enemyFamily":"auto","loadout":"all",
   "title": "Base Defense",
   "theme": "military-base",
   "map": "pillars",

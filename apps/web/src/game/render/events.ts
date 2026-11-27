@@ -4,7 +4,8 @@
 import { ENEMY_TYPES, PLAYER_RADIUS, baseRectOf, isBoss, pointRectDistance, type EnemyType, type ShooterState } from '@game-creator/contracts';
 
 export interface EnemySnap { type: EnemyType; x: number; y: number; hp: number }
-export interface BulletSnap { x: number; y: number; vx: number; vy: number; travelled: number }
+/** `range` is the bullet's own (a level with an arsenal: the weapon that fired it); without it the weapon's range is the level's. */
+export interface BulletSnap { x: number; y: number; vx: number; vy: number; travelled: number; range?: number | undefined }
 /** The few numbers of a state that the diff reads, copied (a state is mutated in place by the next tick). */
 export interface Snapshot {
   tick: number;
@@ -18,7 +19,7 @@ export function snapshotOf(state: ShooterState): Snapshot {
   const enemies = new Map<number, EnemySnap>();
   for (const enemy of state.enemies) enemies.set(enemy.id, { type: enemy.type, x: enemy.x, y: enemy.y, hp: enemy.hp });
   const bullets = new Map<number, BulletSnap>();
-  for (const bullet of state.bullets) bullets.set(bullet.id, { x: bullet.x, y: bullet.y, vx: bullet.vx, vy: bullet.vy, travelled: bullet.travelled });
+  for (const bullet of state.bullets) bullets.set(bullet.id, { x: bullet.x, y: bullet.y, vx: bullet.vx, vy: bullet.vy, travelled: bullet.travelled, range: bullet.range });
   return { tick: state.tick, playerHp: state.player.hp, nextShotTick: state.player.nextShotTick, baseHp: state.base?.hp, enemies, bullets };
 }
 
@@ -52,7 +53,7 @@ export function diffSnapshots(before: Snapshot, after: Snapshot, range: number):
     if (after.bullets.has(id)) continue;
     const speed = Math.sqrt(was.vx * was.vx + was.vy * was.vy);
     // it could have flown `speed * seconds` more before running out of range: only a shorter life than that is a hit
-    if (was.travelled + speed * seconds * 1.5 < range) events.impacts.push({ x: was.x, y: was.y });
+    if (was.travelled + speed * seconds * 1.5 < (was.range ?? range)) events.impacts.push({ x: was.x, y: was.y });
   }
   return events;
 }

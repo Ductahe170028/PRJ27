@@ -20,7 +20,7 @@ const MIXES = [
   [{ type: 'swarmer', share: 5 }],
   [{ type: 'runner', share: 4 }, { type: 'brute', share: 2 }, { type: 'swarmer', share: 4 }],
 ];
-const base = (extra) => ({ version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', title: 'Timing', theme: 'zombie-city', playerHealth: 'normal', weapon: 'pistol', unsupported: [], ...extra });
+const base = (extra) => ({ version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', loadout: 'all', title: 'Timing', theme: 'zombie-city', playerHealth: 'normal', weapon: 'pistol', unsupported: [], ...extra });
 const cases = {
   'survive 60 s': (i) => base({ map: MAPS[i % 5], enemies: MIXES[i % 4], intensity: (i % 5) + 1, goal: { type: 'survive', seconds: 60 }, weapon: ['pistol', 'rapid', 'heavy'][i % 3] }),
   'survive 180 s': (i) => base({ map: MAPS[i % 5], enemies: MIXES[i % 4], intensity: (i % 5) + 1, goal: { type: 'survive', seconds: 180 }, weapon: ['pistol', 'rapid', 'heavy'][i % 3] }),

@@ -71,6 +71,7 @@ function weaponPack(id: string, s: Spec): ProceduralPack {
     version: 1, kind: 'weapon', id, source: 'procedural', license: 'procedural', author: '', origin: '',
     frame: FRAME, columns: COLUMNS, anchor: { x: s.grip[0] / FRAME.w, y: s.grip[1] / FRAME.h },
     muzzle: { x: s.muzzle[0], y: s.muzzle[1] },
+    icon: 0, // the weapon at rest, for the weapon bar
     bullet: { style: s.style, color: s.bullet },
     animations: { idle: anim([0], 1, true), fire: anim([1, 2, 3], 24, false) },
   };

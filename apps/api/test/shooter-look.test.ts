@@ -14,7 +14,7 @@ const registry = (await import(new URL('../../web/src/game/art/registry.ts', imp
 const { PROCEDURAL_PACKS, proceduralIds } = registry;
 
 const brief = (patch: Partial<ShooterBrief> = {}): ShooterBrief => ShooterBriefSchema.parse({
-  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', title: 'Look', theme: 'zombie-city', map: 'open-arena',
+  version: 'brief-1', healthDrops: 'none', boss: 'none', base: 'none', enemyFamily: 'auto', loadout: 'all', title: 'Look', theme: 'zombie-city', map: 'open-arena',
   enemies: [{ type: 'runner', share: 5 }], intensity: 2, playerHealth: 'normal', weapon: 'pistol', goal: { type: 'survive', seconds: 60 }, unsupported: [], ...patch,
 });
 const seeds = Array.from({ length: 1000 }, (_, i) => i * 7919 + 13);

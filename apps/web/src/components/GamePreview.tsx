@@ -47,7 +47,7 @@ export function GamePreview({ source, onStarted, onError }: GamePreviewProps) {
           void (async () => {
             const game = latest.current.game;
             let art: Awaited<ReturnType<typeof fetchArtPacks>> = { art: [], fallbacks: 0 };
-            try { art = await fetchArtPacks(neededRefs(effectiveLook(game)), await loadArtIndex()); } catch { /* the game draws everything itself */ }
+            try { art = await fetchArtPacks(neededRefs(effectiveLook(game), game.arsenal?.map((entry) => entry.id)), await loadArtIndex()); } catch { /* the game draws everything itself */ }
             // '*' is required for a sandboxed recipient with an opaque origin.
             frame.current?.contentWindow?.postMessage({
               channel: 'game-creator', type: 'runtime:init', sessionId, game,

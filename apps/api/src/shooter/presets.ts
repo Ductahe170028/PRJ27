@@ -23,6 +23,10 @@ export const WEAPONS: Record<ShooterBrief['weapon'], ShooterLevel['weapon']> = {
   piercing: { cooldownMs: 600, bulletSpeed: 800, damage: 2, range: 800, pierce: 2 },
 };
 
+/** The weapons of an `all` loadout, in the order of the keys 1 to 5 (and of the mouse wheel): the pistol, the shotgun, the piercing gun, the rapid gun, the heavy gun. */
+export const ARSENAL_ORDER = ['pistol', 'shotgun', 'piercing', 'rapid', 'heavy'] as const satisfies readonly ShooterBrief['weapon'][];
+export const arsenalOf = () => ARSENAL_ORDER.map((id) => ({ id, weapon: { ...WEAPONS[id] } }));
+
 /** The boss's hit points are its kind's own (ENEMY_TYPES) times this, by intensity 1..5 (calibrated: docs/shooter-calibration.md). */
 // (starting values 0.6, 0.8, 1, 1.2, 1.4: too hard for the casual bot, see docs/shooter-calibration.md, Stage 4C)
 export const BOSS_HP_BY_INTENSITY: number[] = [0.4, 0.45, 0.5, 0.55, 0.6];

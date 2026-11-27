@@ -1,7 +1,7 @@
 // Every sentence the player reads about a shooter level: the goal, the banner at the start, the HUD
 // line and the "Thông tin màn" card. Pure functions of the level (no Phaser, no DOM), so they are
 // tested without a browser and the game and the page always say the same thing.
-import { ENEMY_TYPES, bossOf, bossWaveOf, rangedOf, totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
+import { ENEMY_TYPES, bossOf, bossWaveOf, rangedOf, sameWeapon, totalScheduledEnemies, type ShooterLevel } from '@game-creator/contracts';
 
 type Win = ShooterLevel['win'];
 type Weapon = ShooterLevel['weapon'];
@@ -139,7 +139,8 @@ export function weaponSummary(weapon: Weapon): { label: string; detail: string }
   return { label, detail: `mỗi ${seconds(weapon.cooldownMs)} giây một phát · sát thương ${weapon.damage} · tầm ${weapon.range}` };
 }
 
-export interface LevelInfo { goal: string; maxHealth: number; maxEnemies: number; weapon: string; weaponDetail: string; extras: string[] }
+/** `arsenal` (the weapons the player can switch to, and the one it starts with) is only there for a level that has one. */
+export interface LevelInfo { goal: string; maxHealth: number; maxEnemies: number; weapon: string; weaponDetail: string; extras: string[]; arsenal?: string[] }
 
 /** What the card shows, computed from the level alone. */
 export function levelInfo(level: ShooterLevel): LevelInfo {
@@ -158,5 +159,66 @@ export function levelInfo(level: ShooterLevel): LevelInfo {
     else extras.push(`Boss cuối (máu ${hp})`);
   }
   if (level.base) extras.push(`Có căn cứ cần bảo vệ (máu ${level.base.hp}): thua nếu căn cứ bị phá`);
-  return { goal: goalSentence(level.win, level.base !== undefined), maxHealth: level.player.hp, maxEnemies: totalScheduledEnemies(level), weapon: weapon.label, weaponDetail: weapon.detail, extras };
+  return { goal: goalSentence(level.win, level.base !== undefined), maxHealth: level.player.hp, maxEnemies: totalScheduledEnemies(level), weapon: weapon.label, weaponDetail: weapon.detail, extras, ...(level.arsenal ? { arsenal: arsenalLines(level) } : {}) };
+}
+
+// --- Stage 6A: switching weapons (keys 1-5, the mouse wheel) and the weapon bar ---------------------------------------------------
+/** The names the screen gives to the five weapons (by the id of an arsenal entry, which is only a name for the screen: the simulation never reads it). */
+export const WEAPON_NAMES: Record<string, string> = { pistol: 'Súng ngắn', shotgun: 'Shotgun', piercing: 'Súng xuyên', rapid: 'Bắn nhanh', heavy: 'Súng nặng' };
+export const weaponName = (id: string) => WEAPON_NAMES[id] ?? id;
+/** The third line of the banner and of the hidden #game-banner, only in a level with an arsenal. */
+export const ARSENAL_HINT = '1–5 hoặc cuộn chuột: đổi súng';
+
+/** The slot a key asks for: the digit row and the number pad, 1 to 5, and no more slots than the arsenal has. Anything else is not a weapon key. */
+export function slotForKey(code: string, count: number): number | undefined {
+  const match = /^(?:Digit|Numpad)([1-9])$/.exec(code);
+  if (!match) return undefined;
+  const slot = Number(match[1]) - 1;
+  return slot < count ? slot : undefined;
+}
+
+/** The slot `steps` places on from `current`, going round (a wheel that goes past the last weapon comes back to the first). */
+export const wrapSlot = (current: number, steps: number, count: number) => (((current + steps) % count) + count) % count;
+
+/** The mouse wheel gives many small numbers on a trackpad and 100 a notch on a mouse. Adds `deltaY` to what is already stored and gives one
+ * step (+1 forward = down, -1 back = up) per WHEEL_NOTCH, keeping the rest. At most one step per event. */
+export const WHEEL_NOTCH = 60;
+export function wheelStep(stored: number, deltaY: number): { step: -1 | 0 | 1; rest: number } {
+  const total = stored + (Number.isFinite(deltaY) ? deltaY : 0);
+  // what is left after a step is held below one notch, so a run of fast notches cannot store up steps for later
+  if (total >= WHEEL_NOTCH) return { step: 1, rest: Math.min(total - WHEEL_NOTCH, WHEEL_NOTCH - 1) };
+  if (total <= -WHEEL_NOTCH) return { step: -1, rest: Math.max(total + WHEEL_NOTCH, 1 - WHEEL_NOTCH) };
+  return { step: 0, rest: total };
+}
+
+/** Where the bar of weapons stands: centered along the bottom of the field, one cell of 40 x 40 per weapon, 6 px apart. */
+export const WEAPON_CELL = 40;
+export const WEAPON_GAP = 6;
+export const WEAPON_BAR_BOTTOM = 540 - 8;
+export interface WeaponBarLayout { plate: { x: number; y: number; width: number; height: number }; cells: Array<{ x: number; y: number; key: string }> }
+export function weaponBarLayout(count: number): WeaponBarLayout {
+  const width = count * WEAPON_CELL + (count - 1) * WEAPON_GAP;
+  const left = Math.round(480 - width / 2);
+  const top = WEAPON_BAR_BOTTOM - WEAPON_CELL;
+  return {
+    plate: { x: left - 6, y: top - 6, width: width + 12, height: WEAPON_CELL + 12 },
+    cells: Array.from({ length: count }, (_, i) => ({ x: left + i * (WEAPON_CELL + WEAPON_GAP), y: top, key: String(i + 1) })),
+  };
+}
+
+/** How much of the wait is left, 1 (just started) to 0 (ready): the longer of the shot clock and the switch, over the length of the
+ * wait that was started (the weapon's cooldown, or the switch if that takes longer). */
+export function waitShare(tick: number, nextShotTick: number, equipUntilTick: number, cooldownTicks: number, equipTicks: number): number {
+  const left = Math.max(nextShotTick - tick, equipUntilTick - tick, 0);
+  const total = Math.max(cooldownTicks, equipTicks, 1);
+  return Math.min(1, left / total);
+}
+
+/** The line about the weapons for the level card (only with an arsenal): the list, with the weapon the player starts with marked. */
+export function arsenalLines(level: Pick<ShooterLevel, 'arsenal' | 'weapon'>): string[] {
+  const arsenal = level.arsenal;
+  if (!arsenal) return [];
+  const start = arsenal.findIndex((entry) => sameWeapon(entry.weapon, level.weapon));
+  const names = arsenal.map((entry, i) => `${i + 1} ${weaponName(entry.id)}`).join(', ');
+  return [`Có ${arsenal.length} súng, đổi bằng phím 1–${arsenal.length} hoặc cuộn chuột: ${names}`, `Súng lúc đầu: ${weaponName(arsenal[Math.max(0, start)]!.id)}`];
 }
